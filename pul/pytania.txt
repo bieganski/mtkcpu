@@ -1,0 +1,2 @@
+* dlaczego w domenie 'sync' dozwolone są pętle (m.d.sync += sig.eq(sig + 2))?
+* dlaczego `m.d.comb += out.eq(a * b)` wykonuje się 1 cykl? (tak gtk pokazuje)
