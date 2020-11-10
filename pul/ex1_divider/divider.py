@@ -18,7 +18,7 @@ class Divider(Elaboratable):
         self.b = Signal(width)
 
         # Internal signals.
-        self.counter = Signal(width)
+        self.counter = Signal(range(width))
         self.bit = Signal()
         self.aa = Signal(width)
         self.bb = Signal(width)
