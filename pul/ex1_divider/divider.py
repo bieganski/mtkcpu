@@ -39,8 +39,7 @@ class Divider(Elaboratable):
 
         with m.If(~self.start & ~self.busy):
             pass # wait for input
-       
-        with m.If(~self.busy):
+        with m.Elif(~self.busy):
             # start the job
             with m.If(self.b == 0):
                 m.d.sync += self.err.eq(1)

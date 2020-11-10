@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from enum import Enum
 import random
 from nmigen import *
@@ -37,7 +39,8 @@ class LineRasterizer(Elaboratable):
 
     def elaborate(self, platform):
         m = Module()
-
+        
+        m.d.sync += self.out_type.eq(OutPacketType.PIXEL)
         # FILL ME
 
         return m
@@ -85,7 +88,7 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(256):
+        for i in range(2):
             x = random.randrange(1 << rast.width)
             y = random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:
@@ -99,7 +102,32 @@ if __name__ == '__main__':
             lx = x
             ly = y
 
+        
+        def print_input(input):
+            try:
+                t, x, y = input
+            except:
+                x, y = input
+                t = ""
+            print(f'INPUT {t}: <{x},{y}>')
+
+        def print_line(prev, act):
+            out_data = []
+            _, px, py = prev
+            _, ax, ay = act
+            for ox, oy in bresenham(px, py, ax, ay):
+                    out_data.append((ox, oy))
+
+
+            print_input(prev)
+            for pair in out_data:
+                print_input(pair)
+            print_input(act)
+
+        
         def feed_input():
+            for pair in zip(in_data, in_data[1:]):
+                    print_line(*pair)
             yield
             idx = 0
             while idx < len(in_data):
