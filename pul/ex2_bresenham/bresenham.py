@@ -29,10 +29,23 @@ class LineRasterizer(Elaboratable):
         self.in_x = Signal(width)
         self.in_y = Signal(width)
 
+        
         # Internals.
-        self.FIFO_SIZE = 10
-        self.fifo = SyncFIFO(width=2*width, depth=self.FIFO_SIZE)
-        self.queue_rdy = self.fifo.r_rdy
+        self.FIFO_DEPTH = 10
+        self.fifo = SyncFIFO(width=2*width, depth=self.FIFO_DEPTH)
+
+        self.input_consumed = Signal()
+        self.fifo_output_consumed = Signal()
+        self.ready_to_dispatch = Signal()
+        self.out_fifo = Signal(2 * width)
+
+        self.in_x_consumed = Signal(width)
+        self.in_y_consumed = Signal(width)
+        self.in_type_consumed = Signal(InPacketType)
+
+        self.out_x_from_fifo = Signal(width)
+        self.out_y_from_fifo = Signal(width)
+        self.out_type_from_fifo = Signal(InPacketType)
 
         # Output FIFO.
         self.out_ready = Signal()
@@ -42,14 +55,54 @@ class LineRasterizer(Elaboratable):
         self.out_x = Signal(width)
         self.out_y = Signal(width)
 
+
     def elaborate(self, platform):
         m = Module()
+        m.submodules += self.fifo
+        sync = m.d.sync
+        comb = m.d.comb
         
-        m.d.sync += self.out_type.eq(OutPacketType.PIXEL)
-        # FILL ME
+        sync += self.out_type.eq(OutPacketType.PIXEL)
 
-        with m.If(~self.queue_rdy):
-            pass # don't read input, TODO
+        ### READING AND PLACING INTO FIFO
+        with m.If(~self.fifo.w_rdy):
+            pass # wait with reading input
+        with m.Else():
+            # comb += self.out_x = self.out_fifo[0:self.width]
+            # comb += self.out_y = self.out_fifo[self.width:]
+            
+            sync += self.in_ready.eq(True)
+            with m.If(self.in_valid & self.in_ready):
+                # packet assumed as sent
+                sync += self.in_x_consumed.eq(self.in_x)
+                sync += self.in_y_consumed.eq(self.in_y)
+                sync += self.in_type_consumed.eq(self.in_type)
+                sync += self.input_consumed.eq(True)
+            with m.Else():
+                sync += self.input_consumed.eq(False)
+                
+            with m.If(self.input_consumed):    
+                sync += self.fifo.w_data.eq(Cat(self.in_x_consumed, self.in_y_consumed))
+                sync += self.fifo.w_en.eq(True)
+
+        ### WAITING FOR CONSUMER AND SENDING
+        with m.If(self.fifo.r_rdy):
+            sync += self.fifo.r_en.eq(True)
+            sync += self.fifo_output_consumed.eq(True)
+        with m.Else():
+            sync += self.fifo_output_consumed.eq(False)
+
+        with m.If(self.fifo_output_consumed):
+            sync += self.out_fifo.eq(self.fifo.r_data)
+            comb += self.out_x.eq(self.out_fifo[0:self.width])
+            comb += self.out_y.eq(self.out_fifo[self.width:])
+            sync += self.ready_to_dispatch.eq(True)
+
+        with m.If(self.ready_to_dispatch):
+            sync += self.out_valid.eq(True)
+            with m.If(self.out_valid & self.out_ready):
+                # packet assumed as sent
+                sync += self.ready_to_dispatch.eq(True)
 
         return m
 
@@ -72,7 +125,7 @@ def bresenham(x1, y1, x2, y2):
 
 
 if __name__ == '__main__':
-    rast = LineRasterizer(6)
+    rast = LineRasterizer(8)
     ports = [
         rast.in_ready, rast.in_valid, rast.in_type, rast.in_x, rast.in_y,
         rast.out_ready, rast.out_valid, rast.out_type, rast.out_x, rast.out_y,
@@ -96,7 +149,7 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(2):
+        for i in range(12):
             x = random.randrange(1 << rast.width)
             y = random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:
