@@ -4,7 +4,7 @@ from enum import Enum
 import random
 from nmigen import *
 from nmigen.cli import main, pysim
-
+from nmigen.lib.fifo import SyncFIFO
 
 class InPacketType(Enum):
     FIRST = 0
@@ -29,6 +29,11 @@ class LineRasterizer(Elaboratable):
         self.in_x = Signal(width)
         self.in_y = Signal(width)
 
+        # Internals.
+        self.FIFO_SIZE = 10
+        self.fifo = SyncFIFO(width=2*width, depth=self.FIFO_SIZE)
+        self.queue_rdy = self.fifo.r_rdy
+
         # Output FIFO.
         self.out_ready = Signal()
         self.out_valid = Signal()
@@ -42,6 +47,9 @@ class LineRasterizer(Elaboratable):
         
         m.d.sync += self.out_type.eq(OutPacketType.PIXEL)
         # FILL ME
+
+        with m.If(~self.queue_rdy):
+            pass # don't read input, TODO
 
         return m
 

@@ -2,35 +2,29 @@
 from nmigen import *
 from nmigen.cli import main, pysim
 
+
+from nmigen.lib.fifo import SyncFIFO
 # A counter that counts down to 0.
 class Counter(Elaboratable):
     # Width is the counter's width in bits.
     def __init__(self, width):
-        # Inputs.
-        # Start trigger for the counter.
-        self.start = Signal()
-        # Start value of the counter.
-        self.startval = Signal(width)
-        # Counter enable — if 0, the counter will be paused.
-        self.en = Signal(reset=True)
-
-        # Outputs.
-        # Set if the counter is done counting (the count is 0).
-        self.done = Signal()
-
-        # Internal state.
-        # Current counter value
-        self.val = Signal(width)
+        self.fifo = SyncFIFO(width=8, depth=4)
 
     def elaborate(self, platform):
         m = Module()
 
-        with m.If(self.start):
-            m.d.sync += self.val.eq(self.startval)
-        with m.Elif(self.en & (self.val != 0)):
-            m.d.sync += self.val.eq(self.val - 1)
-
-        m.d.comb += self.done.eq(self.val == 0)
+        m.submodules += self.fifo
+        lol = Signal(8)
+        ctr = Signal(8)
+        m.d.sync += ctr.eq(ctr + 1)
+        m.d.sync += [
+                lol.eq(1),
+                self.fifo.w_data.eq(ctr + 0xdd),
+                self.fifo.w_en.eq(1),
+                self.fifo.r_en.eq(1)
+            ]
+        with m.If(self.fifo.r_en == 1):
+            m.d.sync += lol.eq(self.fifo.r_data)
 
         return m
 
@@ -38,9 +32,11 @@ class Counter(Elaboratable):
 if __name__ == '__main__':
     ctr = Counter(4)
     ports = [
-        ctr.start, ctr.startval, ctr.en,
-        ctr.done,
-    ]
+                ctr.fifo.r_rdy
+            ]
+        #ctr.start, ctr.startval, ctr.en,
+        #ctr.done,
+    #]
 
     import argparse
 
@@ -59,6 +55,9 @@ if __name__ == '__main__':
         sim.add_clock(1e-6)
 
         def test():
+            for _ in range(100):
+                yield
+            return 
             # Initially the counter is 0.
             assert (yield ctr.done)
 
