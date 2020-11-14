@@ -46,7 +46,32 @@ class LineRasterizer(Elaboratable):
         self.out_x_from_fifo = Signal(width)
         self.out_y_from_fifo = Signal(width)
         self.out_type_from_fifo = Signal(InPacketType)
+        
+        # Bresenham help signals
+        self.cur_x = Signal(width)
+        self.cur_y = Signal(width)
+        self.dst_x = Signal(width)
+        self.dst_y = Signal(width)
+        self.dx = Signal(width)
+        self.dy = Signal(width)
+        self.abs_dx = Signal(signed(width))
+        self.abs_dy = Signal(signed(width))
+        self.sx = Signal(signed(width))
+        self.sy = Signal(signed(width))
+        self.err = Signal(signed(width))
 
+        # forward pielining
+        self.rdy2 = Signal()
+        self.rdy3 = Signal()
+        self.rdy4 = Signal()
+        self.rdy5 = Signal()
+
+        # stall detection (backward pipelining)
+        self.bubble1 = Signal()
+        self.bubble2 = Signal()
+        self.bubble3 = Signal()
+        self.bubble4 = Signal()
+        
         # Output FIFO.
         self.out_ready = Signal()
         self.out_valid = Signal()
@@ -65,11 +90,10 @@ class LineRasterizer(Elaboratable):
         sync += self.out_type.eq(OutPacketType.PIXEL)
 
         ### READING AND PLACING INTO FIFO
+        # stage 1
         with m.If(~self.fifo.w_rdy):
             pass # wait with reading input
         with m.Else():
-            # comb += self.out_x = self.out_fifo[0:self.width]
-            # comb += self.out_y = self.out_fifo[self.width:]
             
             sync += self.in_ready.eq(True)
             with m.If(self.in_valid & self.in_ready):
@@ -80,10 +104,39 @@ class LineRasterizer(Elaboratable):
                 sync += self.input_consumed.eq(True)
             with m.Else():
                 sync += self.input_consumed.eq(False)
-                
+            # stage 2    
             with m.If(self.input_consumed):    
-                sync += self.fifo.w_data.eq(Cat(self.in_x_consumed, self.in_y_consumed))
-                sync += self.fifo.w_en.eq(True)
+                # Bresengham algorithm.
+                # sync += self.fifo.w_data.eq(Cat(self.in_x_consumed, self.in_y_consumed))
+                # sync += self.fifo.w_en.eq(True)
+                with m.If(self.in_type_consumed == InPacketType.FIRST):
+                    sync += self.cur_x.eq(self.in_x_consumed)
+                    sync += self.cur_y.eq(self.in_y_consumed)
+                with m.Else():
+                    sync += self.dst_x.eq(self.in_x_consumed)
+                    sync += self.dst_y.eq(self.in_y_consumed)
+                    comb += self.abs_dx.eq(self.cur_x - self.dst_x)
+                    comb += self.abs_dy.eq(self.cur_y - self.dst_y)
+                    comb += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
+                    comb += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
+                    comb += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
+                    comb += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
+                    comb += self.err.eq(self.dx - self.dy)
+
+                    with m.If((self.cur_x == self.dst_x) & (self.cur_y == self.dst_y)):
+                        sync += self.out_type.eq(OutPacketType.LINE_END)
+                        sync += self.out_ready.eq(True)
+                        # TODO - lack of epilogue
+                    with m.Else():
+                        with m.FSM():
+                            with m.State('START'):
+                                sync += self.out_type.eq(OutPacketType.PIXEL)    
+                                sync += self.out_x.eq(cur_x)
+                                sync += self.out_y.eq(cur_y)
+                                m.next = 'END'
+                            with m.State('END'):
+                                pass
+
 
         ### WAITING FOR CONSUMER AND SENDING
         with m.If(self.fifo.r_rdy):
@@ -149,9 +202,9 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(12):
-            x = random.randrange(1 << rast.width)
-            y = random.randrange(1 << rast.width)
+        for i in range(2):
+            x = 4 * i + 2 # random.randrange(1 << rast.width)
+            y = 2 * i**2  # random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:
                 t = InPacketType.FIRST
             else:
