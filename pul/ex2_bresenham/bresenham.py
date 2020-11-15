@@ -61,16 +61,25 @@ class LineRasterizer(Elaboratable):
         self.err = Signal(signed(width))
 
         # forward pielining
-        self.rdy2 = Signal()
-        self.rdy3 = Signal()
-        self.rdy4 = Signal()
-        self.rdy5 = Signal()
+        # self.rdy2 = Signal()
+        # self.rdy3 = Signal()
+        # self.rdy4 = Signal()
+        # self.rdy5 = Signal()
 
         # stall detection (backward pipelining)
-        self.bubble1 = Signal()
-        self.bubble2 = Signal()
-        self.bubble3 = Signal()
-        self.bubble4 = Signal()
+        # self.bubble1 = Signal()
+        # self.bubble2 = Signal()
+        # self.bubble3 = Signal()
+        # self.bubble4 = Signal()
+
+        self.buf_valid = Signal()
+        self.buf_x = Signal(out_x.shape())
+        self.buf_y = Signal(out_y.shape())
+        self.buf_type = Signal(out_type.shape())
+
+        self.valid1 = Signal()
+        self.valid_last = Signal()
+
         
         # Output FIFO.
         self.out_ready = Signal()
@@ -87,75 +96,140 @@ class LineRasterizer(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
         
-        sync += self.out_type.eq(OutPacketType.PIXEL)
+        with m.If(self.buf_valid & ~self.valid_last):
+            # cannot consume input
+            m.d.comb += in_ready.eq(0)        
+        with m.Else(): # ~self.buf_valid | ~self.valid_last
+            comb += self.in_ready.eq(1)
 
-        ### READING AND PLACING INTO FIFO
-        # stage 1
-        with m.If(~self.fifo.w_rdy):
-            pass # wait with reading input
-        with m.Else():
-            
-            sync += self.in_ready.eq(True)
+
+            ### READING AND PLACING INTO FIFO
+            # stage 1
             with m.If(self.in_valid & self.in_ready):
                 # packet assumed as sent
                 sync += self.in_x_consumed.eq(self.in_x)
                 sync += self.in_y_consumed.eq(self.in_y)
                 sync += self.in_type_consumed.eq(self.in_type)
-                sync += self.input_consumed.eq(True)
+                sync += self.rdy2.eq(True)
             with m.Else():
-                sync += self.input_consumed.eq(False)
-            # stage 2    
-            with m.If(self.input_consumed):    
-                # Bresengham algorithm.
-                # sync += self.fifo.w_data.eq(Cat(self.in_x_consumed, self.in_y_consumed))
-                # sync += self.fifo.w_en.eq(True)
-                with m.If(self.in_type_consumed == InPacketType.FIRST):
-                    sync += self.cur_x.eq(self.in_x_consumed)
-                    sync += self.cur_y.eq(self.in_y_consumed)
+                sync += self.rdy2.eq(False)
+
+        # stage 2
+        with m.If(self.rdy2 & ~self.bubble2):
+            # Bresengham algorithm.
+            sync += self.in_x_consumed2.eq(self.in_x)
+            with m.If(self.in_type_consumed == InPacketType.FIRST):
+                sync += self.cur_x.eq(self.in_x_consumed)
+                sync += self.cur_y.eq(self.in_y_consumed)
+
+                sync += self.rdy3.eq(False)
+            with m.Else():
+                sync += self.dst_x.eq(self.in_x_consumed)
+                sync += self.dst_y.eq(self.in_y_consumed)
+                comb += self.abs_dx.eq(self.cur_x - self.dst_x)
+                comb += self.abs_dy.eq(self.cur_y - self.dst_y)
+                comb += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
+                comb += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
+                comb += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
+                comb += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
+                comb += self.err.eq(self.dx - self.dy)
+            
+                sync += self.rdy3.eq(True)
+
+        # stage 3
+        with m.If(self.rdy3 & ~self.bubble3):
+            with m.If((self.cur_x == self.dst_x) & (self.cur_y == self.dst_y)):
+                with m.If(self.out_ready):
+                    sync += self.out_type.eq(OutPacketType.LINE_END)
+                    sync += self.out_ready.eq(True)
+                    # packet assumed as sent
+                    sync += self.rdy4.eq(True)
                 with m.Else():
-                    sync += self.dst_x.eq(self.in_x_consumed)
-                    sync += self.dst_y.eq(self.in_y_consumed)
-                    comb += self.abs_dx.eq(self.cur_x - self.dst_x)
-                    comb += self.abs_dy.eq(self.cur_y - self.dst_y)
-                    comb += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
-                    comb += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
-                    comb += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
-                    comb += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
-                    comb += self.err.eq(self.dx - self.dy)
+                    sync += self.bubble2.eq(True)
+                    sync += self.bubble1.eq(True)
+                    sync += self.rdy4.eq(False)
+            with m.Else():
+                with m.FSM():
+                    with m.State('START'):
+                        sync += self.out_type.eq(OutPacketType.PIXEL)    
+                        sync += self.out_x.eq(cur_x)
+                        sync += self.out_y.eq(cur_y)
+                        m.next = 'END'
+                    with m.State('END'):
+                        pass
 
-                    with m.If((self.cur_x == self.dst_x) & (self.cur_y == self.dst_y)):
-                        sync += self.out_type.eq(OutPacketType.LINE_END)
-                        sync += self.out_ready.eq(True)
-                        # TODO - lack of epilogue
-                    with m.Else():
-                        with m.FSM():
-                            with m.State('START'):
-                                sync += self.out_type.eq(OutPacketType.PIXEL)    
-                                sync += self.out_x.eq(cur_x)
-                                sync += self.out_y.eq(cur_y)
-                                m.next = 'END'
-                            with m.State('END'):
-                                pass
+        # stage 3
+        with m.If(self.rdy3 & ~self.bubble3):
+            with m.If((self.cur_x == self.dst_x) & (self.cur_y == self.dst_y)):
+                sync += self.e2.eq(err + err)
+                sync += self.rdy4.eq(True)
+            with m.Else():
+                sync += self.rdy4.eq(False)
+            
+
+        # with m.If(~self.fifo.w_rdy):
+        #     pass # wait with reading input
+        # with m.Else():
+            
+        #     sync += self.in_ready.eq(True)
+        #     with m.If(self.in_valid & self.in_ready):
+        #         # packet assumed as sent
+        #         sync += self.in_x_consumed.eq(self.in_x)
+        #         sync += self.in_y_consumed.eq(self.in_y)
+        #         sync += self.in_type_consumed.eq(self.in_type)
+        #         sync += self.input_consumed.eq(True)
+        #     with m.Else():
+        #         sync += self.input_consumed.eq(False)
+        #     # stage 2    
+        #     with m.If(self.input_consumed):    
+        #         # Bresengham algorithm.
+        #         with m.If(self.in_type_consumed == InPacketType.FIRST):
+        #             sync += self.cur_x.eq(self.in_x_consumed)
+        #             sync += self.cur_y.eq(self.in_y_consumed)
+        #         with m.Else():
+        #             sync += self.dst_x.eq(self.in_x_consumed)
+        #             sync += self.dst_y.eq(self.in_y_consumed)
+        #             comb += self.abs_dx.eq(self.cur_x - self.dst_x)
+        #             comb += self.abs_dy.eq(self.cur_y - self.dst_y)
+        #             comb += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
+        #             comb += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
+        #             comb += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
+        #             comb += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
+        #             comb += self.err.eq(self.dx - self.dy)
+
+        #             with m.If((self.cur_x == self.dst_x) & (self.cur_y == self.dst_y)):
+        #                 sync += self.out_type.eq(OutPacketType.LINE_END)
+        #                 sync += self.out_ready.eq(True)
+        #                 # TODO - lack of epilogue
+        #             with m.Else():
+        #                 with m.FSM():
+        #                     with m.State('START'):
+        #                         sync += self.out_type.eq(OutPacketType.PIXEL)    
+        #                         sync += self.out_x.eq(cur_x)
+        #                         sync += self.out_y.eq(cur_y)
+        #                         m.next = 'END'
+        #                     with m.State('END'):
+        #                         pass
 
 
-        ### WAITING FOR CONSUMER AND SENDING
-        with m.If(self.fifo.r_rdy):
-            sync += self.fifo.r_en.eq(True)
-            sync += self.fifo_output_consumed.eq(True)
-        with m.Else():
-            sync += self.fifo_output_consumed.eq(False)
+        # ### WAITING FOR CONSUMER AND SENDING
+        # with m.If(self.fifo.r_rdy):
+        #     sync += self.fifo.r_en.eq(True)
+        #     sync += self.fifo_output_consumed.eq(True)
+        # with m.Else():
+        #     sync += self.fifo_output_consumed.eq(False)
 
-        with m.If(self.fifo_output_consumed):
-            sync += self.out_fifo.eq(self.fifo.r_data)
-            comb += self.out_x.eq(self.out_fifo[0:self.width])
-            comb += self.out_y.eq(self.out_fifo[self.width:])
-            sync += self.ready_to_dispatch.eq(True)
+        # with m.If(self.fifo_output_consumed):
+        #     sync += self.out_fifo.eq(self.fifo.r_data)
+        #     comb += self.out_x.eq(self.out_fifo[0:self.width])
+        #     comb += self.out_y.eq(self.out_fifo[self.width:])
+        #     sync += self.ready_to_dispatch.eq(True)
 
-        with m.If(self.ready_to_dispatch):
-            sync += self.out_valid.eq(True)
-            with m.If(self.out_valid & self.out_ready):
-                # packet assumed as sent
-                sync += self.ready_to_dispatch.eq(True)
+        # with m.If(self.ready_to_dispatch):
+        #     sync += self.out_valid.eq(True)
+        #     with m.If(self.out_valid & self.out_ready):
+        #         # packet assumed as sent
+        #         sync += self.ready_to_dispatch.eq(True)
 
         return m
 
