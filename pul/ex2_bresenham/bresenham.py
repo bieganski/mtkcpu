@@ -32,34 +32,47 @@ class LineRasterizer(Elaboratable):
         
         # Internals.
         # Bresenham help signals
-        self.cur_x = Signal(in_x.shape())
-        self.cur_y = Signal(in_y.shape())
-        self.dst_x = Signal(in_x.shape())
-        self.dst_y = Signal(in_y.shape())
-        self.dx = Signal(in_x.shape())
-        self.dy = Signal(in_y.shape())
-        self.abs_dx = Signal(signed(in_x.shape()))
-        self.abs_dy = Signal(signed(in_y.shape()))
-        self.sx = Signal(signed(in_x.shape()))
-        self.sy = Signal(signed(in_y.shape()))
-        self.err = Signal(signed(in_x.shape()))
-        self.e2 = Signal(signed(in_x.shape()))
+        self.cur_x = Signal(self.in_x.shape())
+        self.cur_y = Signal(self.in_y.shape())
+        self.dst_x = Signal(self.in_x.shape())
+        self.dst_y = Signal(self.in_y.shape())
+        self.dx = Signal(self.in_x.shape())
+        self.dy = Signal(self.in_y.shape())
+        self.abs_dx = Signal(signed(width))
+        self.abs_dy = Signal(signed(width))
+        self.sx = Signal(signed(width))
+        self.sy = Signal(signed(width))
+        self.err = Signal(signed(width))
 
-        self.x_last = Signal(in_x.shape())
-        self.y_last = Signal(in_x.shape())
-        self.type_last = Signal()
+        self.cur_x_3 = Signal(self.in_x.shape())
+        self.cur_y_3 = Signal(self.in_y.shape())
+        self.dst_x_3 = Signal(self.in_x.shape())
+        self.dst_y_3 = Signal(self.in_y.shape())
+        self.dx_3 = Signal(self.in_x.shape())
+        self.dy_3 = Signal(self.in_y.shape())
+        self.sx_3 = Signal(signed(width))
+        self.sy_3 = Signal(signed(width))
+        self.err_3 = Signal(signed(width))
+        self.e2 = Signal(signed(width))
+
+
+        self.x_last = Signal(self.in_x.shape())
+        self.y_last = Signal(self.in_x.shape())
+        self.type_last = Signal(self.in_type.shape())
+        
+        self.in_x_2 = Signal(self.in_x.shape())
+        self.in_y_2 = Signal(self.in_y.shape())
+        self.in_type_2 = Signal(self.in_type.shape())
+
+        self.read_done = Signal()
+        self.write_done = Signal()
 
         # Forward pielining.
         # reset value is important
         self.valid_1 = Signal(reset=False)
         self.valid_2 = Signal(reset=False)
         self.valid_3 = Signal(reset=False)
-
-        # Help buf signals.
-        self.buf_valid = Signal()
-        self.buf_x = Signal(out_x.shape())
-        self.buf_y = Signal(out_y.shape())
-        self.buf_type = Signal(out_type.shape())
+        self.valid_4 = Signal(reset=False)
 
         # enabled by sending LINE_END
         self.clock_enable = Signal(reset=True)
@@ -73,6 +86,13 @@ class LineRasterizer(Elaboratable):
         self.out_y = Signal(width)
 
         self.line_end = Signal()
+
+
+        # Help buf signals.
+        self.buf_valid = Signal()
+        self.buf_x = Signal(self.out_x.shape())
+        self.buf_y = Signal(self.out_y.shape())
+        self.buf_type = Signal(self.out_type.shape())
         
 
 
@@ -91,7 +111,7 @@ class LineRasterizer(Elaboratable):
         comb += self.write_done.eq(self.out_ready & self.out_valid)
         comb += self.line_end.eq((self.cur_x_3 == self.dst_x_3) & (self.cur_y_3 == self.dst_y_3))
 
-        # comb += self.start.eq((~self.buf_valid | ~self.ready_last))
+        comb += self.clock_enable.eq(self.write_done | ~self.buf_valid)
 
 
         with m.If(~self.clock_enable):
@@ -104,12 +124,12 @@ class LineRasterizer(Elaboratable):
                 # TODO shift values
             
             with m.If(self.valid_2):
-                with m.If(self.in_type2 == InPacketType.FIRST):
+                with m.If(self.in_type_2 == InPacketType.FIRST):
                     sync += self.cur_x.eq(self.in_x_2)
                     sync += self.cur_y.eq(self.in_y_2)
 
                     sync += self.valid_3.eq(False)
-                with m.Elif(self.in_type2 == InPacketType.NEXT):
+                with m.Elif(self.in_type_2 == InPacketType.NEXT):
                     sync += self.dst_x.eq(self.in_x_2)
                     sync += self.dst_y.eq(self.in_y_2)
                     
@@ -127,12 +147,12 @@ class LineRasterizer(Elaboratable):
             with m.If(self.valid_3):
                 with m.If(~self.out_ready):
                     with m.If(self.line_end):
-                        sync += buf_type.eq(OutPacketType.LINE_END)
-                        sync += buf_valid.eq(True)
+                        sync += self.buf_type.eq(OutPacketType.LINE_END)
+                        sync += self.buf_valid.eq(True)
                     with m.Else():
                         sync += self.buf_x.eq(self.x_last)
                         sync += self.buf_y.eq(self.y_last)
-                        sync += self.buf_type.eq(self.OutPacketType.PIXEL)
+                        sync += self.buf_type.eq(OutPacketType.PIXEL)
                         sync += self.buf_valid.eq(True)
                 with m.Else():
                     # got both valid and ready, result has been sent directly
@@ -141,95 +161,25 @@ class LineRasterizer(Elaboratable):
                         comb += self.valid_4.eq(False)
                     with m.Else():
                         sync += self.type_last.eq(OutPacketType.PIXEL)
-                        comb += self.valid_4.eq(False)
+                        comb += self.valid_4.eq(True)
 
-                    # TODO
-                    # jestem tutaj, zastanawiam się nad ostatnią fazą, a dokładnie nad 
-                    # comb += self.valid_4.eq(False)
-
-
-
-
-
-
-
-
-
-
-
-
-        with m.If(self.valid_4):
-            comb += self.e2.eq(self.err + self.err)
-            with m.If(self.e2 >= -self.dy_3):
-                sync += self.err_3.eq(self.err_3 - self.dy_3)
-                sync += self.cur_x_3.eq(self.cur_x_3 + self.sx_3)
-            with m.Elif(self.e2 <= self.dx):
-                sync += self.err_3.eq(self.err_3 + self.dx_3)
-                sync += self.cur_y_3.eq(self.cur_y_3 + self.sy_3)
-
-        # if data has been sent, we can inform stage 3 about it
-        comb += self.packet_sent.eq(Mux(self.out_ready & self.out_valid, True, False))
-        comb += self.line_end_sent.eq(self.packet_sent & Mux(self.buf_valid,
-                                                            self.out_type == OutPacketType.LINE_END,
-                                                            self.last_type == OutPacketType.LINE_END))
-
-        comb += self.line_end.eq(Mux((self.cur_x_3 == self.dst_x_3) & (self.cur_y_3 == self.dst_y_3), True, False))
-
-        with m.If(self.valid_3 & ~self.out_ready):
-            with m.If((self.line_end):
-                sync += buf_type.eq(OutPacketType.LINE_END)
-                sync += buf_valid.eq(True)    
-            with m.Else():
-                sync += buf_x.eq(self.cur_x_3)
-                sync += buf_y.eq(self.cur_y_3)
-                sync += buf_type.eq(self.OutPacketType.PIXEL)
-                sync += buf_valid.eq(True)
-
-
-        # TODO
-        
-        
-        with m.If(~self.start):
-            # cannot consume input
-            m.d.comb += in_ready.eq(0)
-        with m.Else(): # ~self.buf_valid | ~self.ready_last
-            # stage 1 - consuming input
-            # there is some place for new data, we can read
-            # TODO info about shifting pipeline
-            comb += self.in_ready.eq(True)
-            sync += self.valid_2.eq(True)
-
-            # stage 2 - calculating 'err'
-            with m.If(self.valid_2):
-                with m.If(self.in_type2 == InPacketType.FIRST):
-                    sync += self.cur_x.eq(self.in_x_2)
-                    sync += self.cur_y.eq(self.in_y_2)
-
-                    sync += self.valid_3.eq(False)
-                with m.Elif(self.in_type2 == InPacketType.NEXT):
-                    sync += self.dst_x.eq(self.in_x_2)
-                    sync += self.dst_y.eq(self.in_y_2)
-                    
-                    comb += self.abs_dx.eq(self.cur_x - self.dst_x)
-                    comb += self.abs_dy.eq(self.cur_y - self.dst_y)
-                    comb += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
-                    comb += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
-                    comb += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
-                    comb += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
-                    comb += self.err.eq(self.dx - self.dy)
-            
-                    sync += self.valid_3.eq(True)
-
+            with m.If(self.valid_4):
+                comb += self.e2.eq(self.err_3 + self.err_3)
+                with m.If(self.e2 >= -self.dy_3):
+                    sync += self.err_3.eq(self.err_3 - self.dy_3)
+                    sync += self.cur_x_3.eq(self.cur_x_3 + self.sx_3)
+                with m.Elif(self.e2 <= self.dx):
+                    sync += self.err_3.eq(self.err_3 + self.dx_3)
+                    sync += self.cur_y_3.eq(self.cur_y_3 + self.sy_3)
             # shifting pipeline stages variables
             sync += [
-                self.valid_2.eq(self.valid_buf),
-                self.valid_3.eq(self.valid_2),
-                self.valid_4.eq(self.valid_3),
-                self.valid_5.eq(self.valid_4),
+                # self.valid_2.eq(self.valid_buf),
+                # self.valid_3.eq(self.valid_2),
+                # self.valid_4.eq(self.valid_3),
 
-                self.in_x_1.eq(self.in_x),
-                self.in_y_1.eq(self.in_y),
-                self.in_type_1.eq(self.in_type),
+                self.in_x_2.eq(self.in_x),
+                self.in_y_2.eq(self.in_y),
+                self.in_type_2.eq(self.in_type),
 
                 self.err_3.eq(self.err),
                 self.cur_x_3.eq(self.cur_x),
@@ -240,7 +190,6 @@ class LineRasterizer(Elaboratable):
                 self.dy_3.eq(self.dy),
                 self.sx_3.eq(self.sx),
                 self.sy_3.eq(self.sy),
-
             ]
         return m
 
