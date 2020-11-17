@@ -55,22 +55,15 @@ class LineRasterizer(Elaboratable):
         self.err_3 = Signal(signed(width))
         self.e2 = Signal(signed(width))
 
-
-        self.x_last = Signal(self.in_x.shape())
-        self.y_last = Signal(self.in_x.shape())
-        self.type_last = Signal(self.in_type.shape())
-        
         self.in_x_2 = Signal(self.in_x.shape())
         self.in_y_2 = Signal(self.in_y.shape())
         self.in_type_2 = Signal(self.in_type.shape())
-
-        self.read_done = Signal()
-        self.write_done = Signal()
 
         # Forward pielining.
         # reset value is important
         self.valid_1 = Signal(reset=False)
         self.valid_2 = Signal(reset=False)
+        self.valid_22 = Signal(reset=False)
         self.valid_3 = Signal(reset=False)
         self.valid_4 = Signal(reset=False)
 
@@ -101,82 +94,50 @@ class LineRasterizer(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
 
-        comb += self.out_x.eq(Mux(self.buf_valid, self.buf_x, self.x_last))
-        comb += self.out_y.eq(Mux(self.buf_valid, self.buf_y, self.y_last))
-        comb += self.out_type.eq(Mux(self.buf_valid, self.buf_type, self.type_last))
+        comb += self.out_x.eq(Mux(self.buf_valid, self.buf_x, self.cur_x_3))
+        comb += self.out_y.eq(Mux(self.buf_valid, self.buf_y, self.cur_y_3))
+        # comb += self.out_type.eq(Mux(self.buf_valid, self.buf_type, self.type_last))
         comb += self.out_valid.eq(self.buf_valid | self.valid_3)
 
-        # help signals (aliases)
-        comb += self.read_done.eq(self.in_ready & self.in_valid)
-        comb += self.write_done.eq(self.out_ready & self.out_valid)
-        comb += self.line_end.eq((self.cur_x_3 == self.dst_x_3) & (self.cur_y_3 == self.dst_y_3))
+        comb += self.line_end.eq(self.valid_3 & ((self.cur_x_3 == self.dst_x_3) & (self.cur_y_3 == self.dst_y_3)))
 
-        comb += self.clock_enable.eq(self.write_done | ~self.buf_valid)
+        # comb += self.clock_enable.eq(self.write_done | ~self.buf_valid)
+        comb += self.in_ready.eq(self.clock_enable)
 
+        sync += self.valid_2.eq(self.in_valid & self.in_ready)
+        sync += self.valid_22.eq(self.valid_2)
+        sync += self.valid_3.eq(self.valid_22 & (self.in_type_2 == InPacketType.NEXT))
 
-        with m.If(~self.clock_enable):
-            comb += self.in_ready.eq(False)
-        with m.Else():
-            comb += self.in_ready.eq(True)
+        sync += self.clock_enable.eq(Mux(self.valid_3, 
+                                         self.line_end & self.out_ready, # line sent
+                                         True))
 
-            with m.If(self.read_done):
-                sync += self.valid_2.eq(True)
-                # TODO shift values
-            
+        with m.If(self.clock_enable):
+            # first stage handled at the very end (simply shifting input)
+
             with m.If(self.valid_2):
                 with m.If(self.in_type_2 == InPacketType.FIRST):
                     sync += self.cur_x.eq(self.in_x_2)
                     sync += self.cur_y.eq(self.in_y_2)
 
-                    sync += self.valid_3.eq(False)
                 with m.Elif(self.in_type_2 == InPacketType.NEXT):
-                    sync += self.dst_x.eq(self.in_x_2)
                     sync += self.dst_y.eq(self.in_y_2)
-                    
-                    comb += self.abs_dx.eq(self.cur_x - self.dst_x)
-                    comb += self.abs_dy.eq(self.cur_y - self.dst_y)
-                    comb += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
-                    comb += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
-                    comb += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
-                    comb += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
-                    comb += self.err.eq(self.dx - self.dy)
+                    sync += self.dst_x.eq(self.in_x_2)
             
-                    sync += self.valid_3.eq(True)
-                # TODO shift values
-            
-            with m.If(self.valid_3):
-                with m.If(~self.out_ready):
-                    with m.If(self.line_end):
-                        sync += self.buf_type.eq(OutPacketType.LINE_END)
-                        sync += self.buf_valid.eq(True)
-                    with m.Else():
-                        sync += self.buf_x.eq(self.x_last)
-                        sync += self.buf_y.eq(self.y_last)
-                        sync += self.buf_type.eq(OutPacketType.PIXEL)
-                        sync += self.buf_valid.eq(True)
-                with m.Else():
-                    # got both valid and ready, result has been sent directly
-                    with m.If(self.line_end):
-                        sync += self.type_last.eq(OutPacketType.LINE_END)
-                        comb += self.valid_4.eq(False)
-                    with m.Else():
-                        sync += self.type_last.eq(OutPacketType.PIXEL)
-                        comb += self.valid_4.eq(True)
+            with m.If(self.valid_22):
+                # need cur_x and cur_y already set
+                sync += self.abs_dx.eq(self.cur_x - self.dst_x)
+                sync += self.abs_dy.eq(self.cur_y - self.dst_y)
+                sync += self.dx.eq(Mux(self.abs_dx[-1], -self.abs_dx, self.abs_dx))
+                sync += self.dy.eq(Mux(self.abs_dy[-1], -self.abs_dy, self.abs_dy))
+                sync += self.sx.eq(Mux(self.dst_x > self.cur_x, 1, -1))
+                sync += self.sy.eq(Mux(self.dst_y > self.cur_y, 1, -1))
+                sync += self.err.eq(self.dx - self.dy)
 
-            with m.If(self.valid_4):
-                comb += self.e2.eq(self.err_3 + self.err_3)
-                with m.If(self.e2 >= -self.dy_3):
-                    sync += self.err_3.eq(self.err_3 - self.dy_3)
-                    sync += self.cur_x_3.eq(self.cur_x_3 + self.sx_3)
-                with m.Elif(self.e2 <= self.dx):
-                    sync += self.err_3.eq(self.err_3 + self.dx_3)
-                    sync += self.cur_y_3.eq(self.cur_y_3 + self.sy_3)
+                    
+            
             # shifting pipeline stages variables
             sync += [
-                # self.valid_2.eq(self.valid_buf),
-                # self.valid_3.eq(self.valid_2),
-                # self.valid_4.eq(self.valid_3),
-
                 self.in_x_2.eq(self.in_x),
                 self.in_y_2.eq(self.in_y),
                 self.in_type_2.eq(self.in_type),
@@ -191,9 +152,32 @@ class LineRasterizer(Elaboratable):
                 self.sx_3.eq(self.sx),
                 self.sy_3.eq(self.sy),
             ]
+
+        # on top level - I'm setting 'clock_enable' signal
+        with m.If(self.valid_3):
+            # sync += self.clock_enable.eq(Mux(self.out_ready, self.line_end, False))
+            with m.If(~self.out_ready):
+                comb += self.valid_4.eq(False)
+            with m.Elif(self.out_ready):
+                # packet sent from queue or from cur_{x|y}_3
+                with m.If(self.line_end):
+                    comb += self.out_type.eq(OutPacketType.LINE_END)
+                    comb += self.valid_4.eq(False)
+                with m.Else():
+                    comb += self.out_type.eq(OutPacketType.PIXEL)
+                    comb += self.valid_4.eq(True)
+
+        with m.If(self.valid_4):
+            comb += self.e2.eq(self.err_3 * 2)
+            with m.If(self.e2 >= -self.dy_3):
+                sync += self.err_3.eq(self.err_3 - self.dy_3)
+                sync += self.cur_x_3.eq(self.cur_x_3 + self.sx_3)
+            with m.If(self.e2 <= self.dx_3):
+                sync += self.err_3.eq(self.err_3 + self.dx_3)
+                sync += self.cur_y_3.eq(self.cur_y_3 + self.sy_3)
+                 
         return m
-
-
+        
 def bresenham(x1, y1, x2, y2):
     dx = abs(x1 - x2)
     dy = abs(y1 - y2)
@@ -203,12 +187,32 @@ def bresenham(x1, y1, x2, y2):
     while (x1, y1) != (x2, y2):
         yield x1, y1
         e2 = err * 2
+        print(f"e2: {e2}, dx: {dx}, dy:{dy}")
         if e2 >= -dy:
             err -= dy
             x1 += sx
         if e2 <= dx:
             err += dx
             y1 += sy
+
+def bresenham2(x1, y1, x2, y2):
+    res = []
+    dx = abs(x1 - x2)
+    dy = abs(y1 - y2)
+    sx = 1 if x2 > x1 else -1
+    sy = 1 if y2 > y1 else -1
+    err = dx - dy
+    while (x1, y1) != (x2, y2):
+        res.append((x1, y1))
+        e2 = err * 2
+        print(f"e2: {e2}, dx: {dx}, dy:{dy}")
+        if e2 >= -dy:
+            err -= dy
+            x1 += sx
+        if e2 <= dx:
+            err += dx
+            y1 += sy
+    return res
 
 
 if __name__ == '__main__':
@@ -277,7 +281,14 @@ if __name__ == '__main__':
             for pair in zip(in_data, in_data[1:]):
                     print_line(*pair)
             yield
-            idx = 0
+            yield
+            yield
+            yield rast.in_valid.eq(1)
+            yield rast.in_type.eq(in_data[0][0])
+            yield rast.in_x.eq(in_data[0][1])
+            yield rast.in_y.eq(in_data[0][2])
+            yield
+            idx = 1
             while idx < len(in_data):
                 if random.randrange(8) == 0:
                     yield rast.in_valid.eq(0)
@@ -296,6 +307,8 @@ if __name__ == '__main__':
             yield
             yield Settle()
             idx = 0
+            # print(out_data)
+            # exit
             while idx < len(out_data):
                 if random.randrange(8) == 0:
                     yield rast.out_ready.eq(0)
