@@ -111,7 +111,7 @@ class LineRasterizer(Elaboratable):
         e2 = Signal(signed(self.width))
 
         # TODO
-        sync += self.clock_enable.eq(True)
+        # sync += self.clock_enable.eq(True)
 
         a = Signal()
 
@@ -125,6 +125,8 @@ class LineRasterizer(Elaboratable):
         # valid_4
 
         with m.If(self.clock_enable):
+            
+            # keep in mind those rules
             sync += [
                 self.valid_2.eq(self.in_ready & self.in_valid),
                 self.valid_3.eq(self.valid_2 & self.in_type_2 == InPacketType.NEXT),
@@ -136,16 +138,16 @@ class LineRasterizer(Elaboratable):
                 self.in_y_2.eq(self.in_y),
                 self.in_type_2.eq(self.in_type),
 
-                self.cur_x_3.eq(self.cur_x_2),
+                # self.cur_x_3.eq(self.cur_x_2),
                 # self.cur_y_3.eq(self.cur_y_2),
                 # self.dst_x_3.eq(self.dst_x_2),
-                self.dst_y_3.eq(self.dst_y_2),
+                # self.dst_y_3.eq(self.dst_y_2),
                 self.in_x_3.eq(self.in_x_2),
                 self.in_y_3.eq(self.in_y_2),
                 self.in_type_3.eq(self.in_type_2),
 
-                self.cur_x_4.eq(self.cur_x_3),
-                self.cur_y_4.eq(self.cur_y_3),
+                # self.cur_x_4.eq(self.cur_x_3),
+                # self.cur_y_4.eq(self.cur_y_3),
                 self.dst_x_4.eq(self.dst_x_3),
                 self.dst_y_4.eq(self.dst_y_3),
                 self.dx_4.eq(self.dx_3),
@@ -159,8 +161,8 @@ class LineRasterizer(Elaboratable):
 
             with m.If(self.valid_2):
                 with m.If(self.in_type_2 == InPacketType.FIRST):
-                    sync += self.cur_x_2.eq(self.in_x_2)
-                    sync += self.cur_y_2.eq(self.in_y_2)
+                    sync += self.cur_x_3.eq(self.in_x_2)
+                    sync += self.cur_y_3.eq(self.in_y_2)
 
                 with m.Elif(self.in_type_2 == InPacketType.NEXT):
                     sync += self.dst_y_3.eq(self.in_y_2)
@@ -174,13 +176,17 @@ class LineRasterizer(Elaboratable):
                 comb += self.sx_3.eq(Mux(self.in_x_3 > self.cur_x_3, 1, -1))
                 comb += self.sy_3.eq(Mux(self.in_y_3 > self.cur_y_3, 1, -1))
                 comb += self.err_3.eq(self.dx_3 - self.dy_3)
+                
+                # i started doint random changes here...
+                sync += self.cur_x_4.eq(self.cur_x_3),
+                sync += self.cur_y_4.eq(self.cur_y_3),
             
         # out of global clock_enable
         with m.If(self.valid_4):
             comb += self.line_end.eq((self.cur_x_4 == self.dst_x_4) & (self.cur_y_4 == self.dst_y_4))
 
             comb += self.out_valid.eq(True)
-            sync += self.clock_enable.eq(self.out_ready & self.line_end)
+            comb += self.clock_enable.eq(self.out_ready & self.line_end)
 
             with m.If(self.out_ready & ~self.line_end):
                 comb += e2.eq(self.err_4 * 2)
@@ -279,7 +285,7 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(2):
+        for i in range(3):
             x = 4 * i + 2 # random.randrange(1 << rast.width)
             y = 2 * i**2  # random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:

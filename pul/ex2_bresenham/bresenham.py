@@ -264,7 +264,7 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(2):
+        for i in range(4):
             x = 4 * i + 2 # random.randrange(1 << rast.width)
             y = 2 * i**2  # random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:
