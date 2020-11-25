@@ -3,9 +3,6 @@
 from nmigen import *
 
 
-WIDTH = 640
-HEIGHT = 480
-
 class Mod(Elaboratable):
     def __init__(self, w):
         
@@ -13,14 +10,37 @@ class Mod(Elaboratable):
         self.g = Signal(range(16))
         self.b = Signal(range(16))
 
-        self.vsync = Signal()
-        self.hsync = Signal()
+        self.vsync = Signal(reset=1)
+        self.hsync = Signal(reset=1)
         
         self.in_clk = Signal() # from the board, 50 mhz
         self.out_clk = Signal() # VGA output, 25 mhz
 
-        self.w_pos = Signal(range(WIDTH))
-        self.h_pos = Signal(range(HEIGHT))
+        # http://martin.hinner.info/vga/timing.html
+        # 640x480, 60 hz
+        self.WIDTH = Const(640)
+        self.HEIGHT = Const(4)
+
+        self.H_PORCH_F = Const(16)
+        self.H_SYNC_PULSE_F = Const(96) 
+        self.H_PORCH_B = Const(48)
+
+        self.V_PORCH_F = Const(11)
+        self.V_SYNC_PULSE_F = Const(2)
+        self.V_PORCH_B = Const(31)
+
+        self.VSYNC_ACTIVE = Const(0)
+        self.HSYNC_ACTIVE = Const(0)
+
+        self.w_pos = Signal(
+            (self.WIDTH + self.H_PORCH_F + self.H_SYNC_PULSE_F + self.H_PORCH_F).shape(), 
+            reset=0)
+        self.h_pos = Signal(
+            (self.HEIGHT + self.V_PORCH_F + self.V_SYNC_PULSE_F + self.V_PORCH_F).shape(), 
+            reset=0)
+
+        self.total_width = Signal(self.w_pos.shape())
+        self.total_height = Signal(self.h_pos.shape())
 
         self.rst = Signal()
 
@@ -28,14 +48,50 @@ class Mod(Elaboratable):
     def elaborate(self, platform):
         m = Module()
         comb = m.d.comb
-        sync = m.d.sync
+        sync = m.d.sync # TODO wrong domain
 
         comb += [
-            self.hsync.eq(~ (self.w_pos <= WIDTH)),
-            self.vsync.eq(~ (self.h_pos <= HEIGHT)),
+            self.total_width.eq(self.WIDTH + self.H_PORCH_F + self.H_SYNC_PULSE_F + self.H_PORCH_F),
+            self.total_height.eq(self.HEIGHT + self.V_PORCH_F + self.V_SYNC_PULSE_F + self.V_PORCH_F),
+            
+            # TODO drugi cond byc moze +-1
+            self.hsync.eq(Mux(
+                (self.w_pos >= self.WIDTH + self.H_PORCH_F) & (self.w_pos < self.total_width - self.H_PORCH_B),
+                self.HSYNC_ACTIVE,
+                ~self.HSYNC_ACTIVE
+            )),
+            self.vsync.eq(Mux(
+                (self.h_pos >= self.HEIGHT + self.V_PORCH_F) & (self.h_pos < self.total_height - self.V_PORCH_B),
+                self.HSYNC_ACTIVE,
+                ~self.HSYNC_ACTIVE
+            )),
         ]
 
-        sync += self.rst.eq(True)
+        # hsync
+        with m.If(self.w_pos < self.total_width - 1):
+            # line end
+            sync += self.w_pos.eq(self.w_pos + 1)
+        with m.Else():
+            sync += self.w_pos.eq(0)
+
+        # vsync
+        with m.If(self.w_pos == self.WIDTH - 1):
+            # line end
+            with m.If(self.h_pos < self.HEIGHT - 1):
+                sync += self.h_pos.eq(self.h_pos + 1)
+            with m.Else():
+                sync += self.h_pos.eq(0)
+
+
+        with m.If(self.w_pos < (self.WIDTH >> 1)):
+            sync += self.r.eq(15)
+            sync += self.g.eq(0)
+            sync += self.b.eq(0)
+        with m.Else():
+            sync += self.r.eq(0)
+            sync += self.g.eq(15)
+            sync += self.b.eq(0)
+
         return m
 
 
@@ -61,7 +117,7 @@ if __name__ == "__main__":
         # assert not (yield m.busy)
         # yield m.en.eq(1)
         # for i in range(26000000):
-        for i in range(22):
+        for i in range(641 * 4):
             yield
         # a = yield m.out
         # print(a)
