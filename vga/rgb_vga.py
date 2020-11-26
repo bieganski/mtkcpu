@@ -39,8 +39,8 @@ class Mod(Elaboratable):
             (self.HEIGHT + self.V_PORCH_F + self.V_SYNC_PULSE_F + self.V_PORCH_F).shape(), 
             reset=0)
 
-        self.total_width = Signal(self.w_pos.shape())
-        self.total_height = Signal(self.h_pos.shape())
+        self.total_width = Signal(self.w_pos.shape()) # 640 + 16 + 96 + 48 = (800)
+        self.total_height = Signal(self.h_pos.shape()) # 4 + 11 + 2 + 31 = (48), normally with 480 it's (524) 
 
         self.rst = Signal()
 
@@ -51,8 +51,8 @@ class Mod(Elaboratable):
         sync = m.d.sync # TODO wrong domain
 
         comb += [
-            self.total_width.eq(self.WIDTH + self.H_PORCH_F + self.H_SYNC_PULSE_F + self.H_PORCH_F),
-            self.total_height.eq(self.HEIGHT + self.V_PORCH_F + self.V_SYNC_PULSE_F + self.V_PORCH_F),
+            self.total_width.eq(self.WIDTH + self.H_PORCH_F + self.H_SYNC_PULSE_F + self.H_PORCH_B),
+            self.total_height.eq(self.HEIGHT + self.V_PORCH_F + self.V_SYNC_PULSE_F + self.V_PORCH_B),
             
             # TODO drugi cond byc moze +-1
             self.hsync.eq(Mux(
@@ -62,8 +62,8 @@ class Mod(Elaboratable):
             )),
             self.vsync.eq(Mux(
                 (self.h_pos >= self.HEIGHT + self.V_PORCH_F) & (self.h_pos < self.total_height - self.V_PORCH_B),
-                self.HSYNC_ACTIVE,
-                ~self.HSYNC_ACTIVE
+                self.VSYNC_ACTIVE,
+                ~self.VSYNC_ACTIVE
             )),
         ]
 
@@ -77,7 +77,7 @@ class Mod(Elaboratable):
         # vsync
         with m.If(self.w_pos == self.WIDTH - 1):
             # line end
-            with m.If(self.h_pos < self.HEIGHT - 1):
+            with m.If(self.h_pos < self.total_height - 1):
                 sync += self.h_pos.eq(self.h_pos + 1)
             with m.Else():
                 sync += self.h_pos.eq(0)
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         # assert not (yield m.busy)
         # yield m.en.eq(1)
         # for i in range(26000000):
-        for i in range(641 * 4):
+        for i in range(641 * 4 + 40000):
             yield
         # a = yield m.out
         # print(a)
