@@ -68,11 +68,11 @@ class LineRasterizer(Elaboratable):
 
         self.in_x_2 = Signal(self.in_x.shape())
         self.in_y_2 = Signal(self.in_y.shape())
-        self.in_type_2 = Signal(self.in_type.shape())
+        self.in_type_2 = Signal(InPacketType)
 
         self.in_x_3 = Signal(self.in_x.shape())
         self.in_y_3 = Signal(self.in_y.shape())
-        self.in_type_3 = Signal(self.in_type.shape())
+        self.in_type_3 = Signal(InPacketType)
 
         # Forward pielining.
         # reset value is important
@@ -93,6 +93,8 @@ class LineRasterizer(Elaboratable):
         self.out_y = Signal(width)
 
         self.line_end = Signal()
+
+        self.first_next = Signal(reset=True)
 
 
         # Help buf signals.
@@ -146,14 +148,14 @@ class LineRasterizer(Elaboratable):
                 self.in_y_3.eq(self.in_y_2),
                 self.in_type_3.eq(self.in_type_2),
 
-                # self.cur_x_4.eq(self.cur_x_3),
-                # self.cur_y_4.eq(self.cur_y_3),
+                # cur_{x/y}_4 set below conditionally
                 self.dst_x_4.eq(self.dst_x_3),
                 self.dst_y_4.eq(self.dst_y_3),
                 self.dx_4.eq(self.dx_3),
                 self.dy_4.eq(self.dy_3),
                 self.sx_4.eq(self.sx_3),
                 self.sy_4.eq(self.sy_3),
+                self.err_4.eq(self.err_3),
             ]
 
             with m.If(self.in_ready):
@@ -163,6 +165,7 @@ class LineRasterizer(Elaboratable):
                 with m.If(self.in_type_2 == InPacketType.FIRST):
                     sync += self.cur_x_3.eq(self.in_x_2)
                     sync += self.cur_y_3.eq(self.in_y_2)
+                    sync += self.first_next.eq(True)
 
                 with m.Elif(self.in_type_2 == InPacketType.NEXT):
                     sync += self.dst_y_3.eq(self.in_y_2)
@@ -176,11 +179,18 @@ class LineRasterizer(Elaboratable):
                 comb += self.sx_3.eq(Mux(self.in_x_3 > self.cur_x_3, 1, -1))
                 comb += self.sy_3.eq(Mux(self.in_y_3 > self.cur_y_3, 1, -1))
                 comb += self.err_3.eq(self.dx_3 - self.dy_3)
-                
-                # i started doint random changes here...
-                sync += self.cur_x_4.eq(self.cur_x_3),
-                sync += self.cur_y_4.eq(self.cur_y_3),
-            
+
+                with m.If(self.first_next):
+                    sync += [
+                        self.cur_x_4.eq(self.cur_x_3),
+                        self.cur_y_4.eq(self.cur_y_3),
+                        self.first_next.eq(False)
+                    ]
+
+                # with m.If(self.in_type_3 == InPacketType.FIRST):
+                # with m.Elif(self.in_type_3 == InPacketType.NEXT):
+                    
+   
         # out of global clock_enable
         with m.If(self.valid_4):
             comb += self.line_end.eq((self.cur_x_4 == self.dst_x_4) & (self.cur_y_4 == self.dst_y_4))
@@ -190,10 +200,15 @@ class LineRasterizer(Elaboratable):
 
             with m.If(self.out_ready & ~self.line_end):
                 comb += e2.eq(self.err_4 * 2)
-                with m.If(e2 >= -self.dy_4):
+                with m.If((e2 >= -self.dy_4) & (e2 <= self.dx_4)):
+                    # FIXME can we better?
+                    sync += self.err_4.eq(self.err_4 - self.dy_4 + self.dx_4)
+                    sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
+                    sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
+                with m.Elif(e2 >= -self.dy_4):
                     sync += self.err_4.eq(self.err_4 - self.dy_4)
                     sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
-                with m.If(e2 <= self.dx_4):
+                with m.Elif(e2 <= self.dx_4):
                     sync += self.err_4.eq(self.err_4 + self.dx_4)
                     sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
 
@@ -232,7 +247,7 @@ def bresenham(x1, y1, x2, y2):
     while (x1, y1) != (x2, y2):
         yield x1, y1
         e2 = err * 2
-        print(f"e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy}")
+        print(f"e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy} CUR(x,y) = =({x1}, {y1})")
         if e2 >= -dy:
             err -= dy
             x1 += sx
@@ -250,7 +265,7 @@ def bresenham2(x1, y1, x2, y2):
     while (x1, y1) != (x2, y2):
         res.append((x1, y1))
         e2 = err * 2
-        print(f"e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy}")
+        print(f"e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy} CUR(x,y) =({x1}, {y1})")
         if e2 >= -dy:
             err -= dy
             x1 += sx
@@ -365,6 +380,7 @@ if __name__ == '__main__':
                         ot = OutPacketType((yield rast.out_type))
                         ox = yield rast.out_x
                         oy = yield rast.out_y
+                        print("(", ot, ox, oy, ")")
                         if out_data[idx] == OutPacketType.LINE_END:
                             if ot != OutPacketType.LINE_END:
                                 print(f'FAIL {idx} — expected LINE_END, got PIXEL {ox} {oy}')
