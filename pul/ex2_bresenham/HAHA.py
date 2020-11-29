@@ -28,43 +28,32 @@ class LineRasterizer(Elaboratable):
         # Coordinates.
         self.in_x = Signal(width)
         self.in_y = Signal(width)
-
         
-        # Internals.
-        # Bresenham help signals
-        self.cur_x_2 = Signal(self.in_x.shape())
-        self.cur_y_2 = Signal(self.in_y.shape())
-        self.dst_x_2 = Signal(self.in_x.shape())
-        self.dst_y_2 = Signal(self.in_y.shape())
-        self.dx_2 = Signal(self.in_x.shape())
-        self.dy_2 = Signal(self.in_y.shape())
-        self.abs_dx_3 = Signal(signed(width))
-        self.abs_dy_3 = Signal(signed(width))
-        self.sx_2 = Signal(signed(width))
-        self.sy_2 = Signal(signed(width))
-        self.err_2 = Signal(signed(width))
+        # Internals (help signals)
+        # TODO +1 is enough I guess
+        self.abs_dx_3 = Signal(signed(width + 2))
+        self.abs_dy_3 = Signal(signed(width + 2))
 
         self.cur_x_3 = Signal(self.in_x.shape())
         self.cur_y_3 = Signal(self.in_y.shape())
         self.dst_x_3 = Signal(self.in_x.shape())
         self.dst_y_3 = Signal(self.in_y.shape())
-        self.dx_3 = Signal(self.in_x.shape())
-        self.dy_3 = Signal(self.in_y.shape())
-        self.sx_3 = Signal(signed(width))
-        self.sy_3 = Signal(signed(width))
-        self.err_3 = Signal(signed(width))
-        self.e2 = Signal(signed(width))
+        self.dx_3 = Signal(width)
+        self.dy_3 = Signal(width)
+        self.sx_3 = Signal(signed(2))
+        self.sy_3 = Signal(signed(2))
+        self.err_3 = Signal(signed(width + 2))
+        self.e2 = Signal(signed(width + 3))
 
         self.cur_x_4 = Signal(self.in_x.shape())
         self.cur_y_4 = Signal(self.in_y.shape())
         self.dst_x_4 = Signal(self.in_x.shape())
         self.dst_y_4 = Signal(self.in_y.shape())
-        self.dx_4 = Signal(self.in_x.shape())
-        self.dy_4 = Signal(self.in_y.shape())
-        self.sx_4 = Signal(signed(width))
-        self.sy_4 = Signal(signed(width))
-        self.err_4 = Signal(signed(width))
-        self.e2_last = Signal(signed(width))
+        self.dx_4 = Signal(width)
+        self.dy_4 = Signal(width)
+        self.sx_4 = Signal(signed(2))
+        self.sy_4 = Signal(signed(2))
+        self.err_4 = Signal(signed(width + 3))
 
         self.in_x_2 = Signal(self.in_x.shape())
         self.in_y_2 = Signal(self.in_y.shape())
@@ -110,15 +99,6 @@ class LineRasterizer(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
 
-        e2 = Signal(signed(self.width))
-
-        # TODO
-        # sync += self.clock_enable.eq(True)
-
-        a = Signal()
-
-        comb += a.eq(self.in_valid)
-
         comb += [
             self.in_ready.eq(self.clock_enable)
         ]
@@ -140,10 +120,6 @@ class LineRasterizer(Elaboratable):
                 self.in_y_2.eq(self.in_y),
                 self.in_type_2.eq(self.in_type),
 
-                # self.cur_x_3.eq(self.cur_x_2),
-                # self.cur_y_3.eq(self.cur_y_2),
-                # self.dst_x_3.eq(self.dst_x_2),
-                # self.dst_y_3.eq(self.dst_y_2),
                 self.in_x_3.eq(self.in_x_2),
                 self.in_y_3.eq(self.in_y_2),
                 self.in_type_3.eq(self.in_type_2),
@@ -203,8 +179,8 @@ class LineRasterizer(Elaboratable):
             # sync += self.cur_y_3.eq(self.cur_y_4)
 
             with m.If(self.out_ready & ~self.line_end):
-                comb += e2.eq(self.err_4 * 2)
-                with m.If((e2 >= -self.dy_4) & (e2 <= self.dx_4)):
+                comb += self.e2.eq(self.err_4 * 2)
+                with m.If((self.e2 >= -self.dy_4) & (self.e2 <= self.dx_4)):
                     # FIXME can we better?
                     sync += self.err_4.eq(self.err_4 - self.dy_4 + self.dx_4)
                     sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
@@ -213,13 +189,13 @@ class LineRasterizer(Elaboratable):
                     # TODO if ok let's add comb
                     sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
                     sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
-                with m.Elif(e2 >= -self.dy_4):
+                with m.Elif(self.e2 >= -self.dy_4):
                     sync += self.err_4.eq(self.err_4 - self.dy_4)
                     sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
 
                     sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
                     
-                with m.Elif(e2 <= self.dx_4):
+                with m.Elif(self.e2 <= self.dx_4):
                     sync += self.err_4.eq(self.err_4 + self.dx_4)
                     sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
 
