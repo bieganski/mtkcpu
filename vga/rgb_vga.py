@@ -14,7 +14,7 @@ class Mod(Elaboratable):
         self.hsync = Signal(reset=1)
         
         self.in_clk = Signal() # from the board, 50 mhz
-        self.out_clk = Signal() # VGA output, 25 mhz
+        # self.out_clk = Signal() # VGA output, 25 mhz
 
         # http://martin.hinner.info/vga/timing.html
         # 640x480, 60 hz
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     m = Mod(4)
 
     ports = [
-        m.out_clk,
+        # m.out_clk,
         m.r,
         m.g,
         m.b,
@@ -123,11 +123,6 @@ if __name__ == "__main__":
         # print(a)
         # assert 10 == (yield m.out)
 
-    sim.add_sync_process(test)
-    with sim.write_vcd('mod.vcd'):
-        sim.run()
-        print("=== OK, sim done")
-
     from nmigen.back import rtlil
     a = open("mod.il", "w")
     a.write(rtlil.convert(m, ports=ports))
@@ -137,3 +132,8 @@ if __name__ == "__main__":
     a = open("mod.v", "w")
     a.write(verilog.convert(m, ports=ports))
     print("=== OK, mod.v written")
+
+    sim.add_sync_process(test)
+    with sim.write_vcd('mod.vcd'):
+        sim.run()
+        print("=== OK, sim done")

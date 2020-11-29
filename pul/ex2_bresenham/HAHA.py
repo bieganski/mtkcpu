@@ -198,6 +198,10 @@ class LineRasterizer(Elaboratable):
             comb += self.out_valid.eq(True)
             comb += self.clock_enable.eq(self.out_ready & self.line_end)
 
+            # backpropagation
+            # sync += self.cur_x_3.eq(self.cur_x_4)
+            # sync += self.cur_y_3.eq(self.cur_y_4)
+
             with m.If(self.out_ready & ~self.line_end):
                 comb += e2.eq(self.err_4 * 2)
                 with m.If((e2 >= -self.dy_4) & (e2 <= self.dx_4)):
@@ -205,12 +209,21 @@ class LineRasterizer(Elaboratable):
                     sync += self.err_4.eq(self.err_4 - self.dy_4 + self.dx_4)
                     sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
                     sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
+
+                    # TODO if ok let's add comb
+                    sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
+                    sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
                 with m.Elif(e2 >= -self.dy_4):
                     sync += self.err_4.eq(self.err_4 - self.dy_4)
                     sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
+
+                    sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
+                    
                 with m.Elif(e2 <= self.dx_4):
                     sync += self.err_4.eq(self.err_4 + self.dx_4)
                     sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
+
+                    sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
 
                 
         comb += self.out_x.eq(self.cur_x_4)
