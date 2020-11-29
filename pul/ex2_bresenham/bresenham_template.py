@@ -45,7 +45,7 @@ class LineRasterizer(Elaboratable):
         return m
 '''
 
-show_first_n = 10
+show_first_n = 150
 def bresenham(x1, y1, x2, y2):
     dx = abs(x1 - x2)
     dy = abs(y1 - y2)
@@ -58,7 +58,7 @@ def bresenham(x1, y1, x2, y2):
         e2 = err * 2
         if show_first_n > 0:
             show_first_n -= 1
-            print(f"lol: {show_first_n}, e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy} CUR(x,y) = =({x1}, {y1})")
+            print(f"e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy} CUR(x,y) = =({x1}, {y1})")
         if e2 >= -dy:
             err -= dy
             x1 += sx
@@ -92,7 +92,7 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(5):
+        for i in range(7):
             x = random.randrange(1 << rast.width)
             y = random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:
@@ -138,7 +138,7 @@ if __name__ == '__main__':
                         ot = OutPacketType((yield rast.out_type))
                         ox = yield rast.out_x
                         oy = yield rast.out_y
-                        print("(", ot, ox, oy, ")")
+                        print("got (", ot, ox, oy, ")", "expected", out_data[idx] )
                         if out_data[idx] == OutPacketType.LINE_END:
                             if ot != OutPacketType.LINE_END:
                                 print(f'FAIL {idx} — expected LINE_END, got PIXEL {ox} {oy}')

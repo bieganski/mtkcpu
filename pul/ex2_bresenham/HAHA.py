@@ -85,6 +85,8 @@ class LineRasterizer(Elaboratable):
 
         self.first_next = Signal(reset=True)
 
+        self.DEBUG_CTR = Signal(range(1000), reset=1)
+
 
         # Help buf signals.
         self.buf_valid = Signal()
@@ -163,10 +165,6 @@ class LineRasterizer(Elaboratable):
                         self.first_next.eq(False)
                     ]
 
-                # with m.If(self.in_type_3 == InPacketType.FIRST):
-                # with m.Elif(self.in_type_3 == InPacketType.NEXT):
-                    
-   
         # out of global clock_enable
         with m.If(self.valid_4):
             comb += self.line_end.eq((self.cur_x_4 == self.dst_x_4) & (self.cur_y_4 == self.dst_y_4))
@@ -177,6 +175,8 @@ class LineRasterizer(Elaboratable):
             # backpropagation
             # sync += self.cur_x_3.eq(self.cur_x_4)
             # sync += self.cur_y_3.eq(self.cur_y_4)
+            with m.If(self.out_ready):
+                sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 
             with m.If(self.out_ready & ~self.line_end):
                 comb += self.e2.eq(self.err_4 * 2)
@@ -210,21 +210,6 @@ class LineRasterizer(Elaboratable):
                                     OutPacketType.PIXEL,
                                     ))
         return m
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def bresenham(x1, y1, x2, y2):
