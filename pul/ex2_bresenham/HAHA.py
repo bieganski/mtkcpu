@@ -83,7 +83,7 @@ class LineRasterizer(Elaboratable):
 
         self.line_end = Signal()
 
-        self.first_next = Signal(reset=True)
+        self.pos_reset = Signal(reset=True)
 
         self.DEBUG_CTR = Signal(range(1000), reset=1)
 
@@ -143,26 +143,39 @@ class LineRasterizer(Elaboratable):
                 with m.If(self.in_type_2 == InPacketType.FIRST):
                     sync += self.cur_x_3.eq(self.in_x_2)
                     sync += self.cur_y_3.eq(self.in_y_2)
-                    sync += self.first_next.eq(True)
+                    sync += self.pos_reset.eq(True)
 
                 with m.Elif(self.in_type_2 == InPacketType.NEXT):
                     sync += self.dst_y_3.eq(self.in_y_2)
                     sync += self.dst_x_3.eq(self.in_x_2)
             
             with m.If(self.valid_3):
-                comb += self.abs_dx_3.eq(self.cur_x_3 - self.in_x_3)
-                comb += self.abs_dy_3.eq(self.cur_y_3 - self.in_y_3)
+                cur_x = Signal(self.cur_x_3.shape())
+                cur_y = Signal(self.cur_y_3.shape())
+                comb += cur_x.eq(Mux(
+                    self.pos_reset, 
+                    self.cur_x_3,
+                    self.cur_x_4,
+                ))
+                comb += cur_y.eq(Mux(
+                    self.pos_reset, 
+                    self.cur_y_3,
+                    self.cur_y_4,
+                ))
+
+                comb += self.abs_dx_3.eq(cur_x - self.in_x_3)
+                comb += self.abs_dy_3.eq(cur_y - self.in_y_3)
                 comb += self.dx_3.eq(Mux(self.abs_dx_3[-1], -self.abs_dx_3, self.abs_dx_3))
                 comb += self.dy_3.eq(Mux(self.abs_dy_3[-1], -self.abs_dy_3, self.abs_dy_3))
-                comb += self.sx_3.eq(Mux(self.in_x_3 > self.cur_x_3, 1, -1))
-                comb += self.sy_3.eq(Mux(self.in_y_3 > self.cur_y_3, 1, -1))
+                comb += self.sx_3.eq(Mux(self.in_x_3 > cur_x, 1, -1))
+                comb += self.sy_3.eq(Mux(self.in_y_3 > cur_y, 1, -1))
                 comb += self.err_3.eq(self.dx_3 - self.dy_3)
 
-                with m.If(self.first_next):
+                with m.If(self.pos_reset):
                     sync += [
                         self.cur_x_4.eq(self.cur_x_3),
                         self.cur_y_4.eq(self.cur_y_3),
-                        self.first_next.eq(False)
+                        self.pos_reset.eq(False)
                     ]
 
         # out of global clock_enable
@@ -187,19 +200,19 @@ class LineRasterizer(Elaboratable):
                     sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
 
                     # TODO if ok let's add comb
-                    sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
-                    sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
+                    # sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
+                    # sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
                 with m.Elif(self.e2 >= -self.dy_4):
                     sync += self.err_4.eq(self.err_4 - self.dy_4)
                     sync += self.cur_x_4.eq(self.cur_x_4 + self.sx_4)
 
-                    sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
+                    # sync += self.cur_x_3.eq(self.cur_x_4 + self.sx_4)
                     
                 with m.Elif(self.e2 <= self.dx_4):
                     sync += self.err_4.eq(self.err_4 + self.dx_4)
                     sync += self.cur_y_4.eq(self.cur_y_4 + self.sy_4)
 
-                    sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
+                    # sync += self.cur_y_3.eq(self.cur_y_4 + self.sy_4)
 
                 
         comb += self.out_x.eq(self.cur_x_4)
