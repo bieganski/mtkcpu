@@ -175,7 +175,9 @@ class LineRasterizer(Elaboratable):
                     sync += [
                         self.cur_x_4.eq(self.cur_x_3),
                         self.cur_y_4.eq(self.cur_y_3),
-                        self.pos_reset.eq(False)
+
+                        # ugly hack, prevents from sequence [first, next, first]
+                        self.pos_reset.eq((self.valid_2 & (self.in_type_2 == InPacketType.FIRST)))
                     ]
 
         # out of global clock_enable
