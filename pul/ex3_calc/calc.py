@@ -2,6 +2,9 @@
 
 from nmigen import *
 
+from serial import AsyncSerialRX
+from serial import AsyncSerialTX
+
 class Calculator(Elaboratable):
     def __init__(self, clkfreq, baudrate):
         # The frequency of the sync domain in Hz
@@ -17,6 +20,13 @@ class Calculator(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
-        # FILL ME
+        comb = m.d.comb
+        sync = m.d.sync
+
+
 
         return m
+
+
+if __name__ == "__main__":
+    print("dsds")
