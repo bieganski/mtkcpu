@@ -6,6 +6,12 @@ from nmigen.utils import bits_for
 __all__ = ["AsyncSerialRX", "AsyncSerialTX", "AsyncSerial"]
 
 
+def _check_divisor(divisor, bound):
+    if divisor < bound:
+        raise ValueError("Invalid divisor {!r}; must be greater than or equal to {}"
+                         .format(divisor, bound))
+
+
 def _check_parity(parity):
     choices = ("none", "mark", "space", "even", "odd")
     if parity not in choices:
@@ -29,18 +35,55 @@ def _compute_parity_bit(data, parity):
 
 def _wire_layout(data_bits, parity="none"):
     return [
-        ("stop",   1),
-        ("parity", 0 if parity == "none" else 1),
-        ("data",   data_bits),
         ("start",  1),
+        ("data",   data_bits),
+        ("parity", 0 if parity == "none" else 1),
+        ("stop",   1),
     ]
 
 
 class AsyncSerialRX(Elaboratable):
+    """Asynchronous serial receiver.
+
+    Parameters
+    ----------
+    divisor : int
+        Clock divisor reset value. Set to ``round(clk-rate / baud-rate)``.
+        E.g. ``12e6 / 115200`` = ``104``.
+    divisor_bits : int
+        Optional. Clock divisor width. If omitted, ``bits_for(divisor)`` is used instead.
+    data_bits : int
+        Data width.
+    parity : ``"none"``, ``"mark"``, ``"space"``, ``"even"``, ``"odd"``
+        Parity mode.
+    pins : :class:`Record`
+        Optional. UART pins. See :class:`UARTResource` in nmigen-boards.
+
+    Attributes
+    ----------
+    divisor : Signal, in
+        Clock divisor.
+    data : Signal, out
+        Read data. Valid only when ``rdy`` is asserted.
+    err.overflow : Signal, out
+        Error flag. A new frame has been received, but the previous one was not acknowledged.
+    err.frame : Signal, out
+        Error flag. The received bits do not fit in a frame.
+    err.parity : Signal, out
+        Error flag. The parity check has failed.
+    rdy : Signal, out
+        Read strobe.
+    ack : Signal, in
+        Read acknowledge. Must be held asserted while data can be read out of the receiver.
+    i : Signal, in
+        Serial input. If ``pins`` has been specified, ``pins.rx.i`` drives it.
+
+    """
     def __init__(self, *, divisor, divisor_bits=None, data_bits=8, parity="none", pins=None):
         _check_parity(parity)
         self._parity = parity
 
+        _check_divisor(divisor, 5)
         self.divisor = Signal(divisor_bits or bits_for(divisor), reset=divisor)
 
         self.data = Signal(data_bits)
@@ -61,10 +104,10 @@ class AsyncSerialRX(Elaboratable):
 
         timer = Signal.like(self.divisor)
         shreg = Record(_wire_layout(len(self.data), self._parity))
-        bitno = Signal.range(len(shreg))
+        bitno = Signal(range(len(shreg)))
 
         if self._pins is not None:
-            m.d.submodules += FFSynchronizer(self._pins.rx.i, self.i, reset=1)
+            m.submodules += FFSynchronizer(self._pins.rx.i, self.i, reset=1)
 
         with m.FSM() as fsm:
             with m.State("IDLE"):
@@ -80,9 +123,9 @@ class AsyncSerialRX(Elaboratable):
                     m.d.sync += timer.eq(timer - 1)
                 with m.Else():
                     m.d.sync += [
-                        shreg.eq(Cat(self.i, shreg)),
+                        shreg.eq(Cat(shreg[1:], self.i)),
                         bitno.eq(bitno - 1),
-                        timer.eq(self.divisor),
+                        timer.eq(self.divisor - 1),
                     ]
                     with m.If(bitno == 0):
                         m.next = "DONE"
@@ -105,17 +148,48 @@ class AsyncSerialRX(Elaboratable):
 
 
 class AsyncSerialTX(Elaboratable):
+    """Asynchronous serial transmitter.
+
+    Parameters
+    ----------
+    divisor : int
+        Clock divisor reset value. Set to ``round(clk-rate / baud-rate)``.
+        E.g. ``12e6 / 115200`` = ``104``.
+    divisor_bits : int
+        Optional. Clock divisor width. If omitted, ``bits_for(divisor)`` is used instead.
+    data_bits : int
+        Data width.
+    parity : ``"none"``, ``"mark"``, ``"space"``, ``"even"``, ``"odd"``
+        Parity mode.
+    pins : :class:`Record`
+        Optional. UART pins. See :class:`UARTResource` in nmigen-boards.
+
+    Attributes
+    ----------
+    divisor : Signal, in
+        Clock divisor.
+    data : Signal, in
+        Write data. Valid only when ``ack`` is asserted.
+    rdy : Signal, out
+        Write ready. Asserted when the transmitter is ready to transmit data.
+    ack : Signal, in
+        Write strobe. Data gets transmitted when ``rdy`` and ``ack`` are simultaneously asserted.
+    o : Signal, out
+        Serial output. If ``pins`` has been specified, it drives ``pins.tx.o``.
+
+    """
     def __init__(self, *, divisor, divisor_bits=None, data_bits=8, parity="none", pins=None):
         _check_parity(parity)
         self._parity = parity
 
+        _check_divisor(divisor, 2)
         self.divisor = Signal(divisor_bits or bits_for(divisor), reset=divisor)
 
         self.data = Signal(data_bits)
         self.rdy  = Signal()
         self.ack  = Signal()
 
-        self.o    = Signal()
+        self.o    = Signal(reset=1)
 
         self._pins = pins
 
@@ -124,7 +198,7 @@ class AsyncSerialTX(Elaboratable):
 
         timer = Signal.like(self.divisor)
         shreg = Record(_wire_layout(len(self.data), self._parity))
-        bitno = Signal.range(len(shreg))
+        bitno = Signal(range(len(shreg)))
 
         if self._pins is not None:
             m.d.comb += self._pins.tx.o.eq(self.o)
@@ -132,7 +206,6 @@ class AsyncSerialTX(Elaboratable):
         with m.FSM():
             with m.State("IDLE"):
                 m.d.comb += self.rdy.eq(1)
-                m.d.sync += self.o.eq(shreg[0])
                 with m.If(self.ack):
                     m.d.sync += [
                         shreg.start .eq(0),
@@ -140,7 +213,6 @@ class AsyncSerialTX(Elaboratable):
                         shreg.parity.eq(_compute_parity_bit(self.data, self._parity)),
                         shreg.stop  .eq(1),
                         bitno.eq(len(shreg) - 1),
-                        timer.eq(self.divisor),
                     ]
                     m.next = "BUSY"
 
@@ -148,23 +220,49 @@ class AsyncSerialTX(Elaboratable):
                 with m.If(timer != 0):
                     m.d.sync += timer.eq(timer - 1)
                 with m.Else():
-                    m.d.sync += [
-                        Cat(self.o, shreg).eq(shreg),
-                        bitno.eq(bitno - 1),
-                        timer.eq(self.divisor),
-                    ]
-                    with m.If(bitno == 0):
+                    m.d.sync += Cat(self.o, shreg).eq(shreg)
+                    with m.If(bitno != 0):
+                        m.d.sync += [
+                            bitno.eq(bitno - 1),
+                            timer.eq(self.divisor - 1),
+                        ]
+                    with m.Else():
+                        m.d.sync += timer.eq(self.divisor - 2)
                         m.next = "IDLE"
 
         return m
 
 
 class AsyncSerial(Elaboratable):
+    """Asynchronous serial transceiver.
+
+    Parameters
+    ----------
+    divisor : int
+        Clock divisor reset value. Set to ``round(clk-rate / baud-rate)``.
+        E.g. ``12e6 / 115200`` = ``104``.
+    divisor_bits : int
+        Optional. Clock divisor width. If omitted, ``bits_for(divisor)`` is used instead.
+    data_bits : int
+        Data width.
+    parity : ``"none"``, ``"mark"``, ``"space"``, ``"even"``, ``"odd"``
+        Parity mode.
+    pins : :class:`Record`
+        Optional. UART pins. See :class:`UARTResource` in nmigen-boards.
+
+    Attributes
+    ----------
+    rx : :class:`AsyncSerialRX`
+        See :class:`AsyncSerialRX`.
+    tx : :class:`AsyncSerialTX`
+        See :class:`AsyncSerialTX`.
+
+    """
     def __init__(self, *, divisor, divisor_bits=None, **kwargs):
         self.divisor = Signal(divisor_bits or bits_for(divisor), reset=divisor)
 
-        self.rx = AsyncSerialRX(**kwargs)
-        self.tx = AsyncSerialTX(**kwargs)
+        self.rx = AsyncSerialRX(divisor=divisor, divisor_bits=divisor_bits, **kwargs)
+        self.tx = AsyncSerialTX(divisor=divisor, divisor_bits=divisor_bits, **kwargs)
 
     def elaborate(self, platform):
         m = Module()
