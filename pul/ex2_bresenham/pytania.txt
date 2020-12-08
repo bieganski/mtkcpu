@@ -1,3 +1,0 @@
-* raportowanie błędów?
-
-* sprawdzanie czy przed NEXT wystąpił jakiś FIRST (dst_x,y ustawione)

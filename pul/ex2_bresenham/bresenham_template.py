@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
+
 from enum import Enum
 import random
 from nmigen import *
 from nmigen.cli import main, pysim
 
-from HAHA import LineRasterizer
 
 class InPacketType(Enum):
     FIRST = 0
@@ -15,50 +15,17 @@ class OutPacketType(Enum):
     PIXEL = 0
     LINE_END = 1
 
-'''
-class LineRasterizer(Elaboratable):
-    # `width` is the coordinates' width in bits.
-    def __init__(self, width):
-        self.width = width
+from bresenham import LineRasterizer
 
-        # Input FIFO.
-        self.in_ready = Signal()
-        self.in_valid = Signal()
-        self.in_type = Signal(InPacketType)
-        # Coordinates.
-        self.in_x = Signal(width)
-        self.in_y = Signal(width)
-
-        # Output FIFO.
-        self.out_ready = Signal()
-        self.out_valid = Signal()
-        self.out_type = Signal(OutPacketType)
-        # Coordinates.
-        self.out_x = Signal(width)
-        self.out_y = Signal(width)
-
-    def elaborate(self, platform):
-        m = Module()
-
-        # FILL ME
-
-        return m
-'''
-
-show_first_n = 150
 def bresenham(x1, y1, x2, y2):
     dx = abs(x1 - x2)
     dy = abs(y1 - y2)
     sx = 1 if x2 > x1 else -1
     sy = 1 if y2 > y1 else -1
     err = dx - dy
-    global show_first_n 
     while (x1, y1) != (x2, y2):
         yield x1, y1
         e2 = err * 2
-        if show_first_n > 0:
-            show_first_n -= 1
-            print(f"e2: {e2}, dx: {dx}, dy:{dy}, sx: {sx}, sy: {sy} CUR(x,y) = =({x1}, {y1})")
         if e2 >= -dy:
             err -= dy
             x1 += sx
@@ -92,7 +59,7 @@ if __name__ == '__main__':
 
         in_data = []
         out_data = []
-        for i in range(7):
+        for i in range(256):
             x = random.randrange(1 << rast.width)
             y = random.randrange(1 << rast.width)
             if i == 0 or random.randrange(8) == 0:
@@ -138,18 +105,15 @@ if __name__ == '__main__':
                         ot = OutPacketType((yield rast.out_type))
                         ox = yield rast.out_x
                         oy = yield rast.out_y
-                        print("got (", ot, ox, oy, ")", "expected", out_data[idx] )
                         if out_data[idx] == OutPacketType.LINE_END:
                             if ot != OutPacketType.LINE_END:
                                 print(f'FAIL {idx} — expected LINE_END, got PIXEL {ox} {oy}')
                                 fail = True
-                                # return
                         else:
                             ex, ey = out_data[idx]
                             if ot != OutPacketType.PIXEL:
                                 print(f'FAIL {idx} — expected PIXEL {ex} {ey}, got LINE_END')
                                 fail = True
-                                # return
                             elif (ex, ey) != (ox, oy):
                                 print(f'FAIL {idx} — expected PIXEL {ex} {ey}, got PIXEL {ox} {oy}')
                                 fail = True
