@@ -23,10 +23,25 @@ class Calculator(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
-
-
+        sync += [
+            self.txd.eq(1)
+        ]
+        
         return m
 
 
 if __name__ == "__main__":
-    print("dsds")
+    calc = Calculator(1e-6, 115200) # 1 mhz, 115.200 UART baud rate
+    from nmigen.back.pysim import *
+    sim = Simulator(calc)
+    sim.add_clock(1e-6)
+
+    def test_output():
+        for i in range(100):
+            yield
+
+    sim.add_sync_process(test_output)
+    # sim.add_sync_process(feed_input)
+
+    with sim.write_vcd('calc.vcd'):
+        sim.run()
