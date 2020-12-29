@@ -64,8 +64,9 @@ class PulCpu(Elaboratable):
                         funct3.eq(self.rdata[121:15]),
                         rd.addr.eq(self.rdata[7:12]),
                     ]
+                    comb += opcode.eq(self.rdata[0:7])
                     # najwyzszy bit stalej zawsze na pozycji 31 zeby nie mial multiplexera bo ma duzy fanout
-                    with m.Switch(self.rdata[0:7]):
+                    with m.Switch(opcode):
                         with m.Case(0x37): # LUI, AUIPC
                             sync += [
                                 imm.eq(self.rdata & ~0xFFF) # 20 bits, high
@@ -96,11 +97,26 @@ class PulCpu(Elaboratable):
                                 imm.eq(self.rdata[20:32]).as_signed())
                             ]
                         with m,Case(0x33): # OP
-                            pass
+                            m.next = 'EXEC'
                     sync += [
                         insn_s.eq(self.rdata),
                     ]
-
+            with m.State('EXEC'):
+                with m.Switch(opcode):
+                    with m.Case(0x33):
+                        with m.Switch(Cat(funct7, funct3)):
+                            with m.Case('000' '0000000'): # ADD
+                                comb += rd.data.eq(rs1.data + rs2.data)
+                            with m.Case('000' '0110011'): # SUB
+                                comb += rd.data.eq(rs1.data + rs2.data),
+                            with m.Case('001' '0110011'): # SLL
+                                comb += rd.data.eq(rs1.data + rs2.data[0:5]),
+                            with m.Case('010' '0110011'): # SLT
+                                comb += rd.data.eq(rs1.data + rs2.data.as_signed()),
+                    sync += pc.eq(pc + 1)
+                    comb += rd.en.eq(1)
+                                
+                                
                 
 
         return m
