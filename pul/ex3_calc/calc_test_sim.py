@@ -16,11 +16,13 @@ sim = Simulator(calc)
 sim.add_clock(1/clkfreq)
 
 tests = [
+    ('12345', 'ERR LEX'),
     ('#', 'ERR LEX'),
     ('2**2', 'ERR PARSE'),
     ('1/0', 'ERR DIVIDE'),
     ('2+2', '4'),
-] + [gen_test() for _ in range(128)]
+] 
+# + [gen_test() for _ in range(128)]
 
 cur_reply = bytearray()
 
@@ -35,8 +37,10 @@ def test():
         for b in s.encode() + b'\n':
             bits = [0, *(b >> i & 1 for i in range(8)), 1]
             for bit in bits:
+                print(bit)
                 yield calc.rxd.eq(bit)
                 for _ in range(div):
+                    print("tick")
                     yield Tick()
         yield calc.rxd.eq(1)
         while b'\n' not in cur_reply:

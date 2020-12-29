@@ -72,6 +72,12 @@ DIGITS = Array(
     ]
 )
 
+def is_digit_sig(maybe_digit_sig):
+    return (maybe_digit_sig >= Const(0x30, 8)) & (Const(0x30, 8) <= Const(0x39, 8))
+
+def digit_to_val_sig(digit_sig):
+    return digit_sig - Const(0x30, 8)
+
 class Calculator(Elaboratable):
     def __init__(self, clkfreq, baudrate):
         # The frequency of the sync domain in Hz
@@ -98,28 +104,47 @@ class Calculator(Elaboratable):
         m.submodules.tx = tx = UartTx(divisor=self.div)
         m.submodules.rx = rx = UartRx(divisor=self.div)
 
-        num = Signal(range(2137), reset=2137)
+        num = Signal(32, reset=0)
 
         digit = Signal(range(10), reset=0)
 
         comb += [
             self.txd.eq(tx.txd),
-            tx.in_vld.eq(1),
-            digit.eq(num % 10),
+            rx.rxd.eq(self.rxd),
+            rx.out_rdy.eq(1),
+            # self.rxd.eq(rx.rxd),
+            tx.in_vld.eq(0),
+            rx.out_rdy.eq(1),
+            # digit.eq(num % 10),
         ]
 
         idx = Signal(4, reset=-1) # -1 because next is 0
 
-        with m.If(tx.in_rdy):
-            sync += [
-                idx.eq(idx + 1),
-                num.eq(num // Const(10)),
-            ]
-        with m.Else():
-            pass
+        # with m.If(tx.in_rdy):
+        #     sync += [
+        #         idx.eq(idx + 1),
+        #         num.eq(num // Const(10)),
+        #     ]
+        # with m.Else():
+        #     pass
+
+        digit_val = Signal(8, reset=0)
+
+        with m.If(rx.out_vld):
+            with m.If(is_digit_sig(rx.out_data)):
+                # comb += digit_val.eq(digit_to_val_sig(rx.out_data))
+                sync += num.eq(num * 10 + digit_to_val_sig(rx.out_data))
+            with m.Else():
+                pass # TODO
+            # comb += [
+            #     digit.eq(DIGITS[rx.out_data])
+            # ]
+            # sync += [
+            #     num.eq((num << 8) | digit)
+            # ]
 
 
-        sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
+        # sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
         # sync += tx.in_data.eq(DIGITS[digit])
         return m
 
@@ -131,10 +156,6 @@ if __name__ == "__main__":
     calc = Calculator(clk_freq, baud)
     print(div)
 
-    # print(ERR_BYTES[CalcError.Lex])
-    # exit(1)
-    # tx = AsyncSerialTX(divisor=div)
-    # rx = AsyncSerialRX(divisor=div)
     from nmigen.back.pysim import *
     sim = Simulator(calc)
     sim.add_clock(1e-6)
@@ -144,7 +165,6 @@ if __name__ == "__main__":
             yield
 
     sim.add_sync_process(test_output)
-    # sim.add_sync_process(feed_input)
 
     with sim.write_vcd('calc.vcd'):
         sim.run()
