@@ -1,4 +1,6 @@
-from calc import Calculator, TokenType
+#!/usr/bin/env python3
+
+from calc import Calculator
 from calc_gentest import gen_test
 from nmigen.back.pysim import *
 

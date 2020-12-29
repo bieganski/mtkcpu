@@ -9,12 +9,21 @@ class Mod(Elaboratable):
         
     def elaborate(self, platform):
         m = Module()
+        sync = m.d.sync
+
+        # #### change these
+        a = Signal(4)
+        b = Signal(4)
+        d = Signal(4)
+        c = Const(100, range(100))
+        sync += a.eq(a + 1)
+        sync += b.eq(a % 4) 
+        sync += d.eq(c + a) 
+        # #### 
+
         return m
 
 if __name__ == "__main__":
-    
-    args = parse_args()
-    
     
     
     m = Mod(4)
@@ -26,8 +35,8 @@ if __name__ == "__main__":
 
     def test():
         # initial value
-        assert not (yield m.busy)
-        yield m.en.eq(1)
+        # assert not (yield m.busy)
+        # yield m.en.eq(1)
         for i in range(15):
             yield
         yield

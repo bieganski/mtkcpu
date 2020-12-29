@@ -52,19 +52,25 @@ class CalcError(Enum):
     Overflow = 3
     Serial = 4
 
-def str_to_num_seq(string):
+def str_to_sig_array(string):
     # ord('a') = 97
     # chr(97) = 'a'
     return Array(map(lambda x: Const(ord(x), 8), string))
 
 
 ERR_BYTES = {
-    CalcError.Lex : str_to_num_seq("ERR LEX\n"),
-    CalcError.Parse : str_to_num_seq("ERR PARSE\n"),
-    CalcError.Div : str_to_num_seq("ERR DIVIDE\n"),
-    CalcError.Overflow : str_to_num_seq("ERR OVERFLOW\n"),
-    CalcError.Serial : str_to_num_seq("ERR SERIAL\n"),
+    CalcError.Lex : str_to_sig_array("ERR LEX\n"),
+    CalcError.Parse : str_to_sig_array("ERR PARSE\n"),
+    CalcError.Div : str_to_sig_array("ERR DIVIDE\n"),
+    CalcError.Overflow : str_to_sig_array("ERR OVERFLOW\n"),
+    CalcError.Serial : str_to_sig_array("ERR SERIAL\n"),
 }
+
+DIGITS = Array( 
+    [
+        Const(ord(str(i)), 8) for i in range(10)
+    ]
+)
 
 class Calculator(Elaboratable):
     def __init__(self, clkfreq, baudrate):
@@ -90,25 +96,31 @@ class Calculator(Elaboratable):
         from uart import UartTx, UartRx # written during labs 
         # self.tx = AsyncSerialTX(divisor=self.div, data_bits=8)
         m.submodules.tx = tx = UartTx(divisor=self.div)
+        m.submodules.rx = rx = UartRx(divisor=self.div)
+
+        num = Signal(range(2137), reset=2137)
+
+        digit = Signal(range(10), reset=0)
 
         comb += [
             self.txd.eq(tx.txd),
             tx.in_vld.eq(1),
+            digit.eq(num % 10),
         ]
 
         idx = Signal(4, reset=-1) # -1 because next is 0
-        sync += [
-            idx.eq(Mux(
-                tx.in_rdy,
-                idx + 1,
-                idx
-            ))
-        ]
-        # self.tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
-        # a = Const("hello world\n")
-        # a.bit_select(5, 3)
-        # letter = ERR_BYTES[CalcError.Lex][idx]
+
+        with m.If(tx.in_rdy):
+            sync += [
+                idx.eq(idx + 1),
+                num.eq(num // Const(10)),
+            ]
+        with m.Else():
+            pass
+
+
         sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
+        # sync += tx.in_data.eq(DIGITS[digit])
         return m
 
 
