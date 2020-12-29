@@ -55,15 +55,15 @@ class CalcError(Enum):
 def str_to_num_seq(string):
     # ord('a') = 97
     # chr(97) = 'a'
-    return list(map(lambda x: ord(x), string))
+    return Array(map(lambda x: Const(ord(x), 8), string))
 
 
 ERR_BYTES = {
-    CalcError.Lex : str_to_num_seq("ERR LEX"),
-    CalcError.Parse : str_to_num_seq("ERR PARSE"),
-    CalcError.Div : str_to_num_seq("ERR DIVIDE"),
-    CalcError.Overflow : str_to_num_seq("ERR OVERFLOW"),
-    CalcError.Serial : str_to_num_seq("ERR SERIAL"),
+    CalcError.Lex : str_to_num_seq("ERR LEX\n"),
+    CalcError.Parse : str_to_num_seq("ERR PARSE\n"),
+    CalcError.Div : str_to_num_seq("ERR DIVIDE\n"),
+    CalcError.Overflow : str_to_num_seq("ERR OVERFLOW\n"),
+    CalcError.Serial : str_to_num_seq("ERR SERIAL\n"),
 }
 
 class Calculator(Elaboratable):
@@ -87,23 +87,28 @@ class Calculator(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
-        self.tx = AsyncSerialTX(divisor=self.div, data_bits=8)
-
-        letter = Signal(8)
-
-        m.submodules += self.tx
-
-        self.ack = Signal(reset=1)
+        from uart import UartTx, UartRx # written during labs 
+        # self.tx = AsyncSerialTX(divisor=self.div, data_bits=8)
+        m.submodules.tx = tx = UartTx(divisor=self.div)
 
         comb += [
-            self.tx.data.eq(self.txd),
-            self.tx.ack.eq(self.ack),
+            self.txd.eq(tx.txd),
+            tx.in_vld.eq(1),
         ]
 
+        idx = Signal(4, reset=-1) # -1 because next is 0
         sync += [
-            self.txd.eq(self.txd + 1)
+            idx.eq(Mux(
+                tx.in_rdy,
+                idx + 1,
+                idx
+            ))
         ]
-
+        # self.tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
+        # a = Const("hello world\n")
+        # a.bit_select(5, 3)
+        # letter = ERR_BYTES[CalcError.Lex][idx]
+        sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
         return m
 
 
@@ -113,6 +118,9 @@ if __name__ == "__main__":
     div = int(clk_freq // baud)
     calc = Calculator(clk_freq, baud)
     print(div)
+
+    # print(ERR_BYTES[CalcError.Lex])
+    # exit(1)
     # tx = AsyncSerialTX(divisor=div)
     # rx = AsyncSerialRX(divisor=div)
     from nmigen.back.pysim import *
@@ -120,7 +128,7 @@ if __name__ == "__main__":
     sim.add_clock(1e-6)
 
     def test_output():
-        for i in range(100):
+        for i in range(2000):
             yield
 
     sim.add_sync_process(test_output)
