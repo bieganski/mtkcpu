@@ -12,13 +12,21 @@ class Mod(Elaboratable):
         sync = m.d.sync
 
         # #### change these
-        a = Signal(4)
-        b = Signal(4)
-        d = Signal(4)
-        c = Const(100, range(100))
+
+        from nmigen.lib.fifo import SyncFIFO
+        m.submodules.fifo = fifo = SyncFIFO(width=8, depth=4)
+        
+
+        a = Signal(8, reset=1)
         sync += a.eq(a + 1)
-        sync += b.eq(a % 4) 
-        sync += d.eq(c + a) 
+
+        sync += [
+            fifo.w_data.eq(a),
+            fifo.w_en.eq(1),
+            # fifo.w_data.eq(a),
+            fifo.r_en.eq(1),
+        ]
+        
         # #### 
 
         return m
