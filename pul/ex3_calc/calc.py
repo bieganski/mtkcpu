@@ -86,7 +86,7 @@ from nmigen.lib.fifo import SyncFIFO
 class Tokenizer(Elaboratable):
     def __init__(self):
         self.in_vld = Signal(reset=0)
-        self.in_rdy = Signal(reset=0)
+        self.in_rdy = Signal(reset=1)
         self.in_data = Signal(8) # one byte, from UART RX
 
         self.out_type = Signal(Token)
@@ -149,8 +149,9 @@ class Tokenizer(Elaboratable):
             )), # preserve error if occured once
         ]
 
-
+        XD = Signal(32)
         with m.If(self.in_vld & self.in_rdy):
+            # comb += XD.eq(self.in_data)
             with m.If(is_op(self.in_data) | is_parenthesis(self.in_data)):
                 # TODO TODO TODO smell of bug here
                 token = sig_token_type(m, sync, self.in_data)
@@ -163,9 +164,8 @@ class Tokenizer(Elaboratable):
                     pending_type.eq(token)
                 ]
                 with m.If(is_num_state):
-                    sync += [
-                        is_num_state.eq(0),
-
+                    sync += is_num_state.eq(0)
+                    comb += [
                         fifo_type.w_en.eq(1),
                         fifo_type.w_data.eq(Token.NUM),
 
@@ -173,13 +173,14 @@ class Tokenizer(Elaboratable):
                         fifo_data.w_data.eq(num),
                     ]
             with m.Elif(is_white(self.in_data) & is_num_state):
-                is_num_state.eq(0),
+                sync += is_num_state.eq(0),
+                comb += [
+                    fifo_type.w_en.eq(1),
+                    fifo_type.w_data.eq(Token.NUM),
 
-                fifo_type.w_en.eq(1),
-                fifo_type.w_data.eq(Token.NUM),
-
-                fifo_data.w_en.eq(1),
-                fifo_data.w_data.eq(num),
+                    fifo_data.w_en.eq(1),
+                    fifo_data.w_data.eq(num),
+                ]
             with m.Elif(is_digit(self.in_data)):
                 val = digit_sig_to_val(self.in_data)
                 with m.If(~is_num_state):
@@ -193,8 +194,9 @@ class Tokenizer(Elaboratable):
                     ]
             with m.Elif(is_newline(self.in_data)):
                 whatever_data = Signal(8, reset=0xDD) # whatever
+                comb += whatever_data.eq(0x11) 
                 with m.If(is_num_state):
-                    sync += [
+                    comb += [
                         fifo_type.w_en.eq(1),
                         fifo_data.w_en.eq(1),
 
@@ -206,18 +208,20 @@ class Tokenizer(Elaboratable):
                     pending.eq(1),
                     pending_data.eq(whatever_data),
                     pending_type.eq(Token.END),
+                    is_num_state.eq(0), # TODO maybe handle in reset?
                 ]
             with m.Else():
                 sync += [
                     self.err.eq(CalcError.Lex),
                 ]
         with m.Else():
-            # input not read - got time to push pending ops to queue
+            # input not read in cur cycle - got time to push pending ops to queue
             with m.If(pending):
                 sync += [
                     pending.eq(0),
-                    self.in_rdy.eq(1),
-
+                    self.in_rdy.eq(1), # re-trigger reading 
+                ]
+                comb += [
                     fifo_type.w_en.eq(1),
                     fifo_type.w_data.eq(pending_type),
 
@@ -226,8 +230,6 @@ class Tokenizer(Elaboratable):
                 ]
         
         buf_occupied = Signal(reset=False, name="tok_buf_occupied")
-        buf_data = Signal(32, name="tok_buf_data")
-        buf_type = Signal(Token, name="tok_buf_type")
 
         with m.If(~buf_occupied & fifo_data.r_rdy):
             comb += [
@@ -236,18 +238,17 @@ class Tokenizer(Elaboratable):
             ]
             sync += [
                 buf_occupied.eq(1),
-                buf_data.eq(fifo_data.r_data),
-                buf_type.eq(fifo_type.r_data),
+                self.out_data.eq(fifo_data.r_data),
+                self.out_type.eq(fifo_type.r_data),
             ]
-        with m.If(self.out_rdy & buf_occupied):
-            comb += [
-                self.out_vld.eq(1),
-                self.out_data.eq(buf_data),
-                self.out_type.eq(buf_type),
-            ]
+
+        comb += [
+            self.out_vld.eq(buf_occupied),
+        ]
+
+        with m.If(self.out_rdy & self.out_vld):
             sync += [
                 buf_occupied.eq(0),
-                self.out_rdy.eq(0),
             ]
 
         return m
@@ -281,6 +282,96 @@ DIGITS = Array(
 # def digit_to_val_sig(digit_sig):
 #     return digit_sig - Const(ord('0'), 8)
 
+
+class Executor(Elaboratable):
+    def __init__(self):
+        self.in_vld = Signal(reset=0)
+        self.in_rdy = Signal(reset=0)
+        self.in_data = Signal(32)
+        self.in_type = Signal(Token)
+
+        self.out_data = Signal(32)
+
+        self.out_vld = Signal()
+        self.out_rdy = Signal()
+
+        self.err = Signal(CalcError, reset=CalcError.Ok)
+
+        # for 32-bit width it may take at most 10 cycles for Tokenizer to assert valid_out
+        # it is determined by floor $ log10(2**32) value
+        self.MAX_DELAY = math.ceil(math.log10(2 ** 32))
+        
+        self.FIFO_DEPTH = self.MAX_DELAY
+        assert(self.MAX_DELAY >= 10)
+
+    def elaborate(self, platform):
+        m = Module()
+        comb = m.d.comb
+        sync = m.d.sync
+
+        sync += [
+            self.out_vld.eq(self.in_rdy & self.in_vld)
+        ]
+
+        comb += [
+            self.out_data.eq(2137),
+            self.in_rdy.eq(1),
+        ]
+
+        return m
+
+# FIFOConnector drives 'out_rdy' and 'in_vld' signals
+# class FIFOConnector(Elaboratable):
+#     def __init__(self, fifo_size, fifo_shape, out_vld, out_rdy, in_vld, in_rdy):
+#         self.fifo_size  = fifo_size
+#         self.fifo_shape = fifo_shape
+#         self.out_vld    = out_vld
+#         self.out_rdy    = out_rdy
+#         self.out_data   = out_data
+#         self.in_rdy     = in_rdy
+#         self.in_vld     = in_vld
+#         self.in_data    = in_data
+
+#         self.err = Signal(CalcError) # throws Internal when fifo overflows
+    
+#     def elaborate(self):
+#         m = Module()
+        
+#         m.submodules.fifo = fifo = SyncFIFO(
+#             width=self.fifo_shape,
+#             depth=self.fifo_size)
+
+#         sync += err.eq(Mux(
+#             err == CalcError.Internal,
+#             err, # preserve error till end of line TODO
+#             ~fifo.r_rdy
+#         ))
+
+#         buf_occupied = Signal(reset=0)
+
+
+#         # TODO potrzebne bedzie multple queueu
+#         with m.If(~buf_occupied & fifo.r_rdy):
+#             comb += [
+#                 fifo_data.r_en.eq(1),
+#                 fifo_type.r_en.eq(1),
+#             ]
+#             sync += [
+#                 buf_occupied.eq(1),
+#                 self.out_data.eq(fifo_data.r_data),
+#                 self.out_type.eq(fifo_type.r_data),
+#             ]
+
+
+#         comb += self.in_vld.eq(buf_occupied)
+
+        
+        
+
+
+#         return m
+
+
 class Calculator(Elaboratable):
     def __init__(self, clkfreq, baudrate):
         # The frequency of the sync domain in Hz
@@ -291,7 +382,7 @@ class Calculator(Elaboratable):
         self.div = int(clkfreq // baudrate)
 
         # From user to calculator.
-        self.rxd = Signal()
+        self.rxd = Signal(reset=1)
         # From calculator to user.
         self.txd = Signal()
 
@@ -322,19 +413,23 @@ class Calculator(Elaboratable):
         # with m.If(~fifo_rx.w_rdy):
         #     sync += self.err.eq(CalcError.Internal)
 
-        with m.If(rx.out_vld & rx.out_rdy):
-            sync += [
-                fifo_rx.w_en.eq(1),
-                fifo_rx.w_data.eq(rx.out_data),
-            ]
+        DEBUG = Signal(reset=0)
+        sync += DEBUG.eq(rx.out_vld)
+
+        lol = Signal.like(rx.out_err)
+        sync += lol.eq(rx.out_err)
+
+
+        comb += fifo_rx.w_en.eq(rx.out_vld & rx.out_rdy)
+        comb += fifo_rx.w_data.eq(rx.out_data)
 
         with m.If(~buf_occupied & fifo_rx.r_rdy):
             comb += [
                 fifo_rx.r_en.eq(1),
             ]
             sync += [
-                buf_occupied.eq(1),
                 buf_data.eq(fifo_rx.r_data),
+                buf_occupied.eq(1),
             ]
 
         comb += tokenizer.in_data.eq(buf_data)
@@ -348,6 +443,142 @@ class Calculator(Elaboratable):
         # TODO
         comb += tokenizer.out_rdy.eq(1)
 
+        m.submodules.exe = exe = Executor()
+
+        m.submodules.fifo_exe_type = fifo_exe_type = SyncFIFO(
+            width=Signal(Token).width,
+            depth=self.FIFO_DEPTH)
+        m.submodules.fifo_exe_data = fifo_exe_data = SyncFIFO(
+            width=32,
+            depth=self.FIFO_DEPTH)
+
+        exe_buf_occupied = Signal(reset=False, name="exe_buf_occupied")
+
+        with m.If(tokenizer.out_rdy & tokenizer.out_vld):
+            comb += [
+                fifo_exe_type.w_en.eq(1),
+                fifo_exe_type.w_data.eq(tokenizer.out_type),
+
+                fifo_exe_data.w_en.eq(1),
+                fifo_exe_data.w_data.eq(tokenizer.out_data),
+            ]
+
+        with m.If(~exe_buf_occupied & fifo_exe_data.r_rdy):
+            comb += [
+                fifo_exe_data.r_en.eq(1),
+                fifo_exe_type.r_en.eq(1),
+            ]
+            sync += [
+                exe_buf_occupied.eq(1),
+                exe.in_data.eq(fifo_exe_data.r_data),
+                exe.in_type.eq(fifo_exe_type.r_data),
+            ]
+
+        comb += [
+            exe.in_vld.eq(exe_buf_occupied),
+        ]
+
+        with m.If(exe.in_vld & exe.in_rdy):
+            sync += [
+                exe_buf_occupied.eq(0),
+            ]
+
+        TWOJ_STARY = Signal(name="TWOJ_STARY") 
+        # comb += TWOJ_STARY.eq()
+
+        tx_buf_occupied = Signal(reset=False, name="tx_buf_occupied")
+        tx_buf_data = Signal(32, name="tx_buf_data")
+        m.submodules.fifo_out = fifo_out = SyncFIFO(
+            width=32,
+            depth=6) # TODO depth
+
+          # TODO that's wrong
+        comb += [
+            exe.out_rdy.eq(1)
+        ]
+
+        with m.If(exe.out_vld & exe.out_rdy):
+            comb += [
+                fifo_out.w_en.eq(1),
+                fifo_out.w_data.eq(exe.out_data),
+            ]
+
+        with m.If(~tx_buf_occupied & fifo_out.r_rdy):
+            comb += [
+                fifo_out.r_en.eq(1),
+            ]
+            sync += [
+                tx_buf_occupied.eq(1),
+                tx_buf_data.eq(fifo_out.r_data),
+            ]
+
+        digit = Signal(8)
+        # XXX & (tx_buf_data != 0)
+        comb += [
+            tx.in_vld.eq(tx_buf_occupied),
+            digit.eq(tx_buf_data % 10),
+            # tx.in_data.eq(DIGITS[digit]), # TODO check it
+        ]
+
+        # busy = Signal(reset=0)
+        lol = Signal(reset=0)
+
+        comb += tx.in_data.eq(Mux(
+            tx.in_rdy & tx.in_vld, # if sent in cur cycle
+            DIGITS[digit],
+            NEW_LINE,
+        ))
+
+        # with m.If(tx.in_rdy & tx.in_vld):
+        #     # byte pushed
+        #     sync += lol.eq(1)
+        # with m.Else():
+        #     sync += lol.eq(0)
+
+        # with m.If(tx.in_rdy & tx.in_vld):
+        #     # digit sent, queue next digit
+        #     sync += [
+        #         tx_buf_data.eq(tx_buf_data // Const(10)),
+        #     ]
+
+        # with m.If((tx_buf_data // Const(10) == 0) & ~(tx.in_rdy & tx.in_vld)):
+        #     sync += [
+        #         tx_buf_occupied.eq(0),
+        #     ]
+
+        # because executor's result may be 0 we cannot simply divide by 10 until 0
+        with m.FSM() as fsm:                    
+            with m.State('BUSY'):
+                comb += tx.in_data.eq(DIGITS[digit])
+                with m.If(tx.in_rdy & tx.in_vld):
+                    comb += tx.in_data.eq(DIGITS[digit])
+                    # digit sent, queue next digit
+                    sync += [
+                        tx_buf_data.eq(tx_buf_data // Const(10)),
+                    ]
+                # TODO
+                # tu jestem!
+                # problem - za szybko skacze do ENDLINE
+                with m.If((tx_buf_data // Const(10) == 0) & ~(tx.in_rdy & tx.in_vld)):
+                    # number is lower than 10 and last digit already sent
+                    m.next = 'ENDLINE' 
+            with m.State('ENDLINE'):
+                comb += tx.in_data.eq(NEW_LINE)
+                with m.If(tx.in_rdy & tx.in_vld):
+                    sync += [
+                        tx_buf_occupied.eq(0),
+                    ]
+                    m.next = 'BUSY'
+                
+
+
+        # with m.If(busy & tx_buf_data == 0):
+        #     sync += [
+        #         tx_buf_occupied.eq(0),
+        #     ]
+
+        
+
         # num = Signal(32, reset=0)
         # digit = Signal(range(10), reset=0)
 
@@ -356,8 +587,8 @@ class Calculator(Elaboratable):
             rx.rxd.eq(self.rxd),
             rx.out_rdy.eq(1),
             # self.rxd.eq(rx.rxd),
-            tx.in_vld.eq(0),
-            rx.out_rdy.eq(1),
+            # tx.in_vld.eq(1), # XXX
+            # rx.out_rdy.eq(1),
             # digit.eq(num % 10),
         ]
 
@@ -371,25 +602,10 @@ class Calculator(Elaboratable):
         # with m.Else():
         #     pass
 
-        # digit_val = Signal(8, reset=0)
-
-        # with m.If(rx.out_vld):
-        #     with m.If(is_digit_sig(rx.out_data)):
-        #         # comb += digit_val.eq(digit_to_val_sig(rx.out_data))
-        #         sync += num.eq(num * 10 + digit_to_val_sig(rx.out_data))
-        #     with m.Else():
-        #         pass # TODO
 
 
-            # comb += [
-            #     digit.eq(DIGITS[rx.out_data])
-            # ]
-            # sync += [
-            #     num.eq((num << 8) | digit)
-            # ]
 
-
-        # sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][idx])
+        # sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][0])
         # sync += tx.in_data.eq(DIGITS[digit])
         return m
 

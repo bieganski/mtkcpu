@@ -37,10 +37,10 @@ def test():
         for b in s.encode() + b'\n':
             bits = [0, *(b >> i & 1 for i in range(8)), 1]
             for bit in bits:
-                print(bit)
+                # print(bit)
                 yield calc.rxd.eq(bit)
                 for _ in range(div):
-                    print("tick")
+                    # print("tick")
                     yield Tick()
         yield calc.rxd.eq(1)
         while b'\n' not in cur_reply:
