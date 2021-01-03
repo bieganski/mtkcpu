@@ -309,12 +309,15 @@ class Executor(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
+        aaa = Signal(32, reset=2137)
         sync += [
+            # aaa.eq(0), # aaa + 1),
+            aaa.eq(aaa + 1),
             self.out_vld.eq(self.in_rdy & self.in_vld)
         ]
 
         comb += [
-            self.out_data.eq(2137),
+            self.out_data.eq(aaa),
             self.in_rdy.eq(1),
         ]
 
@@ -483,16 +486,13 @@ class Calculator(Elaboratable):
                 exe_buf_occupied.eq(0),
             ]
 
-        TWOJ_STARY = Signal(name="TWOJ_STARY") 
-        # comb += TWOJ_STARY.eq()
-
         tx_buf_occupied = Signal(reset=False, name="tx_buf_occupied")
         tx_buf_data = Signal(32, name="tx_buf_data")
         m.submodules.fifo_out = fifo_out = SyncFIFO(
             width=32,
-            depth=6) # TODO depth
+            depth=100) # TODO depth
 
-          # TODO that's wrong
+
         comb += [
             exe.out_rdy.eq(1)
         ]
@@ -513,97 +513,51 @@ class Calculator(Elaboratable):
             ]
 
         digit = Signal(8)
-        # XXX & (tx_buf_data != 0)
+
+        # 0xffffffff = 4294967295, highest possible digit obtain with dividing by 10 ** 9.
+        DIVIDER_RST = Const(10 ** 9)
+        divider = Signal(32, reset = DIVIDER_RST.value) 
         comb += [
+            digit.eq((tx_buf_data // divider) % 10),
             tx.in_vld.eq(tx_buf_occupied),
-            digit.eq(tx_buf_data % 10),
-            # tx.in_data.eq(DIGITS[digit]), # TODO check it
         ]
 
-        # busy = Signal(reset=0)
-        lol = Signal(reset=0)
-
-        comb += tx.in_data.eq(Mux(
-            tx.in_rdy & tx.in_vld, # if sent in cur cycle
-            DIGITS[digit],
-            NEW_LINE,
-        ))
-
-        # with m.If(tx.in_rdy & tx.in_vld):
-        #     # byte pushed
-        #     sync += lol.eq(1)
-        # with m.Else():
-        #     sync += lol.eq(0)
-
-        # with m.If(tx.in_rdy & tx.in_vld):
-        #     # digit sent, queue next digit
-        #     sync += [
-        #         tx_buf_data.eq(tx_buf_data // Const(10)),
-        #     ]
-
-        # with m.If((tx_buf_data // Const(10) == 0) & ~(tx.in_rdy & tx.in_vld)):
-        #     sync += [
-        #         tx_buf_occupied.eq(0),
-        #     ]
-
-        # because executor's result may be 0 we cannot simply divide by 10 until 0
-        with m.FSM() as fsm:                    
+        with m.FSM() as fsm:
+            with m.State('PRE'):
+                with m.If(tx_buf_occupied):
+                    # digits must be sent from highest one, thus first need to find it
+                    # divider != 1 for proper 0 printing
+                    with m.If((divider != 1) & (digit == 0)):
+                        sync += divider.eq(divider // 10)
+                    with m.Else():
+                        m.next = 'BUSY'
             with m.State('BUSY'):
-                comb += tx.in_data.eq(DIGITS[digit])
+                comb += [
+                    tx.in_vld.eq(1),
+                    tx.in_data.eq(DIGITS[digit]),
+                ]
                 with m.If(tx.in_rdy & tx.in_vld):
-                    comb += tx.in_data.eq(DIGITS[digit])
-                    # digit sent, queue next digit
-                    sync += [
-                        tx_buf_data.eq(tx_buf_data // Const(10)),
-                    ]
-                # TODO
-                # tu jestem!
-                # problem - za szybko skacze do ENDLINE
-                with m.If((tx_buf_data // Const(10) == 0) & ~(tx.in_rdy & tx.in_vld)):
-                    # number is lower than 10 and last digit already sent
-                    m.next = 'ENDLINE' 
+                    # digit sent, queue next digit or print new line
+                    with m.If(divider == 1): # TODO to bez sensu
+                        m.next = 'ENDLINE'
+                    with m.Else():
+                        sync += [
+                            divider.eq(divider // 10)
+                        ] 
             with m.State('ENDLINE'):
                 comb += tx.in_data.eq(NEW_LINE)
                 with m.If(tx.in_rdy & tx.in_vld):
                     sync += [
+                        divider.eq(DIVIDER_RST.value),
                         tx_buf_occupied.eq(0),
                     ]
-                    m.next = 'BUSY'
-                
-
-
-        # with m.If(busy & tx_buf_data == 0):
-        #     sync += [
-        #         tx_buf_occupied.eq(0),
-        #     ]
-
-        
-
-        # num = Signal(32, reset=0)
-        # digit = Signal(range(10), reset=0)
+                    m.next = 'PRE'
 
         comb += [
             self.txd.eq(tx.txd),
             rx.rxd.eq(self.rxd),
             rx.out_rdy.eq(1),
-            # self.rxd.eq(rx.rxd),
-            # tx.in_vld.eq(1), # XXX
-            # rx.out_rdy.eq(1),
-            # digit.eq(num % 10),
         ]
-
-        # idx = Signal(4, reset=-1) # -1 because next is 0
-
-        # with m.If(tx.in_rdy):
-        #     sync += [
-        #         idx.eq(idx + 1),
-        #         num.eq(num // Const(10)),
-        #     ]
-        # with m.Else():
-        #     pass
-
-
-
 
         # sync += tx.in_data.eq(ERR_BYTES[CalcError.Lex][0])
         # sync += tx.in_data.eq(DIGITS[digit])

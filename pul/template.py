@@ -27,9 +27,9 @@ class Mod(Elaboratable):
         # m.submodules.lol = lol = Lol()
 
 
-        b = Signal(4, reset=0)
+        b = Signal(8, reset=0)
         a = Signal(4)
-        sync += b.eq(b + 1)
+        sync += b.eq(2 ** 3)
 
         with m.If(b == 2):
             sync += a.eq(b)
