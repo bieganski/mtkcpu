@@ -2,65 +2,35 @@
 
 from nmigen import *
 
-class Lol(Elaboratable):
-    def __init__(self):
-        pass
-
-    def elaborate(self, platform):
-        m = Module
-        a = Signal(8, reset=0)
-
-        # m.d.sync += a.eq(a + 1)
-
-        return m
 
 class Mod(Elaboratable):
     def __init__(self, w):
         self.a = Signal(w)
         self.b = Signal()
+        self.wtf = 2134
         
     def elaborate(self, platform):
         m = Module()
+        comb = m.d.comb 
         sync = m.d.sync
-        comb = m.d.comb
-
-        # m.submodules.lol = lol = Lol()
-
-
+        
+        a = Signal(8, reset=0)
         b = Signal(8, reset=0)
-        a = Signal(4)
-        sync += b.eq(2 ** 3)
 
-        with m.If(b == 2):
-            sync += a.eq(b)
-
-        # with m.If():
-        
-        # comb += lol.reset.eq(b == 2)
-        
-        # #### change these
-
-        # from nmigen.lib.fifo import SyncFIFO
-        # m.submodules.fifo = fifo = SyncFIFO(width=8, depth=4)
-        
-
-        # a = Signal(8, reset=1)
-        # sync += a.eq(a + 1)
-
-        # sync += [
-        #     fifo.w_data.eq(a),
-        #     # fifo.w_en.eq(1),
-        #     # fifo.w_data.eq(a),
-        #     # fifo.r_en.eq(1),
-        # ]
-
-        # with m.If(a == 3):
-        #     # sync += fifo.r_en.eq(1)
-        #     sync += fifo.w_en.eq(1),
-        
-        # #### 
+        x = Cat([1,1,1,0,0])
+        c = Signal(8)
+        sync += [
+            c.eq(x),
+            a.eq(0xf),
+            b.eq(Cat([1,1,1,0,0], a)),
+        ]
 
         return m
+
+# m = Mod(32)
+# b = [(getattr(m, x), x) for x in dir(m) if type(getattr(m, x)) == Signal]
+# print(b)
+# exit(1)
 
 if __name__ == "__main__":
     

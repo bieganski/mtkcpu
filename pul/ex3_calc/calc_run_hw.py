@@ -1,12 +1,25 @@
+#!/usr/bin/python3
+
 import socket
 import sys
 import select
 
-with open(sys.argv[1], 'rb') as f:
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--bitstream', type=str, default="build/top.bin", help='.bin file path')
+parser.add_argument('--device', type=str, default="/run/muxsrv.sock",
+                    help='device name')
+
+args = parser.parse_args()
+
+
+with open(args.bitstream, 'rb') as f:
     bsd = f.read()
 
+
+
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect('/run/muxsrv.sock')
+s.connect(args.device)
 
 def rxdm(n):
     r = b''

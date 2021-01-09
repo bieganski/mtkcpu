@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from nmigen import *
 from nmigen.vendor.xilinx_7series import *
 from nmigen_boards.resources import *
