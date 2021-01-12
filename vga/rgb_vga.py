@@ -2,6 +2,72 @@
 
 from nmigen import *
 
+# TODO - PUL lectures
+
+def elaborate(self, platform):
+    m = Module()
+    m.domains.sync = DomainSync()
+    uclk = platform.request'uclk', 0)
+    locked = Signal() # bedziemy uzywac jako resetjako reset
+    dcm = m.submodules.dcm = Instance('DCM_SP',
+        i_CKLIN=uclk.i,
+        i_CLKFB=clk0, # feedback
+        o_CLK0=clk0,
+        o_CLKFX=ClockSignal('sync'), # nie mozna tu zrobic m.d.sync
+        o_LOCKED=locked,
+        p_CLKFX_DIVIDE=32,
+        p_CLKFX_MULTIPLY=25,
+        CLKIN_PERIOD="31.25" # == 1000/32
+    )
+
+    m.d.comb += [
+        ResetSignal('sync').eq(~locked),
+    ]
+
+    vctr = Signal(10)
+    hctr = Signal(10)
+
+    with m.If(hctr == 800 - 1):
+        sync += [
+            hctr.eq(0)
+        ]
+        with m.If(vctr == 525 - 1):
+            sync += [
+                vctr.eq(0),
+            ]
+        with m.Else():
+            sync += [
+                vctr.eq(vctr + 1),
+            ]
+    with m.Else():
+        sync += [
+            hctr.eq(hctr + 1)
+        ]
+
+    sync += [
+        hsync.o.eq((hctr >= 640 + 16) & (hctr < 640 + 16 + 96)),
+        vsync.o.eq((vctr >= 480 + 10 ) & (hctr < 480 + 10 + 2)),
+    ]
+
+    active = Signal()
+    comb += [
+        active.eq((hctr < 640) & (vctr < 480))
+    ]
+
+    r = platform.request('vga_r')
+    g = platform.request('vga_g')
+    b = platform.request('vga_b')
+
+    sync += [
+        r.o.eq(Mux(active, hctr[:3], 0)),
+        g.o.eq(Mux(active, hctr[:3], 0)),
+        b.o.eq(Mux(active, hctr[:3], 0)),
+    ]
+
+    return m
+
+
+
 
 class Mod(Elaboratable):
     def __init__(self, w):

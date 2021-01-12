@@ -40,6 +40,11 @@ from nmigen_boards.test.blinky import *
 from nmigen import *
 from nmigen.lib.cdc import ResetSynchronizer
 
+from ..pul.ex3_calc import *
+# m.submodules.calc = 
+calc = Calculator(50000000, 1000000)
+exit(1)
+
 class Top(Elaboratable):
     def elaborate(self, platform):
         m = Module()
@@ -54,6 +59,9 @@ class Top(Elaboratable):
         kwargs['o_FCLKCLK'] = Cat(*fclk)
         kwargs['o_FCLKRESETN'] = frst
         # TODO rest of kwargs
+
+
+        m.submodules.psds = Instance('PS7hahahha', **kwargs)
 
         m.submodules.ps = Instance('PS7', **kwargs)
         m.submodules.rst_sync = rst_sync = ResetSynchronizer(~frst[0], domain='sync')
