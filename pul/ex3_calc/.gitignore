@@ -1,2 +1,7 @@
 __pycache__
-calc.vcd
+*.vcd
+*.log
+*.jou
+*/build
+build
+*.out
