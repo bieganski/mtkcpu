@@ -16,10 +16,11 @@ class MinizedPlatform(Xilinx7SeriesPlatform):
         *LEDResources(pins="E13 E12", attrs=Attrs(IOSTANDARD="LVCMOS33")),
         *SwitchResources(pins="E11", attrs=Attrs(IOSTANDARD="LVCMOS33")),
         Resource("vga_r", 0, Pins("L15 M15 L14 M14", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
-        Resource("vga_g", 0, Pins("P15 R15 R12 R13", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
         Resource("vga_b", 0, Pins("K13 L13 N13 N14", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
-        Resource("vga_hsync", 0, Pins("P13", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
-        Resource("vga_vsync", 0, Pins("P14", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
+        # Resource("vga_g", 0, Pins("P15 R15 R12 R13", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
+        Resource("vga_g", 0, Pins("P13 P14 N11 N12", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
+        Resource("vga_hsync", 0, Pins("P15", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
+        Resource("vga_vsync", 0, Pins("R15", dir='o'), Attrs(IOSTANDARD="LVCMOS33", DRIVE='2')),
     ]
 
     connectors = []
@@ -150,15 +151,15 @@ class Top(Elaboratable):
 
         ####
 
-        m.d.comb += [
-            r.eq(clk_slow),
-            g.eq(1),
-            b.eq(7),
-            hsync.eq(clk_slow),
-            vsync.eq(1),
-        ]
+        # m.d.comb += [
+        #     r.eq(clk_slow),
+        #     g.eq(1),
+        #     b.eq(7),
+        #     hsync.eq(clk_slow),
+        #     vsync.eq(1),
+        # ]
 
-        return m
+        # return m
 
         ####
 
