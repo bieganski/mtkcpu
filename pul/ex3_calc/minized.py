@@ -42,10 +42,58 @@ from nmigen_boards.test.blinky import *
 from nmigen import *
 from nmigen.lib.cdc import ResetSynchronizer
 
-from calc import *
+
+class TopWrapper(Elaboratable):
+    def __init__(self, mod):
+        self.mod = mod
+
+    def elaborate(self, platform):
+        m = Module()
+
+        frst = Signal(4)
+        fclk = [Signal(name=f"fclk{i}") for i in range(4)]
+
+        m.domains.sync = ClockDomain()
+
+        kwargs = {}
+        kwargs['o_FCLKCLK'] = Cat(*fclk)
+        kwargs['o_FCLKRESETN'] = frst
+
+
+        rx = Signal()
+        tx = Signal()
+
+        kwargs['i_EMIOUART1RX'] = rx
+        kwargs['o_EMIOUART1TX'] = tx
+
+        for i in range(2):
+            kwargs[f'i_EMIOUART{i}CTSN'] = C(1, 1)
+            kwargs[f'i_EMIOUART{i}DCDN'] = C(1, 1)
+            kwargs[f'i_EMIOUART{i}DSRN'] = C(1, 1)
+            kwargs[f'i_EMIOUART{i}RIN'] = C(1, 1)
+            kwargs[f'i_EMIOUART{i}RX'] = C(1, 1)
+        # TODO rest of kwargs
+
+        m.submodules.ps = Instance('PS7', **kwargs)
+        m.submodules.rst_sync = ResetSynchronizer(~frst[0], domain='sync')
+
+        platform.add_clock_constraint(fclk[0], 50e6)
+
+        m.submodules.mod = self.mod
+
+        m.d.comb += [
+            ClockSignal('sync').eq(fclk[0]),
+        ]
+
+        m.d.comb += ResetSignal("sync").eq(~Signal(reset=False))
+
+        return m
+
 
 class Top(Elaboratable):
     def elaborate(self, platform):
+
+        from calc import Calculator
         m = Module()
 
         frst = Signal(4)
@@ -202,4 +250,5 @@ class Top(Elaboratable):
 
 
 # MinizedPlatform().build(Blinky(), do_program=True)
-MinizedPlatform().build(Top(), do_program=True)
+if __name__ == "__main__":
+    MinizedPlatform().build(Top(), do_program=True)

@@ -45,6 +45,7 @@ def dump_asm(string):
     print(code)
 
     code = [int.from_bytes(x, 'little') for x in chunks(code, 4)] # 4 byte chunks
+    print([hex(instr) for instr in code])
     print(code)
     for i, instr in enumerate(code):
         print(f"{i}: {format(instr, '032b')} ")
