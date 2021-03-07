@@ -15,9 +15,30 @@ source_file = io.StringIO(
     """
     .section code
         lw t0, 0(t1)
-        ; li t1, 0xdeadbeef
+        li t1, 0xdeadbeef
+        sb t1, 0(t1)
+        sw t1, 0(t1)
     """
 )
+
+def dump_asm_to_S_file(val_lst, filename="asm.S"):
+    import os
+    if os.path.isfile(filename):
+        # raise ValueError(f"Error: File {filename} already exists!")
+        os.remove(filename)
+    with open(filename, "w") as f:
+        for instr in val_lst:
+            assert type(instr) == int
+        f.writelines("\n /* This file was dumped automatically */\n")
+        f.writelines([f".word {hex(instr)} /* {format(instr, '032b')} */\n" for instr in val_lst])
+    print(f"OK, file '{filename}'' dumped!")
+
+    import subprocess
+
+    obj_filename = filename.split('.')[-2] + ".o"
+    subprocess.getoutput(f"riscv-none-embed-gcc -c {filename} -o {obj_filename}")
+    output = subprocess.getoutput(f"riscv-none-embed-objdump -d {obj_filename}")
+    print(output)
 
 # https://stackoverflow.com/a/312464
 def chunks(lst, n):
@@ -36,7 +57,7 @@ def dump_asm(string):
     #     print("ASM didn't work, trying CC...")
     #     obj = cc(source_file, 'riscv')
     obj = link([obj])
-    print(obj.sections)
+    # print(obj.sections)
     code = obj.get_section('code').data
     # from pprint import pprint
     # pprint(dir(obj))
@@ -49,6 +70,7 @@ def dump_asm(string):
     print(code)
     for i, instr in enumerate(code):
         print(f"{i}: {format(instr, '032b')} ")
+    dump_asm_to_S_file(code)
     return code
 
 if __name__ == "__main__":

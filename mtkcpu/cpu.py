@@ -10,6 +10,18 @@ class Error(Enum):
     OP_CODE = 1
     MISALIGNED_INSTR = 2
 
+class Type(Enum):
+    LOAD = 0b00000
+    STORE = 0b01000
+    ADD = 0b10000
+    SUB = 0b10001
+    BRANCH = 0b11000
+    JAL = 0b11001
+    AUIPC = 0b00101
+    LUI = 0b01101
+    OP_IMM = 0b00100
+
+
 class MtkCpu(Elaboratable):
     def __init__(self, xlen, mem_init=[0 for _ in range(MEM_WORDS)]):
 
@@ -80,6 +92,18 @@ class MtkCpu(Elaboratable):
 
         instr = Signal(self.width)
 
+        opcode = Signal(5)
+        op_type = Signal(Type)
+        comb += [
+            opcode.eq(instr[2:8]),
+            op_type.eq(opcode),
+        ]
+
+
+        # Integer computational instructions are either encoded as register-immediate operations using
+        #    the I-type format or as register-register operations using the R-type format.
+
+
         with m.FSM() as fsm:
             with m.State("FETCH"):
                 with m.If(pc & 0b11):
@@ -96,7 +120,10 @@ class MtkCpu(Elaboratable):
                 with m.If(instr & 0b11 != 0b11):
                     comb += self.err.eq(Error.OP_CODE)
                     m.next = "DECODE" # loop
+                sync += pc.eq(pc + 1)
+                m.next = "FETCH"
                 
+                # comb += op_type.eq()
                 
 
         return m
