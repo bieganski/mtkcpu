@@ -18,6 +18,19 @@ source_file = io.StringIO(
         li t1, 0xdeadbeef
         sb t1, 0(t1)
         sw t1, 0(t1)
+        srai x2, x1, 4
+        beq t1, t2, a ; 0(t2)
+        a:
+        nop
+        b: .word 8082
+        srli x3, x1, 4
+    """
+)
+
+source_file = io.StringIO(
+    """
+    .section code
+        b: .word 8082
     """
 )
 
@@ -68,8 +81,20 @@ def dump_asm(string):
     code = [int.from_bytes(x, 'little') for x in chunks(code, 4)] # 4 byte chunks
     print([hex(instr) for instr in code])
     print(code)
-    for i, instr in enumerate(code):
+    for i, instr in enumerate(code, 1):
         print(f"{i}: {format(instr, '032b')} ")
+
+    print("====================================")
+    for i, instr in enumerate(code, 1):
+        shift = 32
+        l = [7, 5, 5, 3, 5, 7] # funct7, r2, r1, funct3, rd, opcode
+        print(f"{i}: ", end='')
+        for s in l:
+            shift -= s
+            f = f"{format(instr >> shift & (2**s-1), f'0{s}b')}"
+            print(f"{f},", end='')
+        print("")
+
     dump_asm_to_S_file(code)
     return code
 

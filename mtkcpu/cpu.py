@@ -10,7 +10,7 @@ class Error(Enum):
     OP_CODE = 1
     MISALIGNED_INSTR = 2
 
-class Type(Enum):
+class InstrType(Enum):
     LOAD = 0b00000
     STORE = 0b01000
     ADD = 0b10000
@@ -21,17 +21,24 @@ class Type(Enum):
     LUI = 0b01101
     OP_IMM = 0b00100
 
+class InstrFormat(Enum):
+    R = 0 # addw t0, t1, t2
+    I = 1 # addi t1, t0, 100
+    S = 2 # sw t1, 8(t2)  # no destination register
+    B = 3 # beq t1, t2, End # no destination register
+    U = 4
+    J = 5
+
+from units.loadstore import LoadStoreUnit
 
 class MtkCpu(Elaboratable):
-    def __init__(self, xlen, mem_init=[0 for _ in range(MEM_WORDS)]):
+    def __init__(self, mem_init=[0 for _ in range(MEM_WORDS)]):
 
         if len(mem_init) > MEM_WORDS:
             raise ValueError(f"Memory init length exceedes memory size! it's max length is {MEM_WORDS}, passed: {len(mem_init)}.")
 
-        mem_init = mem_init + [0]
-
-        self.width = xlen
-        self.mem_init = mem_init
+        # 0xDE for debugging (uninitialized data magic byte)
+        self.mem_init = mem_init + [0xDE] * (len(mem_init) - MEM_WORDS)
 
         # input signals
         self.mem_in_vld = Signal()
@@ -51,77 +58,48 @@ class MtkCpu(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
-        mem = Memory(width=self.width, depth=MEM_WORDS, init=self.mem_init)
+        mem = m.submodules.mem = LoadStoreUnit(32, mem_init=self.mem_init)
 
         # regs = Memory(width=self.width, depth=32, init=[0 for _ in range(32)])
 
-        read_port = m.submodules.read_port = mem.read_port()
+        pc = Signal(32, reset=START_ADDR)
 
-        read_addr = Signal(range(MEM_WORDS * self.width))
-        read_data = Signal(self.width)
-
-        pc = Signal(self.width, reset=START_ADDR)
-
-        # read_en = Signal(reset=True)
-        # m.d.sync += read_en.eq(1 - read_en)
-
-        comb += [
-            read_port.addr.eq(read_addr),
-            read_data.eq(read_port.data),
-        ]
-
-        write_port = m.submodules.write_port = mem.write_port()
-
-        write_addr = Signal(range(MEM_WORDS * self.width))
-        write_data = Signal(self.width)
-        write_en = Signal(reset=False)
-
-        comb += [
-            write_port.addr.eq(write_addr),
-            write_port.data.eq(write_data),
-            write_port.en.eq(write_en),
-        ]
-
-        # sync += [
-        #     write_en.eq(1 - write_en),
-
-        #     read_addr.eq(read_addr + 1),
-        #     write_data.eq(0x100 + write_addr),
-        #     write_addr.eq(write_addr + 1),
-        # ]
-
-        instr = Signal(self.width)
-
+        # current state signals.
+        instr = Signal(32)
         opcode = Signal(5)
-        op_type = Signal(Type)
+        op_type = Signal(InstrType)
         comb += [
             opcode.eq(instr[2:8]),
             op_type.eq(opcode),
         ]
 
-
         # Integer computational instructions are either encoded as register-immediate operations using
         #    the I-type format or as register-register operations using the R-type format.
-
-
         with m.FSM() as fsm:
             with m.State("FETCH"):
                 with m.If(pc & 0b11):
                     comb += self.err.eq(Error.MISALIGNED_INSTR)
                     m.next = "FETCH" # loop
-                comb += [
-                    read_addr.eq(pc),
-                ]
-                m.next = "DECODE"
+                with m.Else(): # TODO remove that 'else'
+                    comb += [
+                        mem.read_addr.eq(pc >> 2),
+                        mem.read_rdy.eq(True) # important! only one cycle set
+                    ]
+                    m.next = "WAIT_FETCH"
+            with m.State("WAIT_FETCH"):
+                with m.If(mem.read_done):
+                    sync += instr.eq(mem.read_data)
+                    m.next = "DECODE"
+                with m.Else():
+                    m.next = "WAIT_FETCH"
             with m.State("DECODE"):
-                comb += [
-                    instr.eq(read_data)
-                ]
                 with m.If(instr & 0b11 != 0b11):
                     comb += self.err.eq(Error.OP_CODE)
                     m.next = "DECODE" # loop
-                sync += pc.eq(pc + 1)
+                sync += pc.eq(pc + 4)
                 m.next = "FETCH"
+                # funct3 = Signal(3)
+                # funct7 = Signal(7)
                 
                 # comb += op_type.eq()
                 
@@ -144,7 +122,7 @@ if __name__ == "__main__":
     """
     )
     
-    m = MtkCpu(32, mem_init=dump_asm(source_file))
+    m = MtkCpu(mem_init=dump_asm(source_file))
 
     sim = Simulator(m)
     sim.add_clock(1e-6) # 1 mhz?
