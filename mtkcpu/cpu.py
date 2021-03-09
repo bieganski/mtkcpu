@@ -26,7 +26,7 @@ class InstrFormat(Enum):
     I = 1 # addi t1, t0, 100
     S = 2 # sw t1, 8(t2)  # no destination register
     B = 3 # beq t1, t2, End # no destination register
-    U = 4
+    U = 4 # upper immediate - LUI, AUIPC  # Label: AUIPC x10, 0 # Puts address of label in x10 /* only imm20 and rd */
     J = 5
 
 from units.loadstore import LoadStoreUnit

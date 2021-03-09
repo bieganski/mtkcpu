@@ -2,14 +2,14 @@
 import io
 from ppci.api import cc, link, asm
 
-source_file = io.StringIO(
-    """
-        int printf(char* fmt) { }
-        void main() {
-            printf("Hello world!\n");
-        }
-    """
-)
+# source_file = io.StringIO(
+#     """
+#         int printf(char* fmt) { }
+#         void main() {
+#             printf("Hello world!\n");
+#         }
+#     """
+# )
 
 source_file = io.StringIO(
     """
@@ -22,17 +22,19 @@ source_file = io.StringIO(
         beq t1, t2, a ; 0(t2)
         a:
         nop
-        b: .word 8082
-        srli x3, x1, 4
     """
 )
 
 source_file = io.StringIO(
     """
     .section code
-        b: .word 8082
+        lw t0, 0(t1)
+        beq x0, x0, a
+        a:
+        nop
     """
 )
+
 
 def dump_asm_to_S_file(val_lst, filename="asm.S"):
     import os
