@@ -28,7 +28,9 @@ source_file = io.StringIO(
 source_file = io.StringIO(
     """
     .section code
-        lw t0, 0(t1)
+        add x1, x1, x1
+        addi x1, x1, 10
+        sub x1, x1, x1
         beq x0, x0, a
         a:
         nop

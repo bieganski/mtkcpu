@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from nmigen import *
 from enum import Enum
+from nmigen.hdl.rec import * # Record, Layout
 
 START_ADDR = 0 # 0x1000
 MEM_WORDS = 10
@@ -9,27 +10,28 @@ class Error(Enum):
     OK = 0
     OP_CODE = 1
     MISALIGNED_INSTR = 2
+    AAAA = 3
+    BBBB = 4
 
-class InstrType(Enum):
-    LOAD = 0b00000
-    STORE = 0b01000
-    ADD = 0b10000
-    SUB = 0b10001
-    BRANCH = 0b11000
-    JAL = 0b11001
-    AUIPC = 0b00101
-    LUI = 0b01101
-    OP_IMM = 0b00100
-
-class InstrFormat(Enum):
-    R = 0 # addw t0, t1, t2
-    I = 1 # addi t1, t0, 100
-    S = 2 # sw t1, 8(t2)  # no destination register
-    B = 3 # beq t1, t2, End # no destination register
-    U = 4 # upper immediate - LUI, AUIPC  # Label: AUIPC x10, 0 # Puts address of label in x10 /* only imm20 and rd */
-    J = 5
-
+from isa import *
 from units.loadstore import LoadStoreUnit
+from units.logic import LogicUnit, match_logic_unit
+from units.adder import AdderUnit, match_adder_unit
+
+
+class ActiveUnitLayout(Layout):
+    def __init__(self):
+        super().__init__([
+            ("logic", 1),
+            ("adder", 1),
+            ("dxdt", 1),
+        ])
+
+class ActiveUnit(Record):
+    def __init__(self):
+        super().__init__(ActiveUnitLayout(), name="active_unit")
+
+
 
 class MtkCpu(Elaboratable):
     def __init__(self, mem_init=[0 for _ in range(MEM_WORDS)]):
@@ -58,19 +60,69 @@ class MtkCpu(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
+        # CPU units used.
+        logic = m.submodules.logic = LogicUnit()
+        adder = m.submodules.adder = AdderUnit()
+
+        # Memory interface.
         mem = m.submodules.mem = LoadStoreUnit(32, mem_init=self.mem_init)
 
-        # regs = Memory(width=self.width, depth=32, init=[0 for _ in range(32)])
+        # Current decoding state signals.
+        instr = Signal(32)
+        funct3 = Signal(3)
+        funct7 = Signal(7)
+        rd = Signal(5)
+        rs1 = Signal(5)
+        rs2 = Signal(5)
+        rs1val = Signal(32)
+        rs2val = Signal(32)
+        rdval = Signal(32)
+        opcode = Signal(InstrType)
 
+        # Register file. Contains two read ports (for rs1, rs2) and one write port. 
+        regs = Memory(width=32, depth=32, init=[i for i in range(32)])
+        reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
+        reg_read_port2 = m.submodules.reg_read_port2 = regs.read_port()
+        reg_write_port = m.submodules.reg_write_port = regs.write_port()
+        
+        comb += [
+            reg_read_port1.addr.eq(rs1),
+            reg_read_port2.addr.eq(rs2),
+            rs1val.eq(reg_read_port1.data),
+            rs2val.eq(reg_read_port2.data),
+
+            reg_write_port.addr.eq(rd),
+            reg_write_port.data.eq(rdval),
+            # reg_write_port.en set later
+        ]
+        # Additional register - program counter.
         pc = Signal(32, reset=START_ADDR)
 
-        # current state signals.
-        instr = Signal(32)
-        opcode = Signal(5)
-        op_type = Signal(InstrType)
+        # assert ( popcount(active_unit) in [0, 1] )
+        active_unit = ActiveUnit()
+
+        # drive input signals of actually used unit.
+        with m.If(active_unit.logic):
+            comb += [
+                logic.src1.eq(rs1val),
+                logic.src2.eq(rs2val),
+            ]
+        with m.Elif(active_unit.adder):
+            comb += [
+                adder.src1.eq(rs1val),
+                adder.src2.eq(rs2val),
+            ]
+
+
+        # Decoding state (with redundancy - unknown instr. type).     
+        # We use mem.read_data instead of instr for getting registers to save 1 cycle.           
         comb += [
-            opcode.eq(instr[2:8]),
-            op_type.eq(opcode),
+            opcode.eq(instr[0:7]),
+            rd.eq(mem.read_data[7:12]),
+            funct3.eq(instr[12:15]),
+            rs1.eq(mem.read_data[15:20]),
+            rs2.eq(mem.read_data[20:25]),
+            funct7.eq(instr[25:32]),
         ]
 
         # Integer computational instructions are either encoded as register-immediate operations using
@@ -88,20 +140,54 @@ class MtkCpu(Elaboratable):
                     m.next = "WAIT_FETCH"
             with m.State("WAIT_FETCH"):
                 with m.If(mem.read_done):
-                    sync += instr.eq(mem.read_data)
+                    sync += [
+                        instr.eq(mem.read_data),
+                    ]
                     m.next = "DECODE"
                 with m.Else():
                     m.next = "WAIT_FETCH"
             with m.State("DECODE"):
+                # here, we have registers already fetched into rs1val, rs2val.
                 with m.If(instr & 0b11 != 0b11):
                     comb += self.err.eq(Error.OP_CODE)
-                    m.next = "DECODE" # loop
+                    m.next = "DECODE" # loop TODO
                 sync += pc.eq(pc + 4)
+
+                # comb += self.err.eq(Error.BBBB)
+                with m.Switch(opcode):
+                    with m.Case(InstrType.ALU):
+                        with m.If(match_logic_unit(opcode, funct3, funct7)):
+                            sync += [
+                                active_unit.logic.eq(1),
+                            ]
+                        with m.Elif(match_adder_unit(opcode, funct3, funct7)):
+                            sync += [
+                                active_unit.adder.eq(1),
+                                adder.sub.eq(funct7 == Funct7.SUB),
+                            ]
+                m.next = "EXECUTE" # TODO assumption: single-cycle execution, may not be true for mul/div etc.
+            with m.State("EXECUTE"):
+                # instr. is being executed in specified unit
+                with m.If(active_unit.logic):
+                    sync += [
+                        active_unit.logic.eq(0),
+                        rdval.eq(logic.res),
+                    ]
+                with m.Elif(active_unit.adder):
+                    sync += [
+                        active_unit.adder.eq(0),
+                        rdval.eq(adder.res),
+                    ]
+                m.next = "STORE"
+            with m.State("STORE"):
+                # Here, rdval is present. If neccessary, put it into register file.
+                should_write_rd = ((opcode == InstrType.ALU) | (opcode == InstrType.LOAD)) # TODO
+
+                with m.If(should_write_rd):
+                    comb += reg_write_port.en.eq(True)
                 m.next = "FETCH"
-                # funct3 = Signal(3)
-                # funct7 = Signal(7)
-                
-                # comb += op_type.eq()
+                        
+
                 
 
         return m
@@ -117,6 +203,7 @@ if __name__ == "__main__":
     source_file = StringIO(
     """
     .section code
+        add x1, x2, x3
         lw t0, 0(t1)
         li t1, 0xdeadbeef
     """
@@ -128,7 +215,7 @@ if __name__ == "__main__":
     sim.add_clock(1e-6) # 1 mhz?
 
     def test():
-        for _ in range(20):
+        for _ in range(50):
             yield
     sim.add_sync_process(test)
     with sim.write_vcd("cpu.vcd"):
