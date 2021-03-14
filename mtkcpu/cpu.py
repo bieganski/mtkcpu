@@ -34,13 +34,16 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, mem_init=[0 for _ in range(MEM_WORDS)]):
+    def __init__(self, reg_init=[0 for _ in range(32)], mem_init=[0 for _ in range(MEM_WORDS)]):
 
         if len(mem_init) > MEM_WORDS:
             raise ValueError(f"Memory init length exceedes memory size! it's max length is {MEM_WORDS}, passed: {len(mem_init)}.")
+        if len(reg_init) > 32:
+            raise ValueError(f"Register init length (={len(reg_init)}) exceedes 32!")
 
         # 0xDE for debugging (uninitialized data magic byte)
         self.mem_init = mem_init + [0xDE] * (len(mem_init) - MEM_WORDS)
+        self.reg_init = reg_init + [0x0]  * (len(reg_init) - 32)
 
         # input signals
         self.mem_in_vld = Signal()
@@ -80,10 +83,10 @@ class MtkCpu(Elaboratable):
         opcode = Signal(InstrType)
 
         # Register file. Contains two read ports (for rs1, rs2) and one write port. 
-        regs = Memory(width=32, depth=32, init=[i for i in range(32)])
+        regs = Memory(width=32, depth=32, init=self.reg_init)
         reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
         reg_read_port2 = m.submodules.reg_read_port2 = regs.read_port()
-        reg_write_port = m.submodules.reg_write_port = regs.write_port()
+        reg_write_port = self.reg_write_port = m.submodules.reg_write_port = regs.write_port()
         
         comb += [
             reg_read_port1.addr.eq(rs1),
@@ -186,48 +189,6 @@ class MtkCpu(Elaboratable):
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
                 m.next = "FETCH"
-                        
-
-                
-
+        
         return m
 
-
-
-if __name__ == "__main__":
-    from nmigen.back.pysim import *
-
-    from asm_dump import dump_asm
-    from io import StringIO
-
-    source_file = StringIO(
-    """
-    .section code
-        add x1, x2, x3
-        lw t0, 0(t1)
-        li t1, 0xdeadbeef
-    """
-    )
-    
-    m = MtkCpu(mem_init=dump_asm(source_file))
-
-    sim = Simulator(m)
-    sim.add_clock(1e-6) # 1 mhz?
-
-    def test():
-        for _ in range(50):
-            yield
-    sim.add_sync_process(test)
-    with sim.write_vcd("cpu.vcd"):
-        sim.run()
-        print("simulation done!")
-
-
-
-
-# if __name__ == "__main__":
-#     from minized import MinizedPlatform, TopWrapper
-#     m = MtkCpu(32)
-#     MinizedPlatform().build(TopWrapper(m), do_program=False)
-
-# exit(0)
