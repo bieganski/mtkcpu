@@ -2,6 +2,8 @@
 from nmigen import *
 from enum import Enum
 from nmigen.hdl.rec import * # Record, Layout
+from operator import or_
+from functools import reduce
 
 START_ADDR = 0 # 0x1000
 MEM_WORDS = 10
@@ -17,6 +19,7 @@ from isa import *
 from units.loadstore import LoadStoreUnit
 from units.logic import LogicUnit, match_logic_unit
 from units.adder import AdderUnit, match_adder_unit
+from units.shifter import ShifterUnit, match_shifter_unit
 
 
 class ActiveUnitLayout(Layout):
@@ -24,7 +27,7 @@ class ActiveUnitLayout(Layout):
         super().__init__([
             ("logic", 1),
             ("adder", 1),
-            ("dxdt", 1),
+            ("shifter", 1),
         ])
 
 class ActiveUnit(Record):
@@ -66,6 +69,7 @@ class MtkCpu(Elaboratable):
         # CPU units used.
         logic = m.submodules.logic = LogicUnit()
         adder = m.submodules.adder = AdderUnit()
+        shifter = m.submodules.shifter = ShifterUnit()
 
         # Memory interface.
         mem = m.submodules.mem = LoadStoreUnit(32, mem_init=self.mem_init)
@@ -80,6 +84,7 @@ class MtkCpu(Elaboratable):
         rs1val = Signal(32)
         rs2val = Signal(32)
         rdval = Signal(32)
+        imm = Signal(12)
         opcode = Signal(InstrType)
 
         # Register file. Contains two read ports (for rs1, rs2) and one write port. 
@@ -107,6 +112,7 @@ class MtkCpu(Elaboratable):
         # drive input signals of actually used unit.
         with m.If(active_unit.logic):
             comb += [
+                logic.funct3.eq(funct3),
                 logic.src1.eq(rs1val),
                 logic.src2.eq(rs2val),
             ]
@@ -115,7 +121,17 @@ class MtkCpu(Elaboratable):
                 adder.src1.eq(rs1val),
                 adder.src2.eq(rs2val),
             ]
-
+        with m.Elif(active_unit.shifter):
+            comb += [
+                shifter.funct3.eq(funct3),
+                imm.eq(instr[20:32]),
+                shifter.src1.eq(rs1val),
+                shifter.shift.eq(Mux(
+                    opcode == InstrType.OP_IMM, 
+                    imm[0:5],
+                    rs2val[0:5]) # TODO check semantics
+                ),
+            ]
 
         # Decoding state (with redundancy - unknown instr. type).     
         # We use mem.read_data instead of instr for getting registers to save 1 cycle.           
@@ -168,6 +184,15 @@ class MtkCpu(Elaboratable):
                                 active_unit.adder.eq(1),
                                 adder.sub.eq(funct7 == Funct7.SUB),
                             ]
+                        with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
+                            sync += [
+                                active_unit.shifter.eq(1),
+                            ]
+                    with m.Case(InstrType.OP_IMM):
+                        with m.If(match_shifter_unit(opcode, funct3, funct7)):
+                            sync += [
+                                active_unit.shifter.eq(1),
+                            ]
                 m.next = "EXECUTE" # TODO assumption: single-cycle execution, may not be true for mul/div etc.
             with m.State("EXECUTE"):
                 # instr. is being executed in specified unit
@@ -181,10 +206,23 @@ class MtkCpu(Elaboratable):
                         active_unit.adder.eq(0),
                         rdval.eq(adder.res),
                     ]
+                with m.Elif(active_unit.shifter):
+                    sync += [
+                        active_unit.shifter.eq(0),
+                        rdval.eq(shifter.res),
+                    ]
                 m.next = "STORE"
             with m.State("STORE"):
                 # Here, rdval is present. If neccessary, put it into register file.
-                should_write_rd = ((opcode == InstrType.ALU) | (opcode == InstrType.LOAD)) # TODO
+
+                # TODO rather have it by checking instr type (R, J etc.)
+                should_write_rd = reduce(or_,
+                    [
+                        opcode == InstrType.ALU, 
+                        opcode == InstrType.LOAD,
+                        match_shifter_unit(opcode, funct3, funct7),
+                    ]
+                )
 
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
