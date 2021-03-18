@@ -44,12 +44,12 @@ if __name__ == "__main__":
     from asm_dump import dump_asm
     from io import StringIO
 
-    for t in REG_TESTS:
+    for i, t in enumerate(REG_TESTS, 1):
         name = t['name'] if 'name' in t else f"unnamed: \n{t['source']}\n"
         # mem_init = t['mem_init'] if 'mem_init' in t else []
         reg_init = t['reg_init'] if 'reg_init' in t else []
         reg_test(name, t['source'], t['out_reg'], t['out_val'], t['timeout'], reg_init=reg_init)
-        print(f"== Test <{name}> completed successfully..")
+        print(f"== Test {i}/{len(REG_TESTS)}: <{name}> completed successfully..")
 
     # from minized import MinizedPlatform, TopWrapper
     # m = MtkCpu(32)
