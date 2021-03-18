@@ -6,11 +6,11 @@ from operator import or_
 
 class ShifterUnit(Elaboratable):
     def __init__(self):
-        self.src1 = Signal(32, name="bbb")
+        self.src1 = Signal(32, name="shifter_src1")
         self.src1signed = Signal(signed(32))
-        self.shift = Signal(5, name="ccc") # 5 lowest imm bits
-        self.res = Signal(32, name="aaa")
-        self.funct3 = Signal(Funct3, name="aba")
+        self.shift = Signal(5, name="shifter_shift") # 5 lowest imm bits
+        self.res = Signal(32, name="shifter_res")
+        self.funct3 = Signal(Funct3)
         
 
     def elaborate(self, platform):
@@ -24,7 +24,7 @@ class ShifterUnit(Elaboratable):
             with m.Case(Funct3.SRA): # | Funct3.SRAI
                 m.d.comb += [
                     self.src1signed.eq(self.src1),
-                    self.res.eq(self.src1signed >> self.shift), # TODO check me
+                    self.res.eq(self.src1signed >> self.shift),
                 ]
         return m
 
