@@ -1,1 +1,0 @@
-../pul/ex3_calc/minized.py

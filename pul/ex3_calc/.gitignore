@@ -1,7 +1,0 @@
-__pycache__
-*.vcd
-*.log
-*.jou
-*/build
-build
-*.out
