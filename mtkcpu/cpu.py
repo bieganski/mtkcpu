@@ -185,50 +185,33 @@ class MtkCpu(Elaboratable):
                 sync += pc.eq(pc + 4)
 
                 # comb += self.err.eq(Error.BBBB)
-                with m.Switch(opcode):
-                    with m.Case(InstrType.ALU):
-                        with m.If(match_logic_unit(opcode, funct3, funct7)):
-                            sync += [
-                                active_unit.logic.eq(1),
-                            ]
-                        with m.Elif(match_adder_unit(opcode, funct3, funct7)):
-                            sync += [
-                                active_unit.adder.eq(1),
-                                adder.sub.eq((opcode == InstrType.ALU) & (funct7 == Funct7.SUB)),
-                            ]
-                        with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
-                            sync += [
-                                active_unit.shifter.eq(1),
-                            ]
-                    with m.Case(InstrType.OP_IMM):
-                        with m.If(match_shifter_unit(opcode, funct3, funct7)):
-                            sync += [
-                                active_unit.shifter.eq(1),
-                            ]
-                        with m.If(match_adder_unit(opcode, funct3, funct7)):
-                            sync += [
-                                active_unit.adder.eq(1),
-                            ]
-                        with m.If(match_logic_unit(opcode, funct3, funct7)):
-                            sync += [
-                                active_unit.logic.eq(1),
-                            ]
+                with m.If(match_logic_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.logic.eq(1),
+                    ]
+                with m.Elif(match_adder_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.adder.eq(1),
+                        adder.sub.eq((opcode == InstrType.ALU) & (funct7 == Funct7.SUB)),
+                    ]
+                with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.shifter.eq(1),
+                    ]
                 m.next = "EXECUTE" # TODO assumption: single-cycle execution, may not be true for mul/div etc.
             with m.State("EXECUTE"):
                 # instr. is being executed in specified unit
+                sync += active_unit.eq(0)
                 with m.If(active_unit.logic):
                     sync += [
-                        active_unit.logic.eq(0),
                         rdval.eq(logic.res),
                     ]
                 with m.Elif(active_unit.adder):
                     sync += [
-                        active_unit.adder.eq(0),
                         rdval.eq(adder.res),
                     ]
                 with m.Elif(active_unit.shifter):
                     sync += [
-                        active_unit.shifter.eq(0),
                         rdval.eq(shifter.res),
                     ]
                 m.next = "STORE"
@@ -238,8 +221,6 @@ class MtkCpu(Elaboratable):
                 # TODO rather have it by checking instr type (R, J etc.)
                 should_write_rd = reduce(or_,
                     [
-                        opcode == InstrType.ALU, 
-                        opcode == InstrType.LOAD,
                         match_shifter_unit(opcode, funct3, funct7),
                         match_adder_unit(opcode, funct3, funct7),
                         match_logic_unit(opcode, funct3, funct7),
