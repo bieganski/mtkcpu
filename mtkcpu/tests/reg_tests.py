@@ -14,7 +14,7 @@ REG_TESTS = [
         "out_reg": 3,
         "out_val": 5,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -28,7 +28,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 1,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -44,7 +44,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 0b1,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [0b111 for _ in range(32)]
     },
 
@@ -58,7 +58,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 0b101,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -72,7 +72,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 0b11100,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [0b111 for _ in range(32)]
     },
 
@@ -86,7 +86,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 0b10110,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -102,7 +102,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 0b101,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -116,7 +116,7 @@ REG_TESTS = [
         "out_reg": 10,
         "out_val": 0b1,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [0b111 for _ in range(32)]
     },
 
@@ -131,7 +131,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": -7 & 0xFFFFFFFF, # ah, that python infinite-bit representation...
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [-100 for _ in range(32)]
     },
 
@@ -145,7 +145,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": 0b11000000000000000000000000000000,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [0, 1, 0x80000000]
     },
 
@@ -161,7 +161,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": 0b111,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
     
@@ -175,7 +175,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": 0b11,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -189,7 +189,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": 0b11010,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -205,7 +205,7 @@ REG_TESTS = [
         "out_reg": 5,
         "out_val": 0b10101,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 
@@ -219,7 +219,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": 0b111,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
     
@@ -233,7 +233,7 @@ REG_TESTS = [
         "out_reg": 2,
         "out_val": 0b11,
         "timeout": 5,
-        "mem_init": [],
+        "mem_init": {},
         "reg_init": [i for i in range(32)]
     },
 

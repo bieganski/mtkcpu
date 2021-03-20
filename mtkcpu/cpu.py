@@ -5,7 +5,7 @@ from nmigen.hdl.rec import * # Record, Layout
 from operator import or_
 from functools import reduce
 
-START_ADDR = 0 # 0x1000
+START_ADDR = 0x1000
 MEM_WORDS = 10
 
 class Error(Enum):
@@ -76,7 +76,7 @@ class MtkCpu(Elaboratable):
         shifter = m.submodules.shifter = ShifterUnit()
 
         # Memory interface.
-        mem = m.submodules.mem = LoadStoreUnit(32, mem_init=self.mem_init)
+        mem = self.mem = m.submodules.mem = LoadStoreUnit(32, mem_init=self.mem_init)
 
         # Current decoding state signals.
         instr = Signal(32)
@@ -149,7 +149,7 @@ class MtkCpu(Elaboratable):
                 ),
             ]
 
-        # Decoding state (with redundancy - unknown instr. type).     
+        # Decoding state (with redundancy - instr. type not known yet).     
         # We use mem.read_data instead of instr for getting registers to save 1 cycle.           
         comb += [
             opcode.eq(instr[0:7]),
@@ -160,8 +160,6 @@ class MtkCpu(Elaboratable):
             funct7.eq(instr[25:32]),
         ]
 
-        # Integer computational instructions are either encoded as register-immediate operations using
-        #    the I-type format or as register-register operations using the R-type format.
         with m.FSM() as fsm:
             with m.State("FETCH"):
                 with m.If(pc & 0b11):
@@ -169,9 +167,10 @@ class MtkCpu(Elaboratable):
                     m.next = "FETCH" # loop
                 with m.Else(): # TODO remove that 'else'
                     comb += [
-                        mem.read_addr.eq(pc >> 2),
+                        mem.read_addr.eq(pc),
                         mem.read_rdy.eq(True) # important! only one cycle set
                     ]
+                with m.If(mem.read_vld):
                     m.next = "WAIT_FETCH"
             with m.State("WAIT_FETCH"):
                 with m.If(mem.read_done):
