@@ -47,6 +47,7 @@ if __name__ == "__main__":
     from asm_dump import dump_asm
     from io import StringIO
 
+    print("===== Register tests...")
     for i, t in enumerate(REG_TESTS, 1):
         name = t['name'] if 'name' in t else f"unnamed: \n{t['source']}\n"
         # mem_init = t['mem_init'] if 'mem_init' in t else []
