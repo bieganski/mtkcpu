@@ -44,6 +44,10 @@ class MtkCpu(Elaboratable):
         if len(reg_init) > 32:
             raise ValueError(f"Register init length (={len(reg_init)}) exceedes 32!")
 
+        if reg_init[0] != 0:
+            print(f"WARNING, register x0 set to value {reg_init[0]}, however it will be overriden with zero..")
+        reg_init[0] = 0
+
         # 0xDE for debugging (uninitialized data magic byte)
         self.mem_init = mem_init + [0xDE] * (len(mem_init) - MEM_WORDS)
         self.reg_init = reg_init + [0x0]  * (len(reg_init) - 32)
@@ -225,7 +229,7 @@ class MtkCpu(Elaboratable):
                         match_adder_unit(opcode, funct3, funct7),
                         match_logic_unit(opcode, funct3, funct7),
                     ]
-                )
+                ) & (rd != 0)
 
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
