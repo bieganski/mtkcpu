@@ -4,15 +4,23 @@ from ppci.api import cc, link, asm
 
 
 source_file = io.StringIO(
+    # """
+    # .section code
+    #     sw x31, 4(x7)
+    #     add x1, x1, x1
+    #     addi x1, x1, 10
+    #     sub x1, x1, x1
+    #     beq x0, x0, a
+    #     a:
+    #     nop
+    # """
+
     """
-    .section code
-        add x1, x1, x1
-        addi x1, x1, 10
-        sub x1, x1, x1
-        beq x0, x0, a
-        a:
-        nop
-    """
+        .section code
+            add x3, x2, x3
+            lw t0, 0(t1)
+            li t1, 0xdeadbeef
+        """
 )
 
 

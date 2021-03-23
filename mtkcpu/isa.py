@@ -1,13 +1,13 @@
 from enum import Enum
 
 class Funct3(Enum):
-    ADD = SUB = ADDI = 0b000
-    SLTU = 0b011 # set lower than
-    SLT = SLTI = 0b010 # set lower than
-    XOR = 0b100
-    SLL = SLLI = 0b001 # shift left logic
-    SRL = SRLI = 0b101 # shift right logic
-    SRA = SRAI  = 0b101 # shift right arith.
+    ADD = SUB = ADDI = B = 0b000
+    SLL = SLLI = H = 0b001    
+    SLTU = 0b011
+    SLT = SLTI = W = 0b010
+    XOR = BU = 0b100
+    SRL = SRLI = HU = 0b101
+    SRA = SRAI  = 0b101
     OR = 0b110
     AND = 0b111
 
