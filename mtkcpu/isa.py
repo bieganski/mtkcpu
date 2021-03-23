@@ -17,8 +17,8 @@ class Funct7(Enum):
 
 
 class InstrType(Enum):
-    LOAD    = 0b00000
-    STORE   = 0b01000
+    # LOAD    = 0b00000
+    # STORE   = 0b01000
     ADD     = 0b10000
     SUB     = 0b10001
     BRANCH  = 0b11000
@@ -28,6 +28,8 @@ class InstrType(Enum):
 
     OP_IMM  = 0b0010011
     ALU     = 0b0110011
+    LOAD    = 0b0000011
+    STORE   = 0b0100011
 
 class InstrFormat(Enum):
     R = 0 # addw t0, t1, t2

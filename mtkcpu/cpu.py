@@ -16,7 +16,7 @@ class Error(Enum):
     BBBB = 4
 
 from isa import *
-from units.loadstore import LoadStoreUnit
+from units.loadstore import LoadStoreUnit, MemoryArbiter
 from units.logic import LogicUnit, match_logic_unit
 from units.adder import AdderUnit, match_adder_unit
 from units.shifter import ShifterUnit, match_shifter_unit
@@ -37,10 +37,8 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, reg_init=[0 for _ in range(32)], mem_init=[0 for _ in range(MEM_WORDS)]):
+    def __init__(self, reg_init=[0 for _ in range(32)]):
 
-        if len(mem_init) > MEM_WORDS:
-            raise ValueError(f"Memory init length exceedes memory size! it's max length is {MEM_WORDS}, passed: {len(mem_init)}.")
         if len(reg_init) > 32:
             raise ValueError(f"Register init length (={len(reg_init)}) exceedes 32!")
 
@@ -49,7 +47,6 @@ class MtkCpu(Elaboratable):
         reg_init[0] = 0
 
         # 0xDE for debugging (uninitialized data magic byte)
-        self.mem_init = mem_init + [0xDE] * (len(mem_init) - MEM_WORDS)
         self.reg_init = reg_init + [0x0]  * (len(reg_init) - 32)
 
         # input signals
@@ -76,7 +73,9 @@ class MtkCpu(Elaboratable):
         shifter = m.submodules.shifter = ShifterUnit()
 
         # Memory interface.
-        mem = self.mem = m.submodules.mem = LoadStoreUnit(32, mem_init=self.mem_init)
+        mem = self.mem = m.submodules.mem = MemoryArbiter()
+
+        ibus_port = mem.port(priority=0)
 
         # Current decoding state signals.
         instr = Signal(32)
@@ -150,13 +149,13 @@ class MtkCpu(Elaboratable):
             ]
 
         # Decoding state (with redundancy - instr. type not known yet).     
-        # We use mem.read_data instead of instr for getting registers to save 1 cycle.           
+        # We use ibus_port.dat_r instead of instr for getting registers to save 1 cycle.           
         comb += [
             opcode.eq(instr[0:7]),
-            rd.eq(mem.read_data[7:12]),
+            rd.eq(ibus_port.dat_r[7:12]),
             funct3.eq(instr[12:15]),
-            rs1.eq(mem.read_data[15:20]),
-            rs2.eq(mem.read_data[20:25]),
+            rs1.eq(ibus_port.dat_r[15:20]),
+            rs2.eq(ibus_port.dat_r[20:25]),
             funct7.eq(instr[25:32]),
         ]
 
@@ -166,16 +165,21 @@ class MtkCpu(Elaboratable):
                     comb += self.err.eq(Error.MISALIGNED_INSTR)
                     m.next = "FETCH" # loop
                 with m.Else(): # TODO remove that 'else'
-                    comb += [
-                        mem.read_addr.eq(pc),
-                        mem.read_rdy.eq(True) # important! only one cycle set
-                    ]
-                with m.If(mem.read_vld):
-                    m.next = "WAIT_FETCH"
-            with m.State("WAIT_FETCH"):
-                with m.If(mem.read_done):
                     sync += [
-                        instr.eq(mem.read_data),
+                        ibus_port.cyc.eq(1),
+                        ibus_port.we.eq(0),
+                        ibus_port.adr.eq(pc),
+                    ]
+                    # comb += [
+                    #     mem.read_addr.eq(pc),
+                    #     mem.read_rdy.eq(True) # important! only one cycle set
+                    # ]
+                # with m.If(mem.read_vld):
+                m.next = "WAIT_FETCH"
+            with m.State("WAIT_FETCH"):
+                with m.If(ibus_port.ack):
+                    sync += [
+                        instr.eq(ibus_port.dat_r),
                     ]
                     m.next = "DECODE"
                 with m.Else():
@@ -201,7 +205,9 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.shifter.eq(1),
                     ]
-                m.next = "EXECUTE" # TODO assumption: single-cycle execution, may not be true for mul/div etc.
+                # with m.Elif((opcode == InstrType.LOAD) | opcode == InstrType.STORE):
+                #     pass # TODO
+                m.next = "EXECUTE"
             with m.State("EXECUTE"):
                 # instr. is being executed in specified unit
                 sync += active_unit.eq(0)
@@ -217,9 +223,12 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(shifter.res),
                     ]
-                m.next = "STORE"
+                with m.If((opcode == InstrType.LOAD) | opcode == InstrType.STORE):
+                    pass # TODO tu jestem
+                with m.Else():
+                    m.next = "STORE"
             with m.State("STORE"):
-                # Here, rdval is present. If neccessary, put it into register file.
+                # Here, rdval is already calculated. If neccessary, put it into register file.
 
                 # TODO rather have it by checking instr type (R, J etc.)
                 should_write_rd = reduce(or_,

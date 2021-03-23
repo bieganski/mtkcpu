@@ -1,3 +1,4 @@
 asm.o
 asm.S
-cpu.vcd
+*.vcd
+*.gtkw
