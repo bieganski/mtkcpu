@@ -15,8 +15,28 @@ bus_layout = [
     ("sel",    4, DIR_FANOUT),
     ("cyc",    1, DIR_FANOUT),
     ("ack",    1, DIR_FANIN),
-    ("we",    1, DIR_FANOUT),
+    ("we",     1, DIR_FANOUT),
 ]
+
+# implements 'ready/valid' via '~busy' and 'en' signals. 
+class LoadStoreInterface():
+
+    def __init__(self):
+        # Input signals.
+        self.en = Signal(name="EN")
+        self.store = Signal()
+        
+        self.addr = Signal(32)
+        self.mask = Signal(4)
+
+        self.write_data = Signal(32)
+
+        # Output signals.
+        self.busy = Signal()
+        self.read_data = Signal(32)
+        
+        self.ack = Signal()
+
 
 class PriorityEncoder(Elaboratable):
     def __init__(self, width):
@@ -81,22 +101,194 @@ class MemoryArbiter(Elaboratable):
 from common import matcher
 from isa import Funct3, InstrType
 
-# match_logic_unit = matcher([
-#     (InstrType.ALU, Funct3.OR, 0b0000000),
-#     (InstrType.ALU, Funct3.AND, 0b0000000),
-#     (InstrType.ALU, Funct3.XOR, 0b0000000),
+match_load = matcher([
+    (InstrType.LOAD, Funct3.B),
+    (InstrType.LOAD, Funct3.BU),
+    (InstrType.LOAD, Funct3.H),
+    (InstrType.LOAD, Funct3.HU),
+])
 
-#     (InstrType.OP_IMM, Funct3.XOR),
-#     (InstrType.OP_IMM, Funct3.OR),
-#     (InstrType.OP_IMM, Funct3.AND),
-# ])
+match_store = matcher([
+    (InstrType.STORE, Funct3.B),
+    (InstrType.STORE, Funct3.BU),
+    (InstrType.STORE, Funct3.H),
+    (InstrType.STORE, Funct3.HU),
+])
 
-class LoadStoreUnit(Elaboratable):
-    def __init__(self, mem_port):
-        pass
+match_loadstore_unit = lambda op, f3, f7: match_load(op, f3, f7) | match_store(op, f3, f7)
+
+class Selector(Elaboratable):
+    def __init__(self):
+        self.mask = Signal(4)
+        self.funct3 = Signal(Funct3)
+        self.store = Signal()
 
     def elaborate(self, platform):
         m = Module()
+        comb = m.d.comb
+        u = Signal() # unsigned
+        comb += u.eq((self.funct3 == Funct3.HU) | (self.funct3 == Funct3.BU) )
+        
+        with m.Switch(self.funct3):
+            with m.Case(Funct3.W):
+                comb += self.mask.eq(0b1111)
+            with m.Case(Funct3.H):
+                comb += self.mask.eq(0b0011)
+            with m.Case(Funct3.B):
+                comb += self.mask.eq(0b0001)
+            with m.Case(Funct3.HU):
+                comb += self.mask.eq(0b0011)
+            with m.Case(Funct3.BU):
+                comb += self.mask.eq(0b0001)
+        with m.If(self.store & ~u):
+            comb += self.mask.eq(0b1111)
+
+        return m
+
+def prefix_all_signals(obj, prefix):
+    for attr_name in dir(obj):
+        sig = getattr(obj, attr_name)
+        if type(sig) == Signal:
+            sig.name = prefix + sig.name
+
+
+class LoadStoreUnit(Elaboratable, LoadStoreInterface):
+    def __init__(self, mem_port):
+        super().__init__()
+        self.mem_port = mem_port
+
+    def elaborate(self, platform):
+        m = Module()
+
+        comb = m.d.comb
+        sync = m.d.sync
+
+        comb += [
+            self.busy.eq(self.mem_port.cyc),
+        ]
+
+        sync += [
+            self.mem_port.adr.eq(self.addr),
+            self.mem_port.dat_w.eq(self.write_data),
+            self.mem_port.sel.eq(self.mask),
+            self.mem_port.we.eq(self.store),
+
+            self.read_data.eq(self.mem_port.dat_r),
+        ]
+
+        # suppress ack signals (asserted during one cycle).
+        with m.If(self.ack):
+            sync += [
+                self.ack.eq(0)
+            ]
+
+        with m.If(self.mem_port.cyc):
+            with m.If(self.mem_port.ack):
+                sync += [
+                    self.mem_port.cyc.eq(0),
+                    self.ack.eq(1)
+                ]               
+        with m.Else():
+            sync += [
+                self.mem_port.cyc.eq(self.en),
+            ]
+
+        return m
+
+class MemoryUnit(Elaboratable):
+    def __init__(self, mem_port):
+
+        self.loadstore = LoadStoreUnit(mem_port)
+        
+        # Input signals.
+        self.funct3 = Signal(Funct3)
+        self.src1 = Signal(32)
+
+        # 'src2' is used only for 'store' instructions.
+        self.src2 = Signal(32)
+        self.offset = Signal(signed(12))
+
+        self.res = Signal(32)
+        self.en = Signal() # TODO do 'ready/valid' interface
+
+        # Output signals.
+        self.ack = Signal()
+        
+
+    def elaborate(self, platform):
+        m = Module()
+        comb = m.d.comb
+        sync = m.d.sync
+        loadstore = m.submodules.loadstore = self.loadstore
+
+        store = Signal()
+        addr = Signal(32)
+        
+        comb += [
+            store.eq(self.funct3 == InstrType.STORE),
+            addr.eq(self.offset + self.src1),
+        ]
+
+        sel = m.submodules.sel = Selector()
+
+        # sel.mask will be calculated.
+        comb += [
+            sel.funct3.eq(self.funct3),
+            sel.store.eq(store),
+        ]
+
+        word = Signal(32)
+        half_word = Signal(16)
+        byte = Signal(8)
+
+        comb += [
+            word.eq(self.src2),
+            half_word.eq(self.src2[0:16]),
+            byte.eq(self.src2[0:8]),
+        ]
+
+        write_data = Signal(32)
+        signed_write_data = Signal(signed(32))
+
+        with m.If(store):
+            with m.Switch(self.funct3):
+                with m.Case(Funct3.W):
+                    comb += write_data.eq(word),
+                with m.Case(Funct3.H):
+                    comb += [
+                        signed_write_data.eq(half_word),
+                        write_data.eq(signed_write_data),    
+                    ]
+                with m.Case(Funct3.B):
+                    comb += [
+                        signed_write_data.eq(byte),
+                        write_data.eq(signed_write_data),    
+                    ]
+                with m.Case(Funct3.HU):
+                    comb += write_data.eq(half_word),
+                with m.Case(Funct3.BU):
+                    comb += write_data.eq(byte),
+        
+        with m.FSM() as fsm:
+            with m.State("IDLE"):
+                with m.If(self.en):
+                    comb += [
+                        loadstore.en.eq(1),
+                        loadstore.store.eq(store),
+                        loadstore.addr.eq(addr),
+                        loadstore.mask.eq(sel.mask),
+                        loadstore.write_data.eq(write_data), 
+                    ]
+                    m.next = "WAIT"
+                with m.Else():
+                    m.next = "IDLE"
+            with m.State("WAIT"):
+                with m.If(loadstore.ack):
+                    comb += [
+                        self.ack.eq(1),
+                        self.res.eq(loadstore.read_data),
+                    ]
+                    m.next = "IDLE"
 
         return m
 

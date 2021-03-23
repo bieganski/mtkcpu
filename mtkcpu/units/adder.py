@@ -3,9 +3,9 @@ from nmigen import *
 class AdderUnit(Elaboratable):
     def __init__(self):
         self.sub = Signal() # add or sub
-        self.src1 = Signal(32, name="aaa_src1")
-        self.src2 = Signal(32, name="aaa_src2")
-        self.res = Signal(32, name="aaa_res")
+        self.src1 = Signal(32, name="adder_src1")
+        self.src2 = Signal(32, name="adder_src2")
+        self.res = Signal(32, name="adder_res")
 
     def elaborate(self, platform):
         m = Module()
@@ -14,7 +14,8 @@ class AdderUnit(Elaboratable):
             Mux(self.sub,
                 self.src1 - self.src2,
                 self.src1 + self.src2
-        ))
+            )
+        )
 
         return m
 

@@ -16,7 +16,7 @@ class Error(Enum):
     BBBB = 4
 
 from isa import *
-from units.loadstore import LoadStoreUnit, MemoryArbiter
+from units.loadstore import LoadStoreUnit, MemoryUnit, MemoryArbiter, match_load, match_loadstore_unit
 from units.logic import LogicUnit, match_logic_unit
 from units.adder import AdderUnit, match_adder_unit
 from units.shifter import ShifterUnit, match_shifter_unit
@@ -28,6 +28,7 @@ class ActiveUnitLayout(Layout):
             ("logic", 1),
             ("adder", 1),
             ("shifter", 1),
+            ("mem_unit", 1),
         ])
 
 class ActiveUnit(Record):
@@ -67,15 +68,17 @@ class MtkCpu(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
-        # CPU units used.
-        logic = m.submodules.logic = LogicUnit()
-        adder = m.submodules.adder = AdderUnit()
-        shifter = m.submodules.shifter = ShifterUnit()
 
         # Memory interface.
         mem = self.mem = m.submodules.mem = MemoryArbiter()
 
-        ibus_port = mem.port(priority=0)
+        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(mem_port=mem.port(priority=0))
+
+        # CPU units used.
+        logic = m.submodules.logic = LogicUnit()
+        adder = m.submodules.adder = AdderUnit()
+        shifter = m.submodules.shifter = ShifterUnit()
+        mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=mem.port(priority=1))
 
         # Current decoding state signals.
         instr = Signal(32)
@@ -147,16 +150,28 @@ class MtkCpu(Elaboratable):
                     rs2val[0:5]) # TODO check semantics
                 ),
             ]
+        with m.Elif(active_unit.mem_unit):
+            comb += [
+                mem_unit.en.eq(1),
+                mem_unit.funct3.eq(funct3),
+                mem_unit.src1.eq(rs1val),
+                mem_unit.src2.eq(rs2val),
+                mem_unit.offset.eq(Mux(
+                    funct3 == InstrType.LOAD,
+                    imm,
+                    Cat(imm[5:12], rd)
+                )),
+            ]
 
         # Decoding state (with redundancy - instr. type not known yet).     
-        # We use ibus_port.dat_r instead of instr for getting registers to save 1 cycle.           
+        # We use 'ibus.read_data' instead of instr for getting registers to save 1 cycle.           
         comb += [
-            opcode.eq(instr[0:7]),
-            rd.eq(ibus_port.dat_r[7:12]),
-            funct3.eq(instr[12:15]),
-            rs1.eq(ibus_port.dat_r[15:20]),
-            rs2.eq(ibus_port.dat_r[20:25]),
-            funct7.eq(instr[25:32]),
+            opcode.eq(  instr[0:7]),
+            rd.eq(      instr[7:12]),
+            funct3.eq(  instr[12:15]),
+            rs1.eq(     instr[15:20]),
+            rs2.eq(     instr[20:25]),
+            funct7.eq(  instr[25:32]),
         ]
 
         with m.FSM() as fsm:
@@ -166,9 +181,9 @@ class MtkCpu(Elaboratable):
                     m.next = "FETCH" # loop
                 with m.Else(): # TODO remove that 'else'
                     sync += [
-                        ibus_port.cyc.eq(1),
-                        ibus_port.we.eq(0),
-                        ibus_port.adr.eq(pc),
+                        ibus.en.eq(1),
+                        ibus.store.eq(0),
+                        ibus.addr.eq(pc),
                     ]
                     # comb += [
                     #     mem.read_addr.eq(pc),
@@ -177,9 +192,9 @@ class MtkCpu(Elaboratable):
                 # with m.If(mem.read_vld):
                 m.next = "WAIT_FETCH"
             with m.State("WAIT_FETCH"):
-                with m.If(ibus_port.ack):
+                with m.If(ibus.ack):
                     sync += [
-                        instr.eq(ibus_port.dat_r),
+                        instr.eq(ibus.read_data),
                     ]
                     m.next = "DECODE"
                 with m.Else():
@@ -205,12 +220,17 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.shifter.eq(1),
                     ]
+                with m.Elif(match_loadstore_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.mem_unit.eq(1),
+                    ]
                 # with m.Elif((opcode == InstrType.LOAD) | opcode == InstrType.STORE):
                 #     pass # TODO
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
                 # instr. is being executed in specified unit
                 sync += active_unit.eq(0)
+                m.next = "WRITEBACK"
                 with m.If(active_unit.logic):
                     sync += [
                         rdval.eq(logic.res),
@@ -223,11 +243,15 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(shifter.res),
                     ]
-                with m.If((opcode == InstrType.LOAD) | opcode == InstrType.STORE):
-                    pass # TODO tu jestem
-                with m.Else():
-                    m.next = "STORE"
-            with m.State("STORE"):
+                with m.Elif(active_unit.mem_unit):
+                    sync += [
+                        rdval.eq(mem_unit.res),
+                    ]
+                    with m.If(mem_unit.ack):
+                        m.next = "WRITEBACK"
+                    with m.Else():
+                        m.next = "EXECUTE"
+            with m.State("WRITEBACK"):
                 # Here, rdval is already calculated. If neccessary, put it into register file.
 
                 # TODO rather have it by checking instr type (R, J etc.)
@@ -236,6 +260,7 @@ class MtkCpu(Elaboratable):
                         match_shifter_unit(opcode, funct3, funct7),
                         match_adder_unit(opcode, funct3, funct7),
                         match_logic_unit(opcode, funct3, funct7),
+                        match_load(opcode, funct3, funct7),
                     ]
                 ) & (rd != 0)
 

@@ -51,26 +51,26 @@ def reg_test(name, asm_str, reg_num, exptected_val, timeout_cycles, reg_init, me
             rdy = random.choice((0, 1), p=[1-p, p])
 
             if state[0] == MemState.FREE:
-                cyc = yield cpu.mem.bus.cyc
-                we = yield cpu.mem.bus.we
+                cyc = yield cpu.ibus.mem_port.cyc
+                we = yield cpu.ibus.mem_port.we
                 write = cyc and     we 
                 read  = cyc and not we
-                addr = yield cpu.mem.bus.adr
+                addr = yield cpu.ibus.mem_port.adr
                 if read and write:
                     raise ValueError("ERROR (TODO handle): simultaneous 'read' and 'write' detected.")
                 if read:
                     state[0] = MemState.BUSY_READ
                 elif write:
                     state[0] = MemState.BUSY_WRITE
-                    data = yield cpu.mem.bus.dat_w
+                    data = yield cpu.ibus.mem_port.dat_w
             else:
                 if rdy: # random indicated transaction done in current cycle
                     if state[0] == MemState.BUSY_WRITE:
-                        mem_dict[addr] = data
-                        yield cpu.mem.bus.ack.eq(1)
+                        mem_dict[addr] = data # TODO implement select
+                        yield cpu.ibus.mem_port.ack.eq(1)
                     elif state[0] == MemState.BUSY_READ:
-                        yield cpu.mem.bus.dat_r.eq(mem_dict[addr]) # TODO handle error
-                        yield cpu.mem.bus.ack.eq(1)
+                        yield cpu.ibus.mem_port.dat_r.eq(mem_dict[addr]) # TODO handle error
+                        yield cpu.ibus.mem_port.ack.eq(1)
                     state[0] = MemState.FREE
             ### // memory management
             en = yield cpu.reg_write_port.en
