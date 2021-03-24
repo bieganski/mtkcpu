@@ -1,3 +1,7 @@
+# REG_TESTS semantic:
+# after executing t['source'], check whether in register xN (N = t['out_reg']) is value t['out_val'],
+# providing that initial register state was: val(xN) = t['reg_init'][N] and initial memory state: val(addr) = mem_init['addr']
+
 REG_TESTS = [
 
     ### ADD, SUB
@@ -8,8 +12,8 @@ REG_TESTS = [
         """
         .section code
             add x3, x2, x3
-            lw t0, 0(t1)
-            li t1, 0xdeadbeef
+            ; lw t0, 0(t1)
+            ; li t1, 0xdeadbeef
         """,
         "out_reg": 3,
         "out_val": 5,

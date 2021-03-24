@@ -179,22 +179,18 @@ class MtkCpu(Elaboratable):
                 with m.If(pc & 0b11):
                     comb += self.err.eq(Error.MISALIGNED_INSTR)
                     m.next = "FETCH" # loop
-                with m.Else(): # TODO remove that 'else'
+                with m.Else():
                     sync += [
                         ibus.en.eq(1),
                         ibus.store.eq(0),
                         ibus.addr.eq(pc),
                     ]
-                    # comb += [
-                    #     mem.read_addr.eq(pc),
-                    #     mem.read_rdy.eq(True) # important! only one cycle set
-                    # ]
-                # with m.If(mem.read_vld):
                 m.next = "WAIT_FETCH"
             with m.State("WAIT_FETCH"):
                 with m.If(ibus.ack):
                     sync += [
                         instr.eq(ibus.read_data),
+                        ibus.en.eq(0),
                     ]
                     m.next = "DECODE"
                 with m.Else():
