@@ -26,16 +26,16 @@ class LoadStoreInterface():
         self.en = Signal(name="EN")
         self.store = Signal()
         
-        self.addr = Signal(32)
+        self.addr = Signal(32, name="ADDR")
         self.mask = Signal(4)
 
         self.write_data = Signal(32)
 
         # Output signals.
-        self.busy = Signal()
+        self.busy = Signal(name="BUSY")
         self.read_data = Signal(32)
         
-        self.ack = Signal()
+        self.ack = Signal(name="ACK")
 
 
 class PriorityEncoder(Elaboratable):
