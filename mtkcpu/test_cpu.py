@@ -2,6 +2,7 @@
 
 from cpu import MtkCpu
 from tests.reg_tests import REG_TESTS
+from tests.mem_tests import MEM_TESTS
 
 # checks performed: 
 # * if 'expected_val' is not None: check if x<'reg_num'> == 'expected_val',
@@ -28,12 +29,11 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
     assert((reg_num is None and expected_val is None) or (reg_num is not None and exptected_val is not None))
     check_reg = reg_num is not None
     check_mem = expected_mem is not None
-    caught_reg_val = None
 
-    def TEST_MAIN():
-        global caught_reg_val
-        yield Tick()
-        yield Settle()
+    def TEST_MEM(timeout=100):
+        yield Passive()
+        # yield Tick()
+        # yield Settle()
         p = .4 # .5 # probability of mem access in current cycle
         from enum import Enum
         class MemState(Enum):
@@ -44,19 +44,10 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
         # cursed - if we use state == MemState.FREE instead of list, 'timeout_range' geneartor wouldn't work.
         # param need to be passed by reference not by value, for actual binding to be visible in each loop iter.
         state = [MemState.FREE]
-        
-        def timeout_range(state, test_timeout):
-            prev_state = MemState.FREE
-            while prev_state == MemState.FREE or state[0] != MemState.FREE:
-                prev_state = state[0]
-                yield
-            for _ in range(test_timeout):
-                yield
 
         cyc = 0
-        for _ in timeout_range(state, timeout_cycles + 5):
+        while(True): # that's ok, I'm passive.
             cyc += 1
-            ### memory management
             import numpy.random as random
 
             rdy = random.choice((0, 1), p=[1-p, p])
@@ -84,25 +75,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
                         yield cpu.ibus.mem_port.dat_r.eq(mem_dict[mem_addr]) # TODO handle error
                         # print(f"cyc {cyc}: fetched {mem_dict[mem_addr]} (from {mem_dict})...")
                     state[0] = MemState.FREE
-            ### // memory management
-            en = yield cpu.reg_write_port.en
-            if en == 1:
-                LOG("___ en detected ")
-                addr = yield cpu.reg_write_port.addr
-                if addr == reg_num:
-                    LOG(f"___ got write to reg {addr}...")
-                    val = yield cpu.reg_write_port.data
-                    caught_reg_val = val
-                    if check_reg and (val != exptected_val):
-                        # TODO that mechanism for now allows for only one write to reg, extend it if neccessary.
-                        print(f"== ERROR: Expected data write to reg x{addr} of value {exptected_val}," 
-                        f" got value {val}.. \n== fail test: {name}\n")
-                        exit(1)
-                    break # we may want to also check memory
-            yield Tick()
-        if check_reg and caught_reg_val is None:
-            print(f"== ERROR: Test timeouted! No register write observed. Test: {name}\n")
-            exit(1)
+            yield
         if check_mem:
             for k, v in expected_mem.items():
                 if not k in mem_dict:
@@ -111,8 +84,35 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
                 if mem_dict[k] != v:
                     print(f"Errorr! Wrong memory state. Expected {v} value in {k} addr, got {mem_dict[k]}")
                     exit(1)
+        
+
+    def TEST_REG(timeout=100):
+        yield Active()
+        yield Tick()
+        yield Settle()
+
+        for _ in range(timeout):
+            en = yield cpu.reg_write_port.en
+            if en == 1:
+                LOG("___ en detected ")
+                addr = yield cpu.reg_write_port.addr
+                if addr == reg_num:
+                    LOG(f"___ got write to reg {addr}...")
+                    val = yield cpu.reg_write_port.data
+                    if check_reg and (val != exptected_val):
+                        # TODO that mechanism for now allows for only one write to reg, extend it if neccessary.
+                        print(f"== ERROR: Expected data write to reg x{addr} of value {exptected_val}," 
+                        f" got value {val}.. \n== fail test: {name}\n")
+                        exit(1)
+                    return
+            yield Tick()
+        
+        if check_reg:
+            print(f"== ERROR: Test timeouted! No register write observed. Test: {name}\n")
+            exit(1)
     
-    sim.add_sync_process(TEST_MAIN)
+    sim.add_sync_process(TEST_MEM)
+    sim.add_sync_process(TEST_REG)
     with sim.write_vcd("cpu.vcd"):
         sim.run()
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     from io import StringIO
 
     print("===== Register tests...")
-    for i, t in enumerate(REG_TESTS, 1):
+    for i, t in enumerate(REG_TESTS + MEM_TESTS, 1):
         name = t['name'] if 'name' in t else f"unnamed: \n{t['source']}\n"
         # mem_init = t['mem_init'] if 'mem_init' in t else []
         reg_init = t['reg_init'] if 'reg_init' in t else []
