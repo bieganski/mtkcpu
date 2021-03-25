@@ -19,4 +19,4 @@ python3 mtkcpu/test_cpu.py
 * [Language guide](https://nmigen.info/nmigen/latest/lang.html)
 * [Robert Baruch's introduction](https://github.com/RobertBaruch/nmigen-tutorial)
 * [LambdaConcept's Step by Step](http://blog.lambdaconcept.com/doku.php?id=nmigen:tutorial)
-
+* [Robert Baruch's refreshed RiscV playlist](https://www.youtube.com/playlist?list=PLEeZWGE3PwbZTypHq00G-yEX8TEI95lw4)

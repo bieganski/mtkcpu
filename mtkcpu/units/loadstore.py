@@ -27,7 +27,7 @@ class LoadStoreInterface():
         self.store = Signal()
         
         self.addr = Signal(32, name="ADDR")
-        self.mask = Signal(4)
+        self.mask = Signal(4, name="MASK")
 
         self.write_data = Signal(32)
 
@@ -42,7 +42,7 @@ class PriorityEncoder(Elaboratable):
     def __init__(self, width):
         self.width = width
         self.i = Signal(self.width)
-        self.o = Signal(range(self.width))
+        self.o = Signal(range(self.width), name="PE_o")
 
         self.none = Signal()
 
@@ -59,7 +59,8 @@ class PriorityEncoder(Elaboratable):
 class MemoryArbiter(Elaboratable):
     def __init__(self):
         self.ports = {}
-        self.bus = Record(bus_layout)
+        self.bus = Record(bus_layout, name="BUS")
+
 
     def elaborate(self, platform):
         m = Module()
@@ -94,7 +95,7 @@ class MemoryArbiter(Elaboratable):
             raise ValueError(f"Negative priority passed! {priority} < 0.")
         if priority in self.ports:
             raise ValueError("Conflicting priority passed to MemoryArbiter.port()")
-        port = self.ports[priority] = Record.like(self.bus)
+        port = self.ports[priority] = Record.like(self.bus, name=f"PORT{priority}")
         return port
 
 
@@ -102,6 +103,7 @@ from common import matcher
 from isa import Funct3, InstrType
 
 match_load = matcher([
+    (InstrType.LOAD, Funct3.W),
     (InstrType.LOAD, Funct3.B),
     (InstrType.LOAD, Funct3.BU),
     (InstrType.LOAD, Funct3.H),
@@ -119,7 +121,7 @@ match_loadstore_unit = lambda op, f3, f7: match_load(op, f3, f7) | match_store(o
 
 class Selector(Elaboratable):
     def __init__(self):
-        self.mask = Signal(4)
+        self.mask = Signal(4, name="SEL_mask")
         self.funct3 = Signal(Funct3)
         self.store = Signal()
 
@@ -152,6 +154,7 @@ def prefix_all_signals(obj, prefix):
             sig.name = prefix + sig.name
 
 
+# deasserts 'bus.cyc' if (bus.cyc & bus.ack) holds 
 class LoadStoreUnit(Elaboratable, LoadStoreInterface):
     def __init__(self, mem_port):
         super().__init__()
@@ -167,15 +170,6 @@ class LoadStoreUnit(Elaboratable, LoadStoreInterface):
             self.busy.eq(self.mem_port.cyc),
         ]
 
-        sync += [
-            self.mem_port.adr.eq(self.addr),
-            self.mem_port.dat_w.eq(self.write_data),
-            self.mem_port.sel.eq(self.mask),
-            self.mem_port.we.eq(self.store),
-
-            self.read_data.eq(self.mem_port.dat_r),
-        ]
-
         # suppress ack signals (asserted during one cycle).
         with m.If(self.ack):
             sync += [
@@ -186,10 +180,17 @@ class LoadStoreUnit(Elaboratable, LoadStoreInterface):
             with m.If(self.mem_port.ack):
                 sync += [
                     self.mem_port.cyc.eq(0),
-                    self.ack.eq(1)
-                ]               
+                    
+                    self.ack.eq(1),
+                    self.read_data.eq(self.mem_port.dat_r),
+                ]
         with m.Else():
             sync += [
+                self.mem_port.adr.eq(self.addr),
+                self.mem_port.dat_w.eq(self.write_data),
+                self.mem_port.sel.eq(self.mask),
+                self.mem_port.we.eq(self.store),
+                
                 self.mem_port.cyc.eq(self.en),
             ]
 
@@ -202,17 +203,17 @@ class MemoryUnit(Elaboratable):
         
         # Input signals.
         self.funct3 = Signal(Funct3)
-        self.src1 = Signal(32)
+        self.src1 = Signal(32, name="LD_ST_src1")
 
         # 'src2' is used only for 'store' instructions.
-        self.src2 = Signal(32)
-        self.offset = Signal(signed(12))
+        self.src2 = Signal(32, name="LD_ST_src2")
+        self.offset = Signal(signed(12), name="LD_ST_offset")
 
-        self.res = Signal(32)
-        self.en = Signal() # TODO do 'ready/valid' interface
+        self.res = Signal(32, name="LD_ST_res")
+        self.en = Signal(name="LD_ST_en") # TODO do 'ready/valid' interface
 
         # Output signals.
-        self.ack = Signal()
+        self.ack = Signal(name="LD_ST_ack")
         
 
     def elaborate(self, platform):
@@ -272,7 +273,7 @@ class MemoryUnit(Elaboratable):
         with m.FSM() as fsm:
             with m.State("IDLE"):
                 with m.If(self.en):
-                    comb += [
+                    sync += [
                         loadstore.en.eq(1),
                         loadstore.store.eq(store),
                         loadstore.addr.eq(addr),
@@ -288,48 +289,9 @@ class MemoryUnit(Elaboratable):
                         self.ack.eq(1),
                         self.res.eq(loadstore.read_data),
                     ]
+                    sync += [
+                        loadstore.en.eq(0)
+                    ]
                     m.next = "IDLE"
-
-        return m
-
-
-
-
-
-
-class LegacyLoadStoreUnit(Elaboratable):
-    def __init__(self, depth, mem_init=[0 for _ in range(MEM_WORDS)]):
-        self.depth = depth
-        self.mem_init = mem_init
-        super().__init__()
-    def elaborate(self, platform):
-        m = Module()
-
-        # self.mem = Memory(width=32, depth=self.depth, init=self.mem_init)
-        # read_port = m.submodules.read_port = self.mem.read_port()
-        # write_port = m.submodules.write_port = self.mem.write_port()
-
-        # m.d.comb += [
-        #     write_port.addr.eq(self.write_addr),
-        #     write_port.en.eq(self.write_rdy),
-        #     write_port.data.eq(self.write_data),
-
-        #     read_port.addr.eq(self.read_addr),
-        #     # read_port.en is Const(1)
-        #     self.read_data.eq(read_port.data),
-
-        # ]
-
-        # # dummy all the time valid
-        # m.d.comb += [
-        #     self.read_vld.eq(True),
-        #     self.write_vld.eq(True),
-        # ]
-
-        # # dummy 1 cycle read and write, will be more if replace with DDR or any other.
-        # m.d.sync += [
-        #     self.read_done.eq(self.read_rdy),
-        #     self.write_done.eq(self.write_rdy),
-        # ]
 
         return m
