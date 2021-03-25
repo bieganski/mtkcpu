@@ -12,10 +12,10 @@ MEM_TESTS = [
         "source": 
         """
         .section code
-            addi, x10, x0, 0xde
-            lw x10, 0(xde)
+            addi x10, x0, 0xde
+            lw x11, 0xde(x0)
         """,
-        "out_reg": 10,
+        "out_reg": 11,
         "out_val": 0xdeadbeef,
         "timeout": 9000,
         "mem_init": {0xde: 0xdeadbeef},

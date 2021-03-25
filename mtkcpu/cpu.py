@@ -62,23 +62,27 @@ class MtkCpu(Elaboratable):
 
         self.err = Signal(Error, reset=Error.OK)
 
+        self.DEBUG_CTR = Signal(32)
+
     def elaborate(self, platform):
         m = Module()
 
         comb = m.d.comb
         sync = m.d.sync
 
+        sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
+
 
         # Memory interface.
         mem = self.mem = m.submodules.mem = MemoryArbiter()
 
-        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(mem_port=mem.port(priority=0))
+        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(mem_port=mem.port(priority=1))
 
         # CPU units used.
         logic = m.submodules.logic = LogicUnit()
         adder = m.submodules.adder = AdderUnit()
         shifter = m.submodules.shifter = ShifterUnit()
-        mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=mem.port(priority=1))
+        mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=mem.port(priority=0))
 
         # Current decoding state signals.
         instr = Signal(32)
@@ -157,7 +161,7 @@ class MtkCpu(Elaboratable):
                 mem_unit.src1.eq(rs1val),
                 mem_unit.src2.eq(rs2val),
                 mem_unit.offset.eq(Mux(
-                    funct3 == InstrType.LOAD,
+                    opcode == InstrType.LOAD,
                     imm,
                     Cat(imm[5:12], rd)
                 )),
@@ -185,7 +189,10 @@ class MtkCpu(Elaboratable):
                         ibus.store.eq(0),
                         ibus.addr.eq(pc),
                     ]
-                m.next = "WAIT_FETCH"
+                    with m.If(ibus.en & ~ibus.busy):
+                        m.next = "WAIT_FETCH"
+                    with m.Else():
+                        m.next = "FETCH"
             with m.State("WAIT_FETCH"):
                 with m.If(ibus.ack):
                     sync += [
@@ -224,9 +231,6 @@ class MtkCpu(Elaboratable):
                 #     pass # TODO
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
-                # instr. is being executed in specified unit
-                sync += active_unit.eq(0)
-                m.next = "WRITEBACK"
                 with m.If(active_unit.logic):
                     sync += [
                         rdval.eq(logic.res),
@@ -243,10 +247,18 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(mem_unit.res),
                     ]
+
+                with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
                         m.next = "WRITEBACK"
+                        sync += active_unit.eq(0)
                     with m.Else():
                         m.next = "EXECUTE"
+                with m.Else():
+                    # all units not specified by default take 1 cycle
+                    m.next = "WRITEBACK"
+                    sync += active_unit.eq(0)
+                    
             with m.State("WRITEBACK"):
                 # Here, rdval is already calculated. If neccessary, put it into register file.
 

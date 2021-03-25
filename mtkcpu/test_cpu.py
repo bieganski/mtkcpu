@@ -4,6 +4,18 @@ from cpu import MtkCpu
 from tests.reg_tests import REG_TESTS
 from tests.mem_tests import MEM_TESTS
 
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description="mtkCPU testing script.")
+parser.add_argument('--reg', action='store_const', const=REG_TESTS, default=[], required=False)
+parser.add_argument('--mem', action='store_const', const=MEM_TESTS, default=[], required=False)
+parser.add_argument('--verbose', action='store_const', const=True, default=False, required=False)
+
+args = parser.parse_args()
+
+ALL_TESTS = REG_TESTS + MEM_TESTS
+SELECTED_TESTS = args.mem + args.reg if args.mem + args.reg != [] else ALL_TESTS
+VERBOSE = args.verbose
 # checks performed: 
 # * if 'expected_val' is not None: check if x<'reg_num'> == 'expected_val',
 # * if 'expected_mem' is not None: check if for all k, v in 'expected_mem.items()' mem[k] == v.
@@ -30,7 +42,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
     check_reg = reg_num is not None
     check_mem = expected_mem is not None
 
-    def TEST_MEM(timeout=100):
+    def TEST_MEM():
         yield Passive()
         # yield Tick()
         # yield Settle()
@@ -41,21 +53,28 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
             BUSY_READ = 1
             BUSY_WRITE = 2
 
+        # TODO legacy - not used for now.
         # cursed - if we use state == MemState.FREE instead of list, 'timeout_range' geneartor wouldn't work.
         # param need to be passed by reference not by value, for actual binding to be visible in each loop iter.
         state = [MemState.FREE]
 
-        cyc = 0
         while(True): # that's ok, I'm passive.
-            cyc += 1
             import numpy.random as random
 
             rdy = random.choice((0, 1), p=[1-p, p])
 
+            ctr = yield cpu.DEBUG_CTR
+
             if state[0] == MemState.FREE:
-                yield cpu.ibus.mem_port.ack.eq(0) # TODO potrzebne?
+                ack = yield cpu.ibus.mem_port.ack
+                if ack:
+                    yield cpu.ibus.mem_port.ack.eq(0)
+                    print(f"DEBUG_CTR: {ctr}, state: {state[0]}")
+                    yield
+                    continue
+                # yield cpu.ibus.mem_port.ack.eq(0) # TODO potrzebne?
                 cyc = yield cpu.ibus.mem_port.cyc
-                we = yield cpu.ibus.mem_port.we
+                we  = yield cpu.ibus.mem_port.we
                 write = cyc and     we 
                 read  = cyc and not we
                 mem_addr = yield cpu.ibus.mem_port.adr
@@ -67,14 +86,17 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
                     state[0] = MemState.BUSY_WRITE
                     data = yield cpu.ibus.mem_port.dat_w
             else:
+                # yield cpu.ibus.mem_port.ack.eq(0) # TODO potrzebne?
                 if rdy: # random indicated transaction done in current cycle
                     yield cpu.ibus.mem_port.ack.eq(1)
                     if state[0] == MemState.BUSY_WRITE:
                         mem_dict[mem_addr] = data # TODO implement select
                     elif state[0] == MemState.BUSY_READ:
-                        yield cpu.ibus.mem_port.dat_r.eq(mem_dict[mem_addr]) # TODO handle error
-                        # print(f"cyc {cyc}: fetched {mem_dict[mem_addr]} (from {mem_dict})...")
+                        val = 0x0 if mem_addr not in mem_dict else mem_dict[mem_addr]
+                        yield cpu.ibus.mem_port.dat_r.eq(val) # TODO handle error
+                        # print(f"cyc {ctr}: fetched {mem_dict[mem_addr]} (from {mem_dict})...")
                     state[0] = MemState.FREE
+            print(f"DEBUG_CTR: {ctr}, state: {state[0]}")
             yield
         if check_mem:
             for k, v in expected_mem.items():
@@ -86,7 +108,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
                     exit(1)
         
 
-    def TEST_REG(timeout=100):
+    def TEST_REG(timeout=40):
         yield Active()
         yield Tick()
         yield Settle()
@@ -123,11 +145,10 @@ if __name__ == "__main__":
     from asm_dump import dump_asm
     from io import StringIO
 
-    print("===== Register tests...")
-    for i, t in enumerate(REG_TESTS + MEM_TESTS, 1):
-        name = t['name'] if 'name' in t else f"unnamed: \n{t['source']}\n"
-        # mem_init = t['mem_init'] if 'mem_init' in t else []
-        reg_init = t['reg_init'] if 'reg_init' in t else []
+    print("===== Running tests...")
+    for i, t in enumerate(SELECTED_TESTS, 1):
+        name     = t['name']     if 'name'     in t else f"unnamed: \n{t['source']}\n"
+        reg_init = t['reg_init'] if 'reg_init' in t else [0 for _ in range(32)]
         mem_init = t['mem_init'] if 'mem_init' in t else {}
         out_reg  = t['out_reg']  if 'out_reg'  in t else None
         out_val  = t['out_val']  if 'out_val'  in t else None
@@ -141,8 +162,8 @@ if __name__ == "__main__":
             expected_mem=out_mem, 
             reg_init=reg_init,
             mem_init=mem_init,
-            verbose=False)
-        print(f"== Test {i}/{len(REG_TESTS)}: <{name}> completed successfully..")
+            verbose=VERBOSE)
+        print(f"== Test {i}/{len(SELECTED_TESTS)}: <{name}> completed successfully..")
 
     # from minized import MinizedPlatform, TopWrapper
     # m = MtkCpu(32)
