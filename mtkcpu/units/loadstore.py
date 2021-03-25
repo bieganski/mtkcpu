@@ -72,7 +72,7 @@ class MemoryArbiter(Elaboratable):
         # if no transacton in-progress..
         with m.If(~self.bus.cyc):
             for i, p in enumerate(ports):
-                m.d.sync += pe.i[i].eq(p.cyc) # TODO why not comb?
+                m.d.sync += pe.i[i].eq(p.cyc)
 
         # "winning" port idx is in 'pe.o'
         source = Array(ports)[pe.o]
