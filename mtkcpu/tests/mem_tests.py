@@ -90,4 +90,41 @@ MEM_TESTS = [
         "out_val": 5,
         "mem_init": {0x0: 5},
     },
+
+    {
+        "name": "simple 'sh'",
+        "source": 
+        """
+        .section code
+            sh x5, 0(x0)
+        """,
+        "timeout": 10,
+        "reg_init": [i for i in range(32)],
+        "mem_init": {0x0: 5},
+        "mem_out": {0x0: 5}
+    },
+
+    {
+        "name": "negative 'sh'",
+        "source": 
+        """
+        .section code
+            sh x5, 0(x0)
+        """,
+        "timeout": 10,
+        "reg_init": [-5 for _ in range(32)],
+        "mem_out": {0x0: Bits(bin=format(0b11111111_11111011, '32b')).uint},
+    },
+
+    {
+        "name": "simple 'sb'",
+        "source": 
+        """
+        .section code
+            sb x5, 0(x1)
+        """,
+        "timeout": 10,
+        "reg_init": [0xaa for _ in range(32)],
+        "mem_out": {0xaa: 0xaa},
+    },
 ]

@@ -110,7 +110,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
             yield
         
 
-    def TEST_REG(timeout=50):
+    def TEST_REG(timeout=30):
         yield Active()
         yield Tick()
         yield Settle()
