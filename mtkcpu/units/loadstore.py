@@ -223,7 +223,7 @@ class MemoryUnit(Elaboratable):
         self.src2 = Signal(32, name="LD_ST_src2")
         self.offset = Signal(signed(12), name="LD_ST_offset")
 
-        self.res = Signal(32, name="LD_ST_res")
+        self.res = Signal(signed(32), name="LD_ST_res")
         self.en = Signal(name="LD_ST_en") # TODO do 'ready/valid' interface
 
         # Output signals.
@@ -251,18 +251,42 @@ class MemoryUnit(Elaboratable):
             sel.store.eq(store),
         ]
 
-        word = Signal(32)
-        half_word = Signal(16)
+        word = Signal(signed(32))
+        half_word = Signal(signed(16))
         byte = Signal(8)
 
-        comb += [
-            word.eq(self.src2),
-            half_word.eq(self.src2[0:16]),
-            byte.eq(self.src2[0:8]),
-        ]
 
         write_data = Signal(32)
         signed_write_data = Signal(signed(32))
+
+        load_res = Signal(signed(32))
+
+        with m.If(store):
+            comb += [
+                word.eq(self.src2),
+                half_word.eq(self.src2[0:16]),
+                byte.eq(self.src2[0:8]),
+            ]
+        with m.Else():
+            comb += [
+                word.eq(loadstore.read_data),
+                half_word.eq(loadstore.read_data[0:16]),
+                byte.eq(loadstore.read_data[0:8]),
+            ]
+
+        with m.If(~store):
+            with m.Switch(self.funct3):
+                with m.Case(Funct3.W):
+                    comb += load_res.eq(word)
+                with m.Case(Funct3.H):
+                    comb += load_res.eq(half_word)
+                with m.Case(Funct3.B):
+                    comb += load_res.eq(byte)
+                with m.Case(Funct3.HU):
+                    comb += load_res.eq(Cat(half_word, 0))
+                with m.Case(Funct3.BU):
+                    comb += load_res.eq(Cat(byte, 0))
+
 
         with m.If(store):
             with m.Switch(self.funct3):
@@ -283,6 +307,8 @@ class MemoryUnit(Elaboratable):
                 with m.Case(Funct3.BU):
                     comb += write_data.eq(byte),
         
+
+
         with m.FSM() as fsm:
             with m.State("IDLE"):
                 with m.If(self.en):
@@ -300,7 +326,7 @@ class MemoryUnit(Elaboratable):
                 with m.If(loadstore.ack):
                     comb += [
                         self.ack.eq(1),
-                        self.res.eq(loadstore.read_data),
+                        self.res.eq(load_res),
                     ]
                     sync += [
                         loadstore.en.eq(0)

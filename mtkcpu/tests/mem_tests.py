@@ -5,6 +5,9 @@
 # in register xN (N = t['out_reg']) is value t['out_val'], and for all k, v in out_mem.items(): mem[k] == v.
 # If t['out_val'] or t['out_mem'] is null, skip according check.
 
+
+from bitstring import Bits
+
 MEM_TESTS = [
     
     {
@@ -32,5 +35,59 @@ MEM_TESTS = [
         "timeout": 10,
         "reg_init": [i for i in range(32)],
         "out_mem": {0xaa: 11}
+    },
+
+    {
+        "name": "simple 'lh'",
+        "source": 
+        """
+        .section code
+            lh x5, 0xaa(x1)
+        """,
+        "timeout": 10,
+        "out_reg": 5,
+        "out_val": Bits(bin=format(0b11111111_11111111_11111111_00000000, '32b')).uint, # uint because of bus unsigned..
+        "reg_init": [i for i in range(32)],
+        "_mem_init": {0xab: 0b11011110_10101101_10111110_11101111}, # 0xdeadbeef
+        "mem_init": {0xab: Bits(bin=format(0b11111111_00000000_11111111_00000000, '32b')).int},
+    },
+
+    {
+        "name": "simple 'lhu'",
+        "source": 
+        """
+        .section code
+            lhu x5, 0(x0)
+        """,
+        "timeout": 10,
+        "out_reg": 5,
+        "out_val": 0b11111111_00000000,
+        "mem_init": {0x0: Bits(bin=format(0b11111111_00000000_11111111_00000000, '32b')).int},
+    },
+
+    {
+        "name": "simple 'lb'",
+        "source": 
+        """
+        .section code
+            lb x5, 0(x0)
+        """,
+        "timeout": 10,
+        "out_reg": 5,
+        "out_val": 0b11111101, # TODO fix that unsigned bus.
+        "mem_init": {0x0: -3},
+    },
+
+    {
+        "name": "simple 'lbu'",
+        "source": 
+        """
+        .section code
+            lbu x5, 0(x0)
+        """,
+        "timeout": 10,
+        "out_reg": 5,
+        "out_val": 5,
+        "mem_init": {0x0: 5},
     },
 ]

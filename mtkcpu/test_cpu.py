@@ -127,6 +127,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
                         # TODO that mechanism for now allows for only one write to reg, extend it if neccessary.
                         print(f"== ERROR: Expected data write to reg x{addr} of value {expected_val}," 
                         f" got value {val}.. \n== fail test: {name}\n")
+                        print(f"{format(expected_val, '32b')} vs {format(val, '32b')}")
                         exit(1)
                     return
             yield Tick()
