@@ -9,7 +9,7 @@ from nmigen.lib.coding import *
 
 
 bus_layout = [
-    ("adr",   30, DIR_FANOUT), # addresses aligned to 4
+    ("adr",   32, DIR_FANOUT), # addresses aligned to 4
     ("dat_w", 32, DIR_FANOUT),
     ("dat_r", 32, DIR_FANIN),
     ("sel",    4, DIR_FANOUT),
@@ -111,6 +111,7 @@ match_load = matcher([
 ])
 
 match_store = matcher([
+    (InstrType.STORE, Funct3.W),
     (InstrType.STORE, Funct3.B),
     (InstrType.STORE, Funct3.BU),
     (InstrType.STORE, Funct3.H),
@@ -214,6 +215,7 @@ class MemoryUnit(Elaboratable):
         self.loadstore = LoadStoreUnit(mem_port)
         
         # Input signals.
+        self.store = Signal() # assume 'load' if deasserted.
         self.funct3 = Signal(Funct3)
         self.src1 = Signal(32, name="LD_ST_src1")
 
@@ -234,11 +236,10 @@ class MemoryUnit(Elaboratable):
         sync = m.d.sync
         loadstore = m.submodules.loadstore = self.loadstore
 
-        store = Signal()
+        store = self.store
         addr = Signal(32)
         
         comb += [
-            store.eq(self.funct3 == InstrType.STORE),
             addr.eq(self.offset + self.src1),
         ]
 

@@ -159,10 +159,11 @@ class MtkCpu(Elaboratable):
                 mem_unit.funct3.eq(funct3),
                 mem_unit.src1.eq(rs1val),
                 mem_unit.src2.eq(rs2val),
+                mem_unit.store.eq(opcode == InstrType.STORE),
                 mem_unit.offset.eq(Mux(
                     opcode == InstrType.LOAD,
                     imm,
-                    Cat(imm[5:12], rd)
+                    Cat(rd, imm[5:12])
                 )),
             ]
 
