@@ -1,3 +1,5 @@
 ppci
 nmigen
 numpy
+pytest
+pytest-xdist

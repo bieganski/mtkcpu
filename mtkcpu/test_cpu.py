@@ -23,6 +23,8 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
     from io import StringIO
     source_file = StringIO(asm_str)
     from asm_dump import dump_asm
+    from nmigen.back.pysim import Simulator, Active, Passive, Tick, Settle
+
 
     LOG = lambda x : print(x) if verbose else True
 
@@ -58,6 +60,8 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
         # param need to be passed by reference not by value, for actual binding to be visible in each loop iter.
         state = [MemState.FREE]
 
+        arbiter = cpu.arbiter
+
         while(True): # that's ok, I'm passive.
             import numpy.random as random
 
@@ -66,38 +70,36 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
             ctr = yield cpu.DEBUG_CTR
 
             if state[0] == MemState.FREE:
-                ack = yield cpu.ibus.mem_port.ack
+                ack = yield arbiter.bus.ack
                 if ack:
-                    yield cpu.ibus.mem_port.ack.eq(0)
+                    yield arbiter.bus.ack.eq(0)
                     print(f"DEBUG_CTR: {ctr}, state: {state[0]}")
                     yield
                     continue
-                # yield cpu.ibus.mem_port.ack.eq(0) # TODO potrzebne?
-                cyc = yield cpu.ibus.mem_port.cyc
-                we  = yield cpu.ibus.mem_port.we
+                cyc = yield arbiter.bus.cyc
+                we  = yield arbiter.bus.we
                 write = cyc and     we 
                 read  = cyc and not we
-                mem_addr = yield cpu.ibus.mem_port.adr
+                mem_addr = yield arbiter.bus.adr
                 if read and write:
                     raise ValueError("ERROR (TODO handle): simultaneous 'read' and 'write' detected.")
                 if read:
                     state[0] = MemState.BUSY_READ
                 elif write:
                     state[0] = MemState.BUSY_WRITE
-                    data = yield cpu.ibus.mem_port.dat_w
+                    data = yield arbiter.bus.dat_w
             else:
-                # yield cpu.ibus.mem_port.ack.eq(0) # TODO potrzebne?
                 if rdy: # random indicated transaction done in current cycle
-                    yield cpu.ibus.mem_port.ack.eq(1)
+                    yield arbiter.bus.ack.eq(1)
                     if state[0] == MemState.BUSY_WRITE:
                         mem_dict[mem_addr] = data # TODO implement select
                     elif state[0] == MemState.BUSY_READ:
                         val = 0x0 if mem_addr not in mem_dict else mem_dict[mem_addr]
-                        yield cpu.ibus.mem_port.dat_r.eq(val) # TODO handle error
-                        # print(f"cyc {ctr}: fetched {mem_dict[mem_addr]} (from {mem_dict})...")
+                        yield arbiter.bus.dat_r.eq(val) # TODO handle error
+                        print(f"cyc {ctr}: fetched {val} (from {mem_dict})...")
                     state[0] = MemState.FREE
-            print(f"DEBUG_CTR: {ctr}, state: {state[0]}")
             yield
+            print(f"DEBUG_CTR: {ctr}, state: {state[0]}")
         if check_mem:
             for k, v in expected_mem.items():
                 if not k in mem_dict:
@@ -108,7 +110,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
                     exit(1)
         
 
-    def TEST_REG(timeout=40):
+    def TEST_REG(timeout=50):
         yield Active()
         yield Tick()
         yield Settle()
@@ -140,11 +142,6 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, exptected_val, expected_mem
 
 
 if __name__ == "__main__":
-    from nmigen.back.pysim import *
-
-    from asm_dump import dump_asm
-    from io import StringIO
-
     print("===== Running tests...")
     for i, t in enumerate(SELECTED_TESTS, 1):
         name     = t['name']     if 'name'     in t else f"unnamed: \n{t['source']}\n"
