@@ -15,11 +15,9 @@ source_file = io.StringIO(
     #     nop
     # """
 
-    """
+    f"""
         .section code
-            add x3, x2, x3
-            lw t0, 0(t1)
-            li t1, 0xdeadbeef
+            li x1, {0b11111111_00000000_11111111_00000000}
         """
 )
 
