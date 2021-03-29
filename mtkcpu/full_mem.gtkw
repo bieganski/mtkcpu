@@ -1,0 +1,87 @@
+[*]
+[*] GTKWave Analyzer v3.3.103 (w)1999-2019 BSI
+[*] Mon Mar 29 13:15:24 2021
+[*]
+[dumpfile] "/home/mateusz/github/mtkcpu/mtkcpu/cpu.vcd"
+[dumpfile_mtime] "Mon Mar 29 13:15:07 2021"
+[dumpfile_size] 15173
+[savefile] "/home/mateusz/github/mtkcpu/mtkcpu/full_mem.gtkw"
+[timestart] 0
+[size] 3952 2176
+[pos] -1 -1
+*-21.000000 6710000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[sst_width] 590
+[signals_width] 398
+[sst_expanded] 1
+[sst_vpaned_height] 668
+@28
+top.active_unit__adder
+top.fsm_state
+top.clk
+@24
+top.adder_res[31:0]
+top.adder_src1[31:0]
+top.adder_src2[31:0]
+top.rd[4:0]
+@22
+top.pc[31:0]
+@24
+top.instr[31:0]
+@22
+top.ADDR[31:0]
+@28
+top.ACK
+top.EN
+@22
+top.ADDR[31:0]
+@28
+top.opcode
+top.active_unit__shifter
+top.active_unit__logic
+top.active_unit__mem_unit
+top.active_unit__adder
+@24
+top.funct3$2
+top.LD_ST_offset[11:0]
+@22
+top.LD_ST_src1[31:0]
+top.LD_ST_src2[31:0]
+top.LD_ST_res[31:0]
+@28
+top.LD_ST_ack
+top.LD_ST_en
+@24
+top.DEBUG_CTR[31:0]
+@22
+top.instr[31:0]
+@28
+top.ibus.PORT1__ack
+@22
+top.ibus.PORT1__adr[29:0]
+@28
+top.ibus.PORT1__cyc
+@22
+top.ibus.PORT1__dat_r[31:0]
+top.ibus.PORT1__dat_w[31:0]
+top.ibus.PORT1__sel[3:0]
+@28
+top.ibus.PORT1__we
+top.ibus.clk
+@22
+top.mem_unit.sel.SEL_mask[3:0]
+@28
+top.clk
+top.clk
+top.arbiter.PORT0__ack
+@22
+top.arbiter.PORT0__adr[29:0]
+@28
+top.arbiter.PORT0__cyc
+@22
+top.arbiter.PORT0__dat_r[31:0]
+top.arbiter.PORT0__dat_w[31:0]
+top.arbiter.PORT0__sel[3:0]
+@28
+top.arbiter.PORT0__we
+[pattern_trace] 1
+[pattern_trace] 0

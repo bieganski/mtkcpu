@@ -72,17 +72,16 @@ class MtkCpu(Elaboratable):
 
         sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 
-
         # Memory interface.
-        mem = self.mem = m.submodules.mem = MemoryArbiter()
+        arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter()
 
-        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(mem_port=mem.port(priority=1))
+        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(mem_port=arbiter.port(priority=1))
 
         # CPU units used.
         logic = m.submodules.logic = LogicUnit()
         adder = m.submodules.adder = AdderUnit()
         shifter = m.submodules.shifter = ShifterUnit()
-        mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=mem.port(priority=0))
+        mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=arbiter.port(priority=0))
 
         # Current decoding state signals.
         instr = Signal(32)
@@ -188,6 +187,7 @@ class MtkCpu(Elaboratable):
                         ibus.en.eq(1),
                         ibus.store.eq(0),
                         ibus.addr.eq(pc),
+                        ibus.mask.eq(0b1111),
                     ]
                     with m.If(ibus.en & ~ibus.busy):
                         m.next = "WAIT_FETCH"

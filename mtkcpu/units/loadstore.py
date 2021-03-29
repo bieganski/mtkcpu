@@ -176,23 +176,35 @@ class LoadStoreUnit(Elaboratable, LoadStoreInterface):
                 self.ack.eq(0)
             ]
 
-        with m.If(self.mem_port.cyc):
-            with m.If(self.mem_port.ack):
+        with m.FSM() as fsm:
+            with m.State("IDLE"):
                 sync += [
-                    self.mem_port.cyc.eq(0),
-                    
-                    self.ack.eq(1),
-                    self.read_data.eq(self.mem_port.dat_r),
+                    self.mem_port.adr.eq(self.addr),
+                    self.mem_port.dat_w.eq(self.write_data),
+                    self.mem_port.sel.eq(self.mask),
+                    self.mem_port.we.eq(self.store),
                 ]
-        with m.Else():
-            sync += [
-                self.mem_port.adr.eq(self.addr),
-                self.mem_port.dat_w.eq(self.write_data),
-                self.mem_port.sel.eq(self.mask),
-                self.mem_port.we.eq(self.store),
-                
-                self.mem_port.cyc.eq(self.en),
-            ]
+                with m.If(self.en):
+                    sync += self.mem_port.cyc.eq(1)
+                    m.next = "WAIT_MEM"
+                with m.Else():
+                    m.next = "IDLE"
+            with m.State("WAIT_MEM"):
+                with m.If(self.mem_port.ack):
+                    sync += [
+                        self.mem_port.cyc.eq(0),
+                        self.ack.eq(1),
+                        self.read_data.eq(self.mem_port.dat_r),
+                    ]
+                    m.next = "WAIT_ACK"
+                with m.Else():
+                    m.next = "WAIT_MEM"
+            with m.State("WAIT_ACK"):
+                # it should took one cycle.
+                with m.If(~self.en):
+                    m.next = "IDLE"
+                with m.Else():
+                    m.next = "WAIT_ACK"
 
         return m
 
