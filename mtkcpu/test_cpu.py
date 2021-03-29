@@ -110,7 +110,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
             yield
         
 
-    def TEST_REG(timeout=30):
+    def TEST_REG(timeout=35):
         yield Active()
         yield Tick()
         yield Settle()
@@ -133,7 +133,7 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
             yield Tick()
 
         if check_mem:
-            print("AAAAA:", expected_mem, mem_dict)
+            print(">>> MEM CHECKING: exp. vs val:", expected_mem, mem_dict)
             for k, v in expected_mem.items():
                 if not k in mem_dict:
                     print(f"Error! Wrong memory state. Expected {v} value in {k} addr, got nothing here!")
@@ -160,14 +160,14 @@ if __name__ == "__main__":
         mem_init = t['mem_init'] if 'mem_init' in t else {}
         out_reg  = t['out_reg']  if 'out_reg'  in t else None
         out_val  = t['out_val']  if 'out_val'  in t else None
-        out_mem  = t['out_mem']  if 'out_mem'  in t else None
+        mem_out  = t['mem_out']  if 'mem_out'  in t else None
         reg_test(
             name=name, 
             asm_str=t['source'], 
             timeout_cycles=t['timeout'], 
             reg_num=out_reg, 
             expected_val=out_val, 
-            expected_mem=out_mem, 
+            expected_mem=mem_out, 
             reg_init=reg_init,
             mem_init=mem_init,
             verbose=VERBOSE)
