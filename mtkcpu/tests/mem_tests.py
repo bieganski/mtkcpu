@@ -2,8 +2,8 @@
 # after executing t['source'], check whether in register xN (N = t['out_reg']) is value t['out_val'],
 # providing that initial register state was: val(xN) = t['reg_init'][N] 
 # and initial memory state: val(addr) = mem_init['addr'], check whether after executing t['source']
-# in register xN (N = t['out_reg']) is value t['out_val'], and for all k, v in out_mem.items(): mem[k] == v.
-# If t['out_val'] or t['out_mem'] is null, skip according check.
+# in register xN (N = t['out_reg']) is value t['out_val'], and for all k, v in mem_out.items(): mem[k] == v.
+# If t['out_val'] or t['mem_out'] is null, skip according check.
 
 
 from bitstring import Bits
@@ -22,7 +22,7 @@ MEM_TESTS = [
         "out_val": 0xdeadbeef,
         "timeout": 10,
         "mem_init": {0xde: 0xdeadbeef},
-        "out_mem": {} # empty dict means whatever (no memory checks performed)
+        "mem_out": {} # empty dict means whatever (no memory checks performed)
     },
 
     {
@@ -34,7 +34,7 @@ MEM_TESTS = [
         """,
         "timeout": 10,
         "reg_init": [i for i in range(32)],
-        "out_mem": {0xaa: 11}
+        "mem_out": {0xaa: 11}
     },
 
     {
@@ -126,5 +126,18 @@ MEM_TESTS = [
         "timeout": 10,
         "reg_init": [0xaa for _ in range(32)],
         "mem_out": {0xaa: 0xaa},
+    },
+
+    {
+        "name": "simple 'sb'",
+        "source": 
+        """
+        .section code
+            sb x5, 0(x1)
+        """,
+        "timeout": 10,
+        "reg_init": [0xaa for _ in range(32)],
+        "mem_init": {0xaa: 0xdeadbeef},
+        "mem_out": {0xaa: 0xdeadbeaa},
     },
 ]
