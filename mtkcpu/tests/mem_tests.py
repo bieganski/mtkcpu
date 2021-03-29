@@ -17,8 +17,20 @@ MEM_TESTS = [
         """,
         "out_reg": 11,
         "out_val": 0xdeadbeef,
-        "timeout": 9000,
+        "timeout": 10,
         "mem_init": {0xde: 0xdeadbeef},
         "out_mem": {} # empty dict means whatever (no memory checks performed)
+    },
+
+    {
+        "name": "simple 'sw'",
+        "source": 
+        """
+        .section code
+            sw x11, 0xaa(x0)
+        """,
+        "timeout": 10,
+        "reg_init": [i for i in range(32)],
+        "out_mem": {0xaa: 11}
     },
 ]
