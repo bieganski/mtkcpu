@@ -12,8 +12,7 @@ class Error(Enum):
     OK = 0
     OP_CODE = 1
     MISALIGNED_INSTR = 2
-    AAAA = 3
-    BBBB = 4
+    AAAA = 3 # TODO debug
 
 from isa import *
 from units.loadstore import LoadStoreUnit, MemoryUnit, MemoryArbiter, match_load, match_loadstore_unit
@@ -22,6 +21,17 @@ from units.adder import AdderUnit, match_adder_unit
 from units.shifter import ShifterUnit, match_shifter_unit
 from units.compare import CompareUnit, match_compare_unit
 from units.upper import match_lui, match_auipc
+
+
+from common import matcher
+
+match_jal = matcher([
+    (InstrType.JAL, ),
+])
+
+match_jalr = matcher([
+    (InstrType.JALR, Funct3.JALR),
+])
 
 
 class ActiveUnitLayout(Layout):
@@ -34,12 +44,13 @@ class ActiveUnitLayout(Layout):
             ("compare", 1),
             ("lui", 1),
             ("auipc", 1),
+            ("jal", 1),
+            ("jalr", 1),
         ])
 
 class ActiveUnit(Record):
     def __init__(self):
         super().__init__(ActiveUnitLayout(), name="active_unit")
-
 
 
 class MtkCpu(Elaboratable):
@@ -99,7 +110,6 @@ class MtkCpu(Elaboratable):
         rs1val = Signal(32)
         rs2val = Signal(32)
         rdval = Signal(32) # calculated by unit, stored to register file
-        rdval_lower = Signal(32) # fetched from register file, concatenated with upper 20 bit (lui)
         imm = Signal(signed(12))
         uimm = Signal(20)
         opcode = Signal(InstrType)
@@ -261,6 +271,14 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.auipc.eq(1),
                     ]
+                with m.Elif(match_jal(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.jal.eq(1),
+                    ]
+                with m.Elif(match_jalr(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.jalr.eq(1),
+                    ]
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
@@ -295,6 +313,10 @@ class MtkCpu(Elaboratable):
                             pc + Cat(Const(0, 12), uimm)
                         ),
                     ]
+                with m.Elif(active_unit.jal | active_unit.jalr):
+                    sync += [
+                        rdval.eq(pc + 4),
+                    ]
 
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
@@ -306,14 +328,25 @@ class MtkCpu(Elaboratable):
                     # all units not specified by default take 1 cycle
                     m.next = "WRITEBACK"
                     sync += active_unit.eq(0)
-                    
+
+            pc_offset = Signal(signed(32))
+            comb += pc_offset.eq(Mux(
+                active_unit.jal,
+                Cat(Const(0, 1), instr[21:31], instr[20], instr[12:20], instr[31]),
+                rs1val + imm, # assume jalr, it won't be used otherwise (look 'pc_addend' calculation.)
+            ))
+            pc_addend = Signal(signed(32))
+            sync += pc_addend.eq(Mux(
+                active_unit.jal | active_unit.jalr,
+                pc_offset,
+                4
+            ))
+
             with m.State("WRITEBACK"):
 
-                sync += pc.eq(pc + 4)
+                sync += pc.eq(pc + pc_addend)
 
                 # Here, rdval is already calculated. If neccessary, put it into register file.
-
-                # TODO rather have it by checking instr type (R, J etc.)
                 should_write_rd = reduce(or_,
                     [
                         match_shifter_unit(opcode, funct3, funct7),
@@ -323,6 +356,8 @@ class MtkCpu(Elaboratable):
                         match_compare_unit(opcode, funct3, funct7),
                         match_lui(opcode, funct3, funct7),
                         match_auipc(opcode, funct3, funct7),
+                        match_jal(opcode, funct3, funct7),
+                        match_jalr(opcode, funct3, funct7),
                     ]
                 ) & (rd != 0)
 

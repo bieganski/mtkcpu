@@ -5,6 +5,7 @@ from tests.reg_tests import REG_TESTS
 from tests.mem_tests import MEM_TESTS
 from tests.compare_tests import CMP_TESTS
 from tests.upper_tests import UPPER_TESTS
+from tests.branch_tests import BRANCH_TESTS
 
 from argparse import ArgumentParser
 
@@ -13,12 +14,13 @@ parser.add_argument('--reg', action='store_const', const=REG_TESTS, default=[], 
 parser.add_argument('--mem', action='store_const', const=MEM_TESTS, default=[], required=False)
 parser.add_argument('--cmp', action='store_const', const=CMP_TESTS, default=[], required=False)
 parser.add_argument('--upper', action='store_const', const=UPPER_TESTS, default=[], required=False)
+parser.add_argument('--branch', action='store_const', const=BRANCH_TESTS, default=[], required=False)
 parser.add_argument('--verbose', action='store_const', const=True, default=False, required=False)
 
 args = parser.parse_args()
 
 ALL_TESTS = REG_TESTS + MEM_TESTS + CMP_TESTS + UPPER_TESTS
-SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper if args.upper + args.cmp + args.mem + args.reg != [] else ALL_TESTS
+SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper + args.branch if args.branch + args.upper + args.cmp + args.mem + args.reg != [] else ALL_TESTS
 VERBOSE = args.verbose
 
 
