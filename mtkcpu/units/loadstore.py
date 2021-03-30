@@ -113,9 +113,9 @@ match_load = matcher([
 match_store = matcher([
     (InstrType.STORE, Funct3.W),
     (InstrType.STORE, Funct3.B),
-    (InstrType.STORE, Funct3.BU),
+    # (InstrType.STORE, Funct3.BU), # it doesn't exist
     (InstrType.STORE, Funct3.H),
-    (InstrType.STORE, Funct3.HU),
+    # (InstrType.STORE, Funct3.HU), # it doesn't exist
 ])
 
 match_loadstore_unit = lambda op, f3, f7: match_load(op, f3, f7) | match_store(op, f3, f7)
@@ -129,8 +129,6 @@ class Selector(Elaboratable):
     def elaborate(self, platform):
         m = Module()
         comb = m.d.comb
-        u = Signal() # unsigned
-        comb += u.eq((self.funct3 == Funct3.HU) | (self.funct3 == Funct3.BU) )
         
         with m.Switch(self.funct3):
             with m.Case(Funct3.W):
@@ -143,8 +141,6 @@ class Selector(Elaboratable):
                 comb += self.mask.eq(0b0011)
             with m.Case(Funct3.BU):
                 comb += self.mask.eq(0b0001)
-        with m.If(self.store & ~u):
-            comb += self.mask.eq(0b1111)
 
         return m
 

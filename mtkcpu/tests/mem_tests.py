@@ -113,7 +113,7 @@ MEM_TESTS = [
         """,
         "timeout": 10,
         "reg_init": [-5 for _ in range(32)],
-        "mem_out": {0x0: Bits(bin=format(0b11111111_11111011, '32b')).uint},
+        "mem_out": {0x0: Bits(int=-5, length=16).uint},
     },
 
     {
@@ -129,7 +129,7 @@ MEM_TESTS = [
     },
 
     {
-        "name": "simple 'sb'",
+        "name": "overwrite 'sb'",
         "source": 
         """
         .section code
@@ -139,5 +139,31 @@ MEM_TESTS = [
         "reg_init": [0xaa for _ in range(32)],
         "mem_init": {0xaa: 0xdeadbeef},
         "mem_out": {0xaa: 0xdeadbeaa},
+    },
+
+    {
+        "name": "overwrite 'sh'",
+        "source": 
+        """
+        .section code
+            sh x5, 0xbb(x0)
+        """,
+        "timeout": 10,
+        "reg_init": [0xaaaa for _ in range(32)],
+        "mem_init": {0xbb: 0xdeadbeef},
+        "mem_out": {0xbb: 0xdeadaaaa},
+    },
+
+    {
+        "name": "overwrite 'sw'",
+        "source": 
+        """
+        .section code
+            sw x5, 0xbb(x0)
+        """,
+        "timeout": 10,
+        "reg_init": [0xaaaa for _ in range(32)],
+        "mem_init": {0xbb: 0xdeadbeef},
+        "mem_out": {0xbb: 0xaaaa},
     },
 ]
