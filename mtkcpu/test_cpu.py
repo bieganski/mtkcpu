@@ -97,11 +97,10 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
                     g = lambda val, el: (val << 8) + el
                     from functools import reduce
                     mask = reduce(g, map(f, sel))
-                    print(f"MASK: {format(mask, '032b')}")
                     read_val = 0x0 if mem_addr not in mem_dict else mem_dict[mem_addr]
                     if state[0] == MemState.BUSY_WRITE:
-                        print(f"XXXX: GOT WRITE! val: {data}, addr: {mem_addr}")
-                        mem_dict[mem_addr] = read_val | (data & mask)
+                        print(f"XXXX: GOT WRITE! val: {data}, addr: {mem_addr}, mask: {format(mask, '032b')}")
+                        mem_dict[mem_addr] = (read_val & ~mask) | (data & mask)
                     elif state[0] == MemState.BUSY_READ:
                         read_val &= mask
                         yield arbiter.bus.dat_r.eq(read_val)
@@ -118,10 +117,8 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
         for _ in range(timeout):
             en = yield cpu.reg_write_port.en
             if en == 1:
-                LOG("___ en detected ")
                 addr = yield cpu.reg_write_port.addr
                 if addr == reg_num:
-                    LOG(f"___ got write to reg {addr}...")
                     val = yield cpu.reg_write_port.data
                     if check_reg and (val != expected_val):
                         # TODO that mechanism for now allows for only one write to reg, extend it if neccessary.
@@ -131,16 +128,6 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
                         exit(1)
                     return
             yield Tick()
-
-        if check_mem:
-            print(">>> MEM CHECKING: exp. vs val:", expected_mem, mem_dict)
-            for k, v in expected_mem.items():
-                if not k in mem_dict:
-                    print(f"Error! Wrong memory state. Expected {v} value in {k} addr, got nothing here!")
-                    exit(1)
-                if mem_dict[k] != v:
-                    print(f"Error! Wrong memory state. Expected {v} value in {k} addr, got {mem_dict[k]}")
-                    exit(1)
         
         if check_reg:
             print(f"== ERROR: Test timeouted! No register write observed. Test: {name}\n")
@@ -150,6 +137,17 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
     sim.add_sync_process(TEST_REG)
     with sim.write_vcd("cpu.vcd"):
         sim.run()
+
+    if check_mem:
+        print(">>> MEM CHECKING: exp. vs val:", expected_mem, mem_dict)
+        for k, v in expected_mem.items():
+            if not k in mem_dict:
+                print(f"Error! Wrong memory state. Expected {v} value in {k} addr, got nothing here!")
+                exit(1)
+            if mem_dict[k] != v:
+                print(f"Error! Wrong memory state. Expected {v} value in {k} addr, got {mem_dict[k]}")
+                exit(1)
+    
 
 
 if __name__ == "__main__":
