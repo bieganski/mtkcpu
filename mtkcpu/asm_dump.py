@@ -17,7 +17,7 @@ source_file = io.StringIO(
 
     f"""
         .section code
-            li x1, 0xffffffff
+            jalr x10, x8, 0x0
         """
 )
 

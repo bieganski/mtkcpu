@@ -1,7 +1,7 @@
 from enum import Enum
 
 class Funct3(Enum):
-    ADD = SUB = ADDI = B = 0b000
+    ADD = SUB = ADDI = B = JALR = 0b000
     SLL = SLLI = H = 0b001    
     SLTU = 0b011
     SLT = SLTI = W = 0b010
@@ -17,9 +17,9 @@ class Funct7(Enum):
 
 
 class InstrType(Enum):
-    BRANCH  = 0b11000
-    JAL     = 0b11001
-    
+    BRANCH  = 0b1100011
+    JAL     = 0b1101111
+    JALR    = 0b1100111
     AUIPC   = 0b0010111
     LUI     = 0b0110111
     OP_IMM  = 0b0010011
@@ -33,4 +33,3 @@ class InstrFormat(Enum):
     S = 2 # sw t1, 8(t2)  # no destination register
     B = 3 # beq t1, t2, End # no destination register
     U = 4 # upper immediate - LUI, AUIPC  # Label: AUIPC x10, 0 # Puts address of label in x10 /* only imm20 and rd */
-    J = 5
