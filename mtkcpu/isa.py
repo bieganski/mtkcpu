@@ -17,15 +17,11 @@ class Funct7(Enum):
 
 
 class InstrType(Enum):
-    # LOAD    = 0b00000
-    # STORE   = 0b01000
-    ADD     = 0b10000
-    SUB     = 0b10001
     BRANCH  = 0b11000
     JAL     = 0b11001
-    AUIPC   = 0b00101
-    LUI     = 0b01101
-
+    
+    AUIPC   = 0b0010111
+    LUI     = 0b0110111
     OP_IMM  = 0b0010011
     ALU     = 0b0110011
     LOAD    = 0b0000011

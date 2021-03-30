@@ -20,6 +20,8 @@ from units.loadstore import LoadStoreUnit, MemoryUnit, MemoryArbiter, match_load
 from units.logic import LogicUnit, match_logic_unit
 from units.adder import AdderUnit, match_adder_unit
 from units.shifter import ShifterUnit, match_shifter_unit
+from units.compare import CompareUnit, match_compare_unit
+from units.upper import match_lui, match_auipc
 
 
 class ActiveUnitLayout(Layout):
@@ -29,6 +31,8 @@ class ActiveUnitLayout(Layout):
             ("adder", 1),
             ("shifter", 1),
             ("mem_unit", 1),
+            ("compare", 1),
+            ("lui", 1),
         ])
 
 class ActiveUnit(Record):
@@ -82,6 +86,7 @@ class MtkCpu(Elaboratable):
         adder = m.submodules.adder = AdderUnit()
         shifter = m.submodules.shifter = ShifterUnit()
         mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=arbiter.port(priority=0))
+        compare = m.submodules.compare = CompareUnit()
 
         # Current decoding state signals.
         instr = Signal(32)
@@ -92,8 +97,10 @@ class MtkCpu(Elaboratable):
         rs2 = Signal(5)
         rs1val = Signal(32)
         rs2val = Signal(32)
-        rdval = Signal(32)
-        imm = Signal(12)
+        rdval = Signal(32) # calculated by unit, stored to register file
+        rdval_lower = Signal(32) # fetched from register file, concatenated with upper 20 bit (lui)
+        imm = Signal(signed(12))
+        uimm = Signal(20)
         opcode = Signal(InstrType)
 
         # Register file. Contains two read ports (for rs1, rs2) and one write port. 
@@ -121,6 +128,7 @@ class MtkCpu(Elaboratable):
         # this is not true for all instrutions, but in specific cases will be overwritten later
         comb += [
             imm.eq(instr[20:32]),
+            uimm.eq(instr[12:]),
         ]
 
         # drive input signals of actually used unit.
@@ -165,6 +173,16 @@ class MtkCpu(Elaboratable):
                     imm,
                     Cat(rd, imm[5:12])
                 )),
+            ]
+        with m.Elif(active_unit.compare):
+            comb += [
+                compare.funct3.eq(funct3),
+                compare.src1.eq(rs1val),
+                compare.src2.eq(Mux(
+                    opcode == InstrType.OP_IMM, 
+                    imm,
+                    rs2val)
+                ),
             ]
 
         # Decoding state (with redundancy - instr. type not known yet).     
@@ -228,8 +246,18 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.mem_unit.eq(1),
                     ]
-                # with m.Elif((opcode == InstrType.LOAD) | opcode == InstrType.STORE):
-                #     pass # TODO
+                with m.Elif(match_compare_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.compare.eq(1),
+                    ]
+                with m.Elif(match_lui(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.lui.eq(1),
+                    ]
+                    comb += [
+                        reg_read_port1.addr.eq(rd),
+                        # res will be available in next cycle in rs1val
+                    ]
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
@@ -247,6 +275,16 @@ class MtkCpu(Elaboratable):
                 with m.Elif(active_unit.mem_unit):
                     sync += [
                         rdval.eq(mem_unit.res),
+                    ]
+                with m.Elif(active_unit.compare):
+                    sync += [
+                        rdval.eq(compare.condition_met),
+                    ]
+                with m.Elif(active_unit.lui):
+                    sync += [
+                        rdval.eq(
+                            (rs1val & 0x0000_0FFF) | Cat(Const(0, 12), uimm)
+                        ),
                     ]
 
                 with m.If(active_unit.mem_unit):
@@ -270,6 +308,8 @@ class MtkCpu(Elaboratable):
                         match_adder_unit(opcode, funct3, funct7),
                         match_logic_unit(opcode, funct3, funct7),
                         match_load(opcode, funct3, funct7),
+                        match_compare_unit(opcode, funct3, funct7),
+                        match_lui(opcode, funct3, funct7),
                     ]
                 ) & (rd != 0)
 
