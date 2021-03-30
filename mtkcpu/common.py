@@ -2,6 +2,7 @@ from operator import or_
 from functools import reduce
 from itertools import starmap
 
+START_ADDR = 0x1000
 
 # https://github.com/lambdaconcept/minerva/blob/master/minerva/units/decoder.py
 def matcher(encodings):

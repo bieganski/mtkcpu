@@ -4,8 +4,8 @@ from enum import Enum
 from nmigen.hdl.rec import * # Record, Layout
 from operator import or_
 from functools import reduce
+from common import START_ADDR
 
-START_ADDR = 0x1000
 MEM_WORDS = 10
 
 class Error(Enum):
@@ -33,6 +33,7 @@ class ActiveUnitLayout(Layout):
             ("mem_unit", 1),
             ("compare", 1),
             ("lui", 1),
+            ("auipc", 1),
         ])
 
 class ActiveUnit(Record):
@@ -226,9 +227,7 @@ class MtkCpu(Elaboratable):
                 with m.If(instr & 0b11 != 0b11):
                     comb += self.err.eq(Error.OP_CODE)
                     m.next = "DECODE" # loop TODO
-                sync += pc.eq(pc + 4)
 
-                # comb += self.err.eq(Error.BBBB)
                 with m.If(match_logic_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.logic.eq(1),
@@ -258,6 +257,10 @@ class MtkCpu(Elaboratable):
                         reg_read_port1.addr.eq(rd),
                         # res will be available in next cycle in rs1val
                     ]
+                with m.Elif(match_auipc(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.auipc.eq(1),
+                    ]
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
@@ -286,6 +289,12 @@ class MtkCpu(Elaboratable):
                             (rs1val & 0x0000_0FFF) | Cat(Const(0, 12), uimm)
                         ),
                     ]
+                with m.Elif(active_unit.auipc):
+                    sync += [
+                        rdval.eq(
+                            pc + Cat(Const(0, 12), uimm)
+                        ),
+                    ]
 
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
@@ -299,6 +308,9 @@ class MtkCpu(Elaboratable):
                     sync += active_unit.eq(0)
                     
             with m.State("WRITEBACK"):
+
+                sync += pc.eq(pc + 4)
+
                 # Here, rdval is already calculated. If neccessary, put it into register file.
 
                 # TODO rather have it by checking instr type (R, J etc.)
@@ -310,6 +322,7 @@ class MtkCpu(Elaboratable):
                         match_load(opcode, funct3, funct7),
                         match_compare_unit(opcode, funct3, funct7),
                         match_lui(opcode, funct3, funct7),
+                        match_auipc(opcode, funct3, funct7),
                     ]
                 ) & (rd != 0)
 
