@@ -3,19 +3,25 @@
 from cpu import MtkCpu
 from tests.reg_tests import REG_TESTS
 from tests.mem_tests import MEM_TESTS
+from tests.compare_tests import CMP_TESTS
+from tests.upper_tests import UPPER_TESTS
 
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description="mtkCPU testing script.")
 parser.add_argument('--reg', action='store_const', const=REG_TESTS, default=[], required=False)
 parser.add_argument('--mem', action='store_const', const=MEM_TESTS, default=[], required=False)
+parser.add_argument('--cmp', action='store_const', const=CMP_TESTS, default=[], required=False)
+parser.add_argument('--upper', action='store_const', const=UPPER_TESTS, default=[], required=False)
 parser.add_argument('--verbose', action='store_const', const=True, default=False, required=False)
 
 args = parser.parse_args()
 
-ALL_TESTS = REG_TESTS + MEM_TESTS
-SELECTED_TESTS = args.mem + args.reg if args.mem + args.reg != [] else ALL_TESTS
+ALL_TESTS = REG_TESTS + MEM_TESTS + CMP_TESTS + UPPER_TESTS
+SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper if args.upper + args.cmp + args.mem + args.reg != [] else ALL_TESTS
 VERBOSE = args.verbose
+
+
 # checks performed: 
 # * if 'expected_val' is not None: check if x<'reg_num'> == 'expected_val',
 # * if 'expected_mem' is not None: check if for all k, v in 'expected_mem.items()' mem[k] == v.
@@ -24,7 +30,6 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
     source_file = StringIO(asm_str)
     from asm_dump import dump_asm
     from nmigen.back.pysim import Simulator, Active, Passive, Tick, Settle
-
 
     LOG = lambda x : print(x) if verbose else True
 
