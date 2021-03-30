@@ -1,4 +1,5 @@
 from bitstring import Bits
+from common import START_ADDR
 
 UPPER_TESTS = [
     
@@ -24,6 +25,18 @@ UPPER_TESTS = [
         "out_reg": 1,
         "out_val": Bits(uint=0xfffff0aa, length=32).uint,
         "reg_init": [0xaa for _ in range(32)],
+        "timeout": 10,
+    },
+
+    {
+        "name": "simple 'auipc'",
+        "source": 
+        """
+        .section code
+            auipc x1, 0xaa
+        """,
+        "out_reg": 1,
+        "out_val": START_ADDR + (0xaa << 12),
         "timeout": 10,
     },
 ]
