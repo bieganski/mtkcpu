@@ -7,15 +7,36 @@ class AdderUnit(Elaboratable):
         self.src2 = Signal(32, name="adder_src2")
         self.res = Signal(32, name="adder_res")
 
+        self.overflow = Signal()
+        self.carry = Signal()
+        
+
     def elaborate(self, platform):
         m = Module()
 
-        m.d.comb += self.res.eq(
+        # neat way of setting carry flag
+        res_and_carry = Cat(self.res, self.carry)
+
+        m.d.comb += res_and_carry.eq(
             Mux(self.sub,
                 self.src1 - self.src2,
                 self.src1 + self.src2
             )
         )
+
+        with m.If(self.sub):
+            with m.If(
+                (self.src1[-1] != self.src2[-1])
+                & (self.src1[-1] != self.res[-1])
+            ):
+                m.d.comb += self.overflow.eq(1)
+        with m.Else():
+            # add
+            with m.If(
+                (self.src1[-1] == self.src2[-1])
+                & (self.src1[-1] != self.res[-1])
+            ):
+                m.d.comb += self.overflow.eq(1)
 
         return m
 
