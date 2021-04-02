@@ -194,7 +194,18 @@ class MtkCpu(Elaboratable):
                     imm,
                     rs2val)
                 ),
+                # Compare Unit uses Adder for carry and overflow flags. 
+                adder.src1.eq(rs1val),
+                adder.src2.eq(rs2val),
+                # adder.sub set somewhere below
             ]
+
+        comb += [
+            compare.negative.eq(adder.res[-1]),
+            compare.overflow.eq(adder.overflow),
+            compare.carry.eq(adder.carry),
+            compare.zero.eq(adder.res == 0),
+        ]
 
         # Decoding state (with redundancy - instr. type not known yet).     
         # We use 'ibus.read_data' instead of instr for getting registers to save 1 cycle.           
@@ -258,6 +269,7 @@ class MtkCpu(Elaboratable):
                 with m.Elif(match_compare_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.compare.eq(1),
+                        adder.sub.eq(1),
                     ]
                 with m.Elif(match_lui(opcode, funct3, funct7)):
                     sync += [

@@ -13,15 +13,22 @@ class CompareUnit(Elaboratable):
 
         # Output signals.
         self.condition_met  = Signal(name="compare_condition_met")
+
+        # meawhile, Adder Unit performs 'src1' - 'src2'
+        self.carry = Signal()
+        self.overflow = Signal()
+
+        self.zero = Signal()
+        self.negative = Signal()
         
 
     def elaborate(self, platform):
         m = Module()
         with m.Switch(self.funct3):
             with m.Case(Funct3.SLT):
-                m.d.comb += self.condition_met.eq(self.src1 < self.src2)
+                m.d.comb += self.condition_met.eq(self.negative | self.overflow)
             with m.Case(Funct3.SLTU):
-                m.d.comb += self.condition_met.eq(self.src1.as_unsigned() < self.src2.as_unsigned())
+                m.d.comb += self.condition_met.eq(self.carry)
         return m
 
 
