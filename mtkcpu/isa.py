@@ -1,15 +1,15 @@
 from enum import Enum
 
 class Funct3(Enum):
-    ADD = SUB = ADDI = B = JALR = 0b000
-    SLL = SLLI = H = 0b001    
+    ADD = SUB = ADDI = B = JALR = BEQ = 0b000
+    SLL = SLLI = H = BNE = 0b001
     SLTU = 0b011
     SLT = SLTI = W = 0b010
-    XOR = BU = 0b100
-    SRL = SRLI = HU = 0b101
+    XOR = BU = BLT = 0b100
+    SRL = SRLI = HU = BGE = 0b101
     SRA = SRAI  = 0b101
-    OR = 0b110
-    AND = 0b111
+    OR = BLTU = 0b110
+    AND = BGEU = 0b111
 
 class Funct7(Enum):
     ADD = SRL = SLL = SRLI = SLLI = 0b0000000
