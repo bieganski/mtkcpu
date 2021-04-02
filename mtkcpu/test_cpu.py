@@ -17,7 +17,36 @@ parser.add_argument('--upper', action='store_const', const=UPPER_TESTS, default=
 parser.add_argument('--branch', action='store_const', const=BRANCH_TESTS, default=[], required=False)
 parser.add_argument('--verbose', action='store_const', const=True, default=False, required=False)
 
+parser.add_argument('--elf', metavar='<ELF file path.>', type=str, required=False, help="Simulate given ELF binary.")
+
 args = parser.parse_args()
+
+ELF = "../elf/example.elf" # TODO use 'args.elf' instead
+
+from asm_dump import chunks
+
+
+# returns memory (for now only .text section) as dictionary.
+def read_elf(elf_path, verbose=False):
+    from elftools.elf.elffile import ELFFile
+    elf = ELFFile(open(elf_path, 'rb'))
+    
+    import subprocess
+    p = subprocess.Popen(["riscv-none-embed-objdump", "--disassembler-options=no-aliases",  "-M",  "numeric", "-d", ELF], stdout=subprocess.PIPE)
+    out, _ = p.communicate()
+
+    out = str(out.decode("ascii"))
+    if verbose:
+        print(out)
+    
+    from asm_dump import bytes_to_u32_arr, dump_instrs
+    raw = elf.get_section_by_name(".text").data()
+    code = bytes_to_u32_arr(raw)
+    if verbose:
+        dump_instrs(code)
+    exit(1)
+
+# read_elf(ELF, True)
 
 ALL_TESTS = REG_TESTS + MEM_TESTS + CMP_TESTS + UPPER_TESTS
 SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper + args.branch if args.branch + args.upper + args.cmp + args.mem + args.reg != [] else ALL_TESTS
