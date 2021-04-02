@@ -33,6 +33,15 @@ match_jalr = matcher([
     (InstrType.JALR, Funct3.JALR),
 ])
 
+match_branch = matcher([
+    (InstrType.BRANCH, Funct3.BEQ),
+    (InstrType.BRANCH, Funct3.BNE),
+    (InstrType.BRANCH, Funct3.BLT),
+    (InstrType.BRANCH, Funct3.BGE),
+    (InstrType.BRANCH, Funct3.BLTU),
+    (InstrType.BRANCH, Funct3.BGEU),
+])
+
 
 class ActiveUnitLayout(Layout):
     def __init__(self):
@@ -46,6 +55,7 @@ class ActiveUnitLayout(Layout):
             ("auipc", 1),
             ("jal", 1),
             ("jalr", 1),
+            ("branch", 1),
         ])
 
 class ActiveUnit(Record):
