@@ -68,13 +68,21 @@ def dump_asm(string, verbose=False):
     obj = link([obj])
     # print(obj.sections)
     code = obj.get_section('code').data
-    # from pprint import pprint
-    # pprint(dir(obj))
-    # s = obj.get_symbol('printf')
-    # print(dir(s))
+    code = bytes_to_u32_arr(code)
+    dump_instrs(code)
+    dump_asm_to_S_file(code, verbose=verbose)
+    return code
+
+
+def bytes_to_u32_arr(raw):
+    return [int.from_bytes(x, 'little') for x in chunks(raw, 4)] # 4 byte chunks
+
+
+def dump_instrs(u32_arr):
+    verbose = True
+    code = u32_arr
     LOG(code, verbose=verbose)
 
-    code = [int.from_bytes(x, 'little') for x in chunks(code, 4)] # 4 byte chunks
     LOG([hex(instr) for instr in code], verbose=verbose)
     LOG(code, verbose=verbose)
     for i, instr in enumerate(code, 1):
@@ -90,9 +98,6 @@ def dump_asm(string, verbose=False):
             f = f"{format(instr >> shift & (2**s-1), f'0{s}b')}"
             LOG(f"{f},", end='', verbose=verbose)
         LOG("", verbose=verbose)
-
-    dump_asm_to_S_file(code, verbose=verbose)
-    return code
 
 if __name__ == "__main__":
     dump_asm(source_file, verbose=True)
