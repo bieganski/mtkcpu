@@ -1,3 +1,5 @@
 asm.o
 asm.S
 *.vcd
+xpack-riscv-none-embed-gcc-8.3.0-2.3
+*.swp
