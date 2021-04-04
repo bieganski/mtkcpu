@@ -10,7 +10,7 @@ pip3 install -r requirements.txt
 python3 mtkcpu/test_cpu.py
 ```
 
-### Tests structure
+### Unit tests structure
 
 In general, all tests are done via `nmigen.back.pysim` backend. For best coverage and flexibility, you are able to **easily add your own tests, written in RiscV assembly**. For reference let's focus on simple test from `tests/reg_tests.py` file.
 
@@ -37,6 +37,36 @@ Example above represents entire test. Simulator executes code passed as `source`
 
 Simulation also contains latency-randomized memory interconnect (simplified Wishbone protocol), thus you are able to tests operations like `load` or `store` (as coveraged in `tests/mem_tests.py`).
 For memory testing, put dict of `address, value (4 byte)` at `mem_init` key, and dict of constraints (of same form), that will be checked **after** simulation ends (after `timeout` cycles).
+
+`WARNING` - unit test of that form possibilities are limited by compilator of `source` key used. For that we use `ppci`, which doesn't work well with branching/jumping instructions. For that reason, we decided to coverage branching with more compilcated [ELF tests](#elf-tests) 
+
+### ELF tests
+
+`mtkCPU` offers you with easy and seamless way of testing **your precompiled ELF file**. Just run
+
+```sh
+python3 mtkcpu/test_cpu.py --elf <ELF filepath>
+```
+
+To compile your code into RiscV assembly you can use `gcc` (install it via `install_toolchain.sh` script).
+```sh
+cd elf
+./compile.sh example.S # it will generate example.elf using elf/linker.ld linker script.
+```
+
+Keep in mind, that CPU got hardcoded it's code address (with first instruction fetched). It's defined in `/mtkcpu/common.py` file at `START_ADDR` variable. You may want to use specially prepared linker script (or reuse example one, `/elf/linker.ld`, or change `common.py` file to adjust it for your precompiled ELF). 
+
+`TODO` - for now we lack way of result verification, it may be something like `main` exit code. 
+
+
+### Getting familiar
+
+For quick dive into `mtkCPU` most painless way is to first run existing test (or add your own!) and look at important signals, reflecting control flow. For that purpose, I have prepared some `.gtkw` files, that opened in `gtkwave` util immediately will show you interesting signals. 
+
+* `basic.gtkw` - First steps, good for beginners, without unit logic.
+* `mem.gtkw` - For memory interface (however without memory arbiter).
+* `full_mem.gtkw` - More advanced memory interface.
+
 
 ### About `nMigen`
 
