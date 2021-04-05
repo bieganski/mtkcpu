@@ -1,3 +1,6 @@
+
+![Alt text](svg/logo.png?raw=true "mtkCPU logo")
+
 # mtkCPU
 
 mtkCPU is as simple and as clear as possible implementation of RiscV ISA in [nMigen](https://github.com/nmigen/nmigen). There is one main file [cpu.py](./mtkcpu/cpu.py), that is including specific [units](./mtkcpu/units) (i.a. decoder, adder etc.)
