@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+from itertools import count
+from io import StringIO
+from argparse import ArgumentParser
+
+from asm_dump import dump_asm
+from cpu import START_ADDR
+
 from cpu import MtkCpu
 from tests.reg_tests import REG_TESTS
 from tests.mem_tests import MEM_TESTS
@@ -7,7 +14,6 @@ from tests.compare_tests import CMP_TESTS
 from tests.upper_tests import UPPER_TESTS
 from tests.branch_tests import BRANCH_TESTS
 
-from argparse import ArgumentParser
 
 parser = ArgumentParser(description="mtkCPU testing script.")
 parser.add_argument('--reg', action='store_const', const=REG_TESTS, default=[], required=False)
@@ -21,18 +27,17 @@ parser.add_argument('--elf', metavar='<ELF file path.>', type=str, required=Fals
 
 args = parser.parse_args()
 
-ELF = "../elf/example.elf" # TODO use 'args.elf' instead
-
-from asm_dump import chunks
+ELF = args.elf
 
 
-# returns memory (for now only .text section) as dictionary.
+# returns memory (all PT_LOAD type segments) as dictionary.
 def read_elf(elf_path, verbose=False):
     from elftools.elf.elffile import ELFFile
-    elf = ELFFile(open(elf_path, 'rb'))
+    handle = open(elf_path, 'rb')
+    elf = ELFFile(handle)
     
     import subprocess
-    p = subprocess.Popen(["riscv-none-embed-objdump", "--disassembler-options=no-aliases",  "-M",  "numeric", "-d", ELF], stdout=subprocess.PIPE)
+    p = subprocess.Popen(["riscv-none-embed-objdump", "--disassembler-options=no-aliases",  "-M",  "numeric", "-d", elf_path], stdout=subprocess.PIPE)
     out, _ = p.communicate()
 
     out = str(out.decode("ascii"))
@@ -40,13 +45,21 @@ def read_elf(elf_path, verbose=False):
         print(out)
     
     from asm_dump import bytes_to_u32_arr, dump_instrs
-    raw = elf.get_section_by_name(".text").data()
-    code = bytes_to_u32_arr(raw)
-    if verbose:
-        dump_instrs(code)
-    exit(1)
+    
+    # for each segment that is being loaded into memory
+    # retrieve it's data and put in 'mem' dict (both code and program data). 
+    mem = {}
+    for s in elf.iter_segments():
+        file_offset, data_len = s.header.p_offset, s.header.p_memsz
+        load_addr = s.header.p_vaddr
+        handle.seek(file_offset)
+        raw = handle.read(data_len)
+        data = bytes_to_u32_arr(raw)
+        dump_instrs(data) # for debug purposes
+        segment_mem = dict(zip(count(load_addr, 4), data))
+        mem.update(segment_mem)
+    return mem
 
-# read_elf(ELF, True)
 
 ALL_TESTS = REG_TESTS + MEM_TESTS + CMP_TESTS + UPPER_TESTS
 SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper + args.branch if args.branch + args.upper + args.cmp + args.mem + args.reg != [] else ALL_TESTS
@@ -56,10 +69,8 @@ VERBOSE = args.verbose
 # checks performed: 
 # * if 'expected_val' is not None: check if x<'reg_num'> == 'expected_val',
 # * if 'expected_mem' is not None: check if for all k, v in 'expected_mem.items()' mem[k] == v.
-def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem, reg_init, mem_init, verbose=False):
-    from io import StringIO
-    source_file = StringIO(asm_str)
-    from asm_dump import dump_asm
+def reg_test(name, timeout_cycles, reg_num, expected_val, expected_mem, reg_init, mem_dict, verbose=False):
+    
     from nmigen.back.pysim import Simulator, Active, Passive, Tick, Settle
 
     LOG = lambda x : print(x) if verbose else True
@@ -67,14 +78,6 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
     cpu = MtkCpu(reg_init=reg_init)
     sim = Simulator(cpu)
     sim.add_clock(1e-6)
-
-    from cpu import START_ADDR
-    code = dump_asm(source_file, verbose=verbose)
-    code_mem_dict = dict([(START_ADDR + 4 * i, c) for i, c in enumerate(code)]) # used by 'test' function
-    mem_dict = code_mem_dict.copy()
-    mem_dict.update(mem_init)
-    if len(code_mem_dict) + len(mem_init) != len(mem_dict):
-        raise ValueError(f"ERROR: overlapping memories (instr. mem starting at {START_ADDR} and initial {mem_init})")
 
     assert((reg_num is None and expected_val is None) or (reg_num is not None and expected_val is not None))
     check_reg = reg_num is not None
@@ -186,7 +189,33 @@ def reg_test(name, asm_str, timeout_cycles, reg_num, expected_val, expected_mem,
     
 
 
+def compile_source(source_raw, output_elf_fname):
+    import subprocess
+    COMPILER = "riscv-none-embed-gcc"
+    LINKER_SCRIPT = "../elf/linker.ld"
+    p = subprocess.Popen(["which", COMPILER], stdout=subprocess.PIPE)
+    _, _ = p.communicate()
+    if p.returncode != 0:
+        raise ValueError(f"Error! Cannot find {COMPILER} compiler in your PATH!")
+
+    import tempfile
+    tmp_dir = tempfile.mkdtemp()
+    asm_filename = f"{tmp_dir}/tmp.S"
+
+    with open(asm_filename, 'w+') as asm_file:
+        asm_file.write(source_raw)
+
+    p = subprocess.Popen([COMPILER, "-nostartfiles", f"-T{LINKER_SCRIPT}", asm_filename, "-o", output_elf_fname], stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0:
+        raise ValueError(f"Compilation error! source {source_raw}\ncouldn't get compiled! Error msg: \n{out}\n\n{err}")
+
+
 if __name__ == "__main__":
+    if ELF is not None:
+        # for future: simulate ELF, print output memory/registers and exit.
+        raise NotImplementedError("direct ELF simulating not supported for now! (However, most of architecture is already done.)")
+    
     print("===== Running tests...")
     for i, t in enumerate(SELECTED_TESTS, 1):
         name     = t['name']     if 'name'     in t else f"unnamed: \n{t['source']}\n"
@@ -195,15 +224,40 @@ if __name__ == "__main__":
         out_reg  = t['out_reg']  if 'out_reg'  in t else None
         out_val  = t['out_val']  if 'out_val'  in t else None
         mem_out  = t['mem_out']  if 'mem_out'  in t else None
+
+        def get_code_mem():
+            assert any(['source' in t, 'source_raw' in t, 'elf' in t])
+            assert 1 == len([1 for k in t if k in ['source', 'source_raw', 'elf']])
+            if 'source' in t:
+                source_file = StringIO(t['source'])
+                code = dump_asm(source_file, verbose=False)
+                code_mem = dict(zip(count(START_ADDR, 4), code))
+                return code_mem
+            elif 'source_raw' in t:
+                tmp_fname = "tmp.elf"
+                # treat 'source_raw' as content of a .S file and compile it via riscv-none-embed-gcc.
+                compile_source(t['source_raw'], tmp_fname)
+                return read_elf(tmp_fname, verbose=False)
+            elif 'elf' in t:
+                return read_elf(t['elf'], verbose=False)
+            else:
+                raise ValueError(f"test case must contain either 'elf', 'source' or 'source_raw' key! Not found in {t['name']}")
+
+        mem_dict = get_code_mem()
+        code_len = len(mem_dict)
+
+        mem_dict.update(mem_init)
+        if code_len + len(mem_init) != len(mem_dict):
+            raise ValueError(f"ERROR: overlapping memories (instr. mem starting at {START_ADDR} ({mem_dict}) and initial {mem_init})")
+
         reg_test(
             name=name, 
-            asm_str=t['source'], 
             timeout_cycles=t['timeout'], 
             reg_num=out_reg, 
             expected_val=out_val, 
             expected_mem=mem_out, 
             reg_init=reg_init,
-            mem_init=mem_init,
+            mem_dict=mem_dict,
             verbose=VERBOSE)
         print(f"== Test {i}/{len(SELECTED_TESTS)}: <{name}> completed successfully..")
 

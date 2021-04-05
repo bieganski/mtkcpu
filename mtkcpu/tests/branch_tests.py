@@ -27,12 +27,12 @@ BRANCH_TESTS = [
         "timeout": 10,
     },
 
-    {
+    { # ppci got problems with compiling 'jal', thus compile it to ELF manually.
         "name": "rd write 'jal'",
-        "source": 
+        "source_raw": 
         """
-        .section code
-            jal x10, 0x0
+            start:
+                jal x10, 0x0
         """,
         "out_reg": 10,
         "out_val": START_ADDR + 4,

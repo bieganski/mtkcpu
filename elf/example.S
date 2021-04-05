@@ -5,5 +5,7 @@
 .text
 
 start:
-	beq x1, x2, 0x4
-	addi x0, x0, 1
+	beq x1, x2, jump_taken
+	addi x1, x0, 111
+jump_taken:
+	addi x1, x0, 222

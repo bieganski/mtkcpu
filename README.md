@@ -41,7 +41,8 @@ Example above represents entire test. Simulator executes code passed as `source`
 Simulation also contains latency-randomized memory interconnect (simplified Wishbone protocol), thus you are able to tests operations like `load` or `store` (as coveraged in `tests/mem_tests.py`).
 For memory testing, put dict of `address, value (4 byte)` at `mem_init` key, and dict of constraints (of same form), that will be checked **after** simulation ends (after `timeout` cycles).
 
-`WARNING` - unit test of that form possibilities are limited by compilator of `source` key used. For that we use `ppci`, which doesn't work well with branching/jumping instructions. For that reason, we decided to coverage branching with more compilcated [ELF tests](#elf-tests) 
+
+`NOTE` - unit test of that form possibilities are limited by compilator of `source` key used. For that we use `ppci`, which doesn't work well with branching/jumping instructions. For that reason, we decided to coverage branching with stable RiscV compiler `riscv-none-embed-gcc`. It's usage is straightforward: put your code as same way as you did in `source` key, but now in `source_raw` key. Whole content will be copied to temporary `.S` file and compiled to ELF format, then run same way that you would run simulation of whole ELF (like [here](#elf-tests)) 
 
 ### ELF tests
 
