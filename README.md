@@ -70,7 +70,7 @@ For quick dive into `mtkCPU` most painless way is to first run existing test (or
 
 ### About `nMigen`
 
-`nMigen` is Python framework for digital design, it can compile either to netlist (understandable by [yosys](https://github.com/YosysHQ/yosys)) or `Verilog` code (that you can place and route using vendor tools, i.a. `Vivado`)
+`nMigen` is Python framework for digital design, it can compile either to netlist understandable by [yosys](https://github.com/YosysHQ/yosys) or `Verilog` code (that you can place and route using vendor tools, i.a. `Vivado`)
 
 ### nMigen docs/tutorials
 
@@ -78,3 +78,8 @@ For quick dive into `mtkCPU` most painless way is to first run existing test (or
 * [Robert Baruch's introduction](https://github.com/RobertBaruch/nmigen-tutorial)
 * [LambdaConcept's Step by Step](http://blog.lambdaconcept.com/doku.php?id=nmigen:tutorial)
 * [Robert Baruch's refreshed RiscV playlist](https://www.youtube.com/playlist?list=PLEeZWGE3PwbZTypHq00G-yEX8TEI95lw4)
+
+
+### Acknowledgements
+
+Some parts of `mtkCPU` were inspired by [minerva CPU](https://github.com/lambdaconcept/minerva) parts (LambdaConcept's property).
