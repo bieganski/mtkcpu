@@ -13,6 +13,7 @@ from tests.mem_tests import MEM_TESTS
 from tests.compare_tests import CMP_TESTS
 from tests.upper_tests import UPPER_TESTS
 from tests.branch_tests import BRANCH_TESTS
+from tests.playground import PLAYGROUND_TESTS
 
 
 parser = ArgumentParser(description="mtkCPU testing script.")
@@ -21,6 +22,7 @@ parser.add_argument('--mem', action='store_const', const=MEM_TESTS, default=[], 
 parser.add_argument('--cmp', action='store_const', const=CMP_TESTS, default=[], required=False)
 parser.add_argument('--upper', action='store_const', const=UPPER_TESTS, default=[], required=False)
 parser.add_argument('--branch', action='store_const', const=BRANCH_TESTS, default=[], required=False)
+parser.add_argument('--playground', action='store_const', const=PLAYGROUND_TESTS, default=[], required=False)
 parser.add_argument('--verbose', action='store_const', const=True, default=False, required=False)
 
 parser.add_argument('--elf', metavar='<ELF file path.>', type=str, required=False, help="Simulate given ELF binary.")
@@ -28,6 +30,14 @@ parser.add_argument('--elf', metavar='<ELF file path.>', type=str, required=Fals
 args = parser.parse_args()
 
 ELF = args.elf
+VERBOSE = args.verbose
+
+ALL_TESTS = REG_TESTS + MEM_TESTS + CMP_TESTS + UPPER_TESTS + PLAYGROUND_TESTS
+
+SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper + args.branch + args.playground
+if SELECTED_TESTS == []:
+    SELECTED_TESTS = ALL_TESTS
+
 
 
 # returns memory (all PT_LOAD type segments) as dictionary.
@@ -61,11 +71,6 @@ def read_elf(elf_path, verbose=False):
     return mem
 
 
-ALL_TESTS = REG_TESTS + MEM_TESTS + CMP_TESTS + UPPER_TESTS
-SELECTED_TESTS = args.mem + args.reg + args.cmp + args.upper + args.branch if args.branch + args.upper + args.cmp + args.mem + args.reg != [] else ALL_TESTS
-VERBOSE = args.verbose
-
-
 # checks performed: 
 # * if 'expected_val' is not None: check if x<'reg_num'> == 'expected_val',
 # * if 'expected_mem' is not None: check if for all k, v in 'expected_mem.items()' mem[k] == v.
@@ -95,7 +100,7 @@ def reg_test(name, timeout_cycles, reg_num, expected_val, expected_mem, reg_init
             BUSY_WRITE = 2
 
         # TODO legacy - not used for now.
-        # cursed - if we use state == MemState.FREE instead of list, 'timeout_range' geneartor wouldn't work.
+        # cursed - if we use state == MemState.FREE instead of list, 'timeout_range' generator wouldn't work.
         # param need to be passed by reference not by value, for actual binding to be visible in each loop iter.
         state = [MemState.FREE]
 
@@ -138,12 +143,11 @@ def reg_test(name, timeout_cycles, reg_num, expected_val, expected_mem, reg_init
                     mask = reduce(g, map(f, sel))
                     read_val = 0x0 if mem_addr not in mem_dict else mem_dict[mem_addr]
                     if state[0] == MemState.BUSY_WRITE:
-                        print(f"XXXX: GOT WRITE! val: {data}, addr: {mem_addr}, mask: {format(mask, '032b')}")
                         mem_dict[mem_addr] = (read_val & ~mask) | (data & mask)
                     elif state[0] == MemState.BUSY_READ:
                         read_val &= mask
                         yield arbiter.bus.dat_r.eq(read_val)
-                        print(f"cyc {ctr}: fetched {read_val} (from {mem_dict})...")
+                        # print(f"cyc {ctr}: fetched {read_val} (from {mem_dict})...")
                     state[0] = MemState.FREE
             yield
         

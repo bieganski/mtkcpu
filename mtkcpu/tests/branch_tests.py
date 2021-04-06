@@ -42,7 +42,11 @@ BRANCH_TESTS = [
         "timeout": 20,
     },
 
-    { # ppci got problems with compiling 'jal', thus compile it to ELF manually.
+# NOTE:
+# ppci got problems with compiling 'jal' and branching instructions, thus compile it and test ELF
+# (note we use 'source_raw' instead of 'source').
+    
+    {
         "name": "rd write 'jal'",
         "source_raw": 
         """
@@ -144,6 +148,134 @@ BRANCH_TESTS = [
         """,
         "out_reg": 1,
         "reg_init": [0 for i in range(32)],
+        "out_val": 111,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken 'blt'",
+        "source_raw": 
+        """
+            start:
+                blt x0, x1, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [i for i in range(32)],
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump not taken 'blt'",
+        "source_raw": 
+        """
+            start:
+                blt x1, x0, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [i for i in range(32)],
+        "out_val": 111,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken 'bltu'",
+        "source_raw": 
+        """
+            start:
+                bltu x0, x1, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [-i for i in range(32)],
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump not taken 'bltu'",
+        "source_raw": 
+        """
+            start:
+                bltu x1, x0, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [-i for i in range(32)],
+        "out_val": 111,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken 'bge'",
+        "source_raw": 
+        """
+            start:
+                bge x1, x0, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [i for i in range(32)],
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump not taken 'bge'",
+        "source_raw": 
+        """
+            start:
+                bge x1, x0, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [-i for i in range(32)],
+        "out_val": 111,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken 'bgeu'",
+        "source_raw": 
+        """
+            start:
+                bgeu x1, x0, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [-i for i in range(32)],
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump not taken 'bgeu'",
+        "source_raw": 
+        """
+            start:
+                bgeu x0, x1, jump_taken
+                addi x10, x0, 111
+            jump_taken:
+                addi x10, x0, 222
+        """,
+        "out_reg": 10,
+        "reg_init": [-i for i in range(32)],
         "out_val": 111,
         "timeout": 10,
     },

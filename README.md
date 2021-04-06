@@ -58,6 +58,19 @@ cd elf
 ./compile.sh example.S # it will generate example.elf using elf/linker.ld linker script.
 ```
 
+However, for now we don't provide way of result verification (it may be something like `main` exit code). To check for 
+specific register write or memory content, you can use mechanism of defining test case with 'elf' key.
+Here is example from `tests/playground.py` (runnable via `python3 test_cpu.py --playground` command)
+```python
+{
+        "name": "YOUR PLAYGROUND TEST 2 (elf)",
+        "elf": "tests/example.elf",
+        "out_reg": 1,
+        "out_val": 222,
+        "timeout": 10,
+},
+```
+
 Keep in mind, that CPU got hardcoded it's code address (with first instruction fetched). It's defined in `/mtkcpu/common.py` file at `START_ADDR` variable. You may want to use specially prepared linker script (or reuse example one, `/elf/linker.ld`, or change `common.py` file to adjust it for your precompiled ELF). 
 
 `TODO` - for now we lack way of result verification, it may be something like `main` exit code. 

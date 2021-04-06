@@ -9,11 +9,11 @@ class CompareUnit(Elaboratable):
         # Input signals.
         self.funct3 = Signal(Funct3)
         self.zero = Signal()
-        self.negative = Signal()
+        self.negative = Signal(name="cmp_negative")
 
         # meawhile, Adder Unit performs 'src1' - 'src2' and outputs carry and overflow signals.
-        self.carry = Signal()
-        self.overflow = Signal()
+        self.carry = Signal(name="cmp_carry")
+        self.overflow = Signal(name="cmp_overflow")
         
         # Output signals.
         self.condition_met  = Signal(name="compare_condition_met")
@@ -31,6 +31,14 @@ class CompareUnit(Elaboratable):
                 m.d.comb += self.condition_met.eq(self.zero)
             with m.Case(Funct3.BNE):
                 m.d.comb += self.condition_met.eq(~self.zero)
+            with m.Case(Funct3.BLT):
+                m.d.comb += self.condition_met.eq(self.negative ^ self.overflow)
+            with m.Case(Funct3.BGE):
+                m.d.comb += self.condition_met.eq(~(self.negative ^ self.overflow))
+            with m.Case(Funct3.BLTU):
+                m.d.comb += self.condition_met.eq(self.carry)
+            with m.Case(Funct3.BGEU):
+                m.d.comb += self.condition_met.eq(~self.carry)
         return m
 
 
