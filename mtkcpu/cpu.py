@@ -198,12 +198,21 @@ class MtkCpu(Elaboratable):
         with m.Elif(active_unit.compare):
             comb += [
                 compare.funct3.eq(funct3),
-                compare.src1.eq(rs1val),
-                compare.src2.eq(Mux(
+                
+                # Compare Unit uses Adder for carry and overflow flags. 
+                adder.src1.eq(rs1val),
+                adder.src2.eq(Mux(
                     opcode == InstrType.OP_IMM, 
                     imm,
                     rs2val)
                 ),
+                # adder.sub set somewhere below
+            ]
+
+        with m.Elif(active_unit.branch):
+            comb += [
+                compare.funct3.eq(funct3),
+                
                 # Compare Unit uses Adder for carry and overflow flags. 
                 adder.src1.eq(rs1val),
                 adder.src2.eq(rs2val),
@@ -218,7 +227,7 @@ class MtkCpu(Elaboratable):
         ]
 
         # Decoding state (with redundancy - instr. type not known yet).     
-        # We use 'ibus.read_data' instead of instr for getting registers to save 1 cycle.           
+        # We use 'ibus.read_data' instead of 'instr' (that is driven by sync domain) for getting registers to save 1 cycle.           
         comb += [
             opcode.eq(  instr[0:7]),
             rd.eq(      instr[7:12]),
@@ -287,7 +296,7 @@ class MtkCpu(Elaboratable):
                     ]
                     comb += [
                         reg_read_port1.addr.eq(rd),
-                        # res will be available in next cycle in rs1val
+                        # rd will be available in next cycle in rs1val
                     ]
                 with m.Elif(match_auipc(opcode, funct3, funct7)):
                     sync += [
@@ -300,6 +309,10 @@ class MtkCpu(Elaboratable):
                 with m.Elif(match_jalr(opcode, funct3, funct7)):
                     sync += [
                         active_unit.jalr.eq(1),
+                    ]
+                with m.Elif(match_branch(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.branch.eq(1),
                     ]
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
@@ -339,6 +352,10 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(pc + 4),
                     ]
+                with m.Elif(active_unit.branch):
+                    sync += [
+                        rdval.eq(pc + 4),  # REMOVE ME
+                    ]
 
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
@@ -351,18 +368,27 @@ class MtkCpu(Elaboratable):
                     m.next = "WRITEBACK"
                     sync += active_unit.eq(0)
 
-            pc_offset = Signal(signed(32))
-            comb += pc_offset.eq(Mux(
-                active_unit.jal,
-                Cat(Const(0, 1), instr[21:31], instr[20], instr[12:20], instr[31]),
-                rs1val + imm, # jalr
-            ))
-            pc_addend = Signal(signed(32))
-            sync += pc_addend.eq(Mux(
-                active_unit.jal | active_unit.jalr,
-                pc_offset,
-                4
-            ))
+                pc_offset = Signal(signed(32))
+                comb += pc_offset.eq(Mux(
+                    active_unit.jal,
+                    Cat(Const(0, 1), instr[21:31], instr[20], instr[12:20], instr[31]),
+                    rs1val + imm, # jalr, TODO get rid of that DSP here
+                ))
+                pc_addend = Signal(signed(32))
+                sync += pc_addend.eq(Mux(
+                    active_unit.jal | active_unit.jalr,
+                    pc_offset,
+                    4
+                ))
+
+                branch_addend = Signal(signed(13))
+                comb += branch_addend.eq(
+                    Cat(Const(0, 1), instr[8:12], instr[25:31], instr[7], instr[31])
+                )
+
+                with m.If(active_unit.branch):
+                    with m.If(compare.condition_met):
+                        sync += pc_addend.eq(branch_addend)
 
             with m.State("WRITEBACK"):
 

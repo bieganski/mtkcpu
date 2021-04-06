@@ -7,20 +7,17 @@ from operator import or_
 class CompareUnit(Elaboratable):
     def __init__(self):
         # Input signals.
-        self.src1 = Signal(signed(32), name="compare_src1")
-        self.src2 = Signal(signed(32), name="compare_src2")
         self.funct3 = Signal(Funct3)
+        self.zero = Signal()
+        self.negative = Signal()
 
+        # meawhile, Adder Unit performs 'src1' - 'src2' and outputs carry and overflow signals.
+        self.carry = Signal()
+        self.overflow = Signal()
+        
         # Output signals.
         self.condition_met  = Signal(name="compare_condition_met")
 
-        # meawhile, Adder Unit performs 'src1' - 'src2'
-        self.carry = Signal()
-        self.overflow = Signal()
-
-        self.zero = Signal()
-        self.negative = Signal()
-        
 
     def elaborate(self, platform):
         m = Module()
@@ -29,6 +26,11 @@ class CompareUnit(Elaboratable):
                 m.d.comb += self.condition_met.eq(self.negative | self.overflow)
             with m.Case(Funct3.SLTU):
                 m.d.comb += self.condition_met.eq(self.carry)
+
+            with m.Case(Funct3.BEQ):
+                m.d.comb += self.condition_met.eq(self.zero)
+            with m.Case(Funct3.BNE):
+                m.d.comb += self.condition_met.eq(~self.zero)
         return m
 
 
