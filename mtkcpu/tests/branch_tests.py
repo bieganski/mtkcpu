@@ -83,4 +83,68 @@ BRANCH_TESTS = [
         "out_val": 222,
         "timeout": 10,
     },
+
+    {
+        "name": "jump taken 'beq'",
+        "source_raw": 
+        """
+            start:
+                beq x1, x0, jump_taken
+                addi x1, x0, 111
+            jump_taken:
+                addi x1, x0, 222
+        """,
+        "out_reg": 1,
+        "reg_init": [0 for i in range(32)],
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump not taken 'beq'",
+        "source_raw": 
+        """
+            start:
+                beq x1, x0, jump_taken
+                addi x1, x0, 111
+            jump_taken:
+                addi x1, x0, 222
+        """,
+        "out_reg": 1,
+        "reg_init": [i for i in range(32)],
+        "out_val": 111,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken 'bne'",
+        "source_raw": 
+        """
+            start:
+                bne x1, x0, jump_taken
+                addi x1, x0, 111
+            jump_taken:
+                addi x1, x0, 222
+        """,
+        "out_reg": 1,
+        "reg_init": [i for i in range(32)],
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump not taken 'bne'",
+        "source_raw": 
+        """
+            start:
+                bne x1, x0, jump_taken
+                addi x1, x0, 111
+            jump_taken:
+                addi x1, x0, 222
+        """,
+        "out_reg": 1,
+        "reg_init": [0 for i in range(32)],
+        "out_val": 111,
+        "timeout": 10,
+    },
 ]

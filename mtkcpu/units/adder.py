@@ -3,9 +3,9 @@ from nmigen import *
 class AdderUnit(Elaboratable):
     def __init__(self):
         self.sub = Signal() # add or sub
-        self.src1 = Signal(32, name="adder_src1")
-        self.src2 = Signal(32, name="adder_src2")
-        self.res = Signal(32, name="adder_res")
+        self.src1 = Signal(signed(32), name="adder_src1")
+        self.src2 = Signal(signed(32), name="adder_src2")
+        self.res = Signal(signed(32), name="adder_res")
 
         self.overflow = Signal()
         self.carry = Signal()
