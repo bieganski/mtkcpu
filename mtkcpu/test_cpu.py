@@ -148,7 +148,7 @@ def reg_test(name, timeout_cycles, reg_num, expected_val, expected_mem, reg_init
             yield
         
 
-    def TEST_REG(timeout=35):
+    def TEST_REG(timeout=25 + timeout_cycles):
         yield Active()
         yield Tick()
         yield Settle()
@@ -196,7 +196,7 @@ def compile_source(source_raw, output_elf_fname):
     p = subprocess.Popen(["which", COMPILER], stdout=subprocess.PIPE)
     _, _ = p.communicate()
     if p.returncode != 0:
-        raise ValueError(f"Error! Cannot find {COMPILER} compiler in your PATH!")
+        raise ValueError(f"Error! Cannot find {COMPILER} compiler in your PATH! Have you runned 'install_toolchain.sh' script?")
 
     import tempfile
     tmp_dir = tempfile.mkdtemp()
