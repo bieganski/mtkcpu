@@ -313,6 +313,7 @@ class MtkCpu(Elaboratable):
                 with m.Elif(match_branch(opcode, funct3, funct7)):
                     sync += [
                         active_unit.branch.eq(1),
+                        adder.sub.eq(1),
                     ]
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
@@ -352,10 +353,8 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(pc + 4),
                     ]
-                with m.Elif(active_unit.branch):
-                    sync += [
-                        rdval.eq(pc + 4),  # REMOVE ME
-                    ]
+                # with m.Elif(active_unit.branch):
+                #     pass
 
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):

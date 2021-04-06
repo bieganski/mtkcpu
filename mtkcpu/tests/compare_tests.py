@@ -9,7 +9,7 @@ CMP_TESTS = [
             sltiu x2, x1, 0xffe
         """,
         "out_reg": 2,
-        "out_val": 0,
+        "out_val": 1,
         "timeout": 10,
     },
 
