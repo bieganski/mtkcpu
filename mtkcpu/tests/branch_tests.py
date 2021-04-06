@@ -14,7 +14,7 @@ BRANCH_TESTS = [
     },
 
     {
-        "name": "check jump taken 'jalr'",
+        "name": "jump taken 'jalr'",
         "source": 
         """
         .section code
@@ -27,6 +27,21 @@ BRANCH_TESTS = [
         "timeout": 10,
     },
 
+    {
+        "name": "jump taken backward 'jalr'",
+        "source": 
+        """
+        .section code
+            jalr x10, x0, 12
+            addi x5, x0, 10
+            addi x5, x0, 20
+            jalr x10, x0, -4
+        """,
+        "out_reg": 5,
+        "out_val": 20,
+        "timeout": 20,
+    },
+
     { # ppci got problems with compiling 'jal', thus compile it to ELF manually.
         "name": "rd write 'jal'",
         "source_raw": 
@@ -36,6 +51,36 @@ BRANCH_TESTS = [
         """,
         "out_reg": 10,
         "out_val": START_ADDR + 4,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken 'jal'",
+        "source_raw": 
+        """
+            start:
+                jal x10, jump_taken
+                addi x1, x0, 111
+            jump_taken:
+                addi x1, x0, 222
+        """,
+        "out_reg": 1,
+        "out_val": 222,
+        "timeout": 10,
+    },
+
+    {
+        "name": "jump taken backward 'jal'",
+        "source_raw": 
+        """
+            jump_taken:
+                addi x1, x0, 222
+            start:
+                jal x10, jump_taken
+                addi x1, x0, 111
+        """,
+        "out_reg": 1,
+        "out_val": 222,
         "timeout": 10,
     },
 ]

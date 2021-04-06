@@ -355,7 +355,7 @@ class MtkCpu(Elaboratable):
             comb += pc_offset.eq(Mux(
                 active_unit.jal,
                 Cat(Const(0, 1), instr[21:31], instr[20], instr[12:20], instr[31]),
-                rs1val + imm, # assume jalr, it won't be used otherwise (look 'pc_addend' calculation.)
+                rs1val + imm, # jalr
             ))
             pc_addend = Signal(signed(32))
             sync += pc_addend.eq(Mux(
