@@ -12,7 +12,6 @@ class Error(Enum):
     OK = 0
     OP_CODE = 1
     MISALIGNED_INSTR = 2
-    AAAA = 3 # TODO debug
 
 from isa import *
 from units.loadstore import LoadStoreUnit, MemoryUnit, MemoryArbiter, match_load, match_loadstore_unit
@@ -21,7 +20,7 @@ from units.adder import AdderUnit, match_adder_unit
 from units.shifter import ShifterUnit, match_shifter_unit
 from units.compare import CompareUnit, match_compare_unit
 from units.upper import match_lui, match_auipc
-
+from units.rvficon import RVFIController, rvfi_layout
 
 from common import matcher
 
@@ -64,7 +63,7 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, reg_init=[0 for _ in range(32)]):
+    def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False):
 
         if len(reg_init) > 32:
             raise ValueError(f"Register init length (={len(reg_init)}) exceedes 32!")
@@ -72,6 +71,8 @@ class MtkCpu(Elaboratable):
         if reg_init[0] != 0:
             print(f"WARNING, register x0 set to value {reg_init[0]}, however it will be overriden with zero..")
         reg_init[0] = 0
+
+        self.with_rvfi = with_rvfi
 
         # 0xDE for debugging (uninitialized data magic byte)
         self.reg_init = reg_init + [0x0]  * (len(reg_init) - 32)
@@ -95,6 +96,11 @@ class MtkCpu(Elaboratable):
 
         comb = m.d.comb
         sync = m.d.sync
+
+        if self.with_rvfi:
+            rvficon = m.submodules.rvficon = RVFIController()
+            self.rvfi = Record(rvfi_layout)
+
 
         sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 
@@ -411,6 +417,41 @@ class MtkCpu(Elaboratable):
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
                 m.next = "FETCH"
+
+        # TODO
+        # That piece of code comes from minerva CPU, for now it's only copy-pasted.
+        # Let's make it work.
+        if self.with_rvfi:
+            cpu.d.comb += [
+                rvficon.d_insn.eq(decoder.instruction),
+                rvficon.d_rs1_addr.eq(Mux(decoder.rs1_re, decoder.rs1, 0)),
+                rvficon.d_rs2_addr.eq(Mux(decoder.rs2_re, decoder.rs2, 0)),
+                rvficon.d_rs1_rdata.eq(Mux(decoder.rs1_re, d_src1, 0)),
+                rvficon.d_rs2_rdata.eq(Mux(decoder.rs2_re, d_src2, 0)),
+                rvficon.d_stall.eq(d.stall),
+                rvficon.x_mem_addr.eq(loadstore.x_addr[2:] << 2),
+                rvficon.x_mem_wmask.eq(Mux(loadstore.x_store, loadstore.x_mask, 0)),
+                rvficon.x_mem_rmask.eq(Mux(loadstore.x_load, loadstore.x_mask, 0)),
+                rvficon.x_mem_wdata.eq(loadstore.x_store_data),
+                rvficon.x_stall.eq(x.stall),
+                rvficon.m_mem_rdata.eq(loadstore.m_load_data),
+                rvficon.m_fetch_misaligned.eq(exception.m_fetch_misaligned),
+                rvficon.m_illegal_insn.eq(m.sink.illegal),
+                rvficon.m_load_misaligned.eq(exception.m_load_misaligned),
+                rvficon.m_store_misaligned.eq(exception.m_store_misaligned),
+                rvficon.m_exception.eq(exception.m_raise),
+                rvficon.m_mret.eq(m.sink.mret),
+                rvficon.m_branch_taken.eq(m.sink.branch_taken),
+                rvficon.m_branch_target.eq(m.sink.branch_target),
+                rvficon.m_pc_rdata.eq(m.sink.pc),
+                rvficon.m_stall.eq(m.stall),
+                rvficon.m_valid.eq(m.valid),
+                rvficon.w_rd_addr.eq(Mux(gprf_wp.en, gprf_wp.addr, 0)),
+                rvficon.w_rd_wdata.eq(Mux(gprf_wp.en, gprf_wp.data, 0)),
+                rvficon.mtvec_r_base.eq(exception.mtvec.r.base),
+                rvficon.mepc_r_value.eq(exception.mepc.r),
+                rvficon.rvfi.connect(self.rvfi)
+            ]
         
         return m
 
