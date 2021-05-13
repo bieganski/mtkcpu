@@ -16,6 +16,9 @@ publish:
 update:
 	poetry update
 
+build-docker:
+	bash ./build_docker_image.sh
+
 test:
 	poetry run pytest -n 4
 
