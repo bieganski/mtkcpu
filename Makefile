@@ -7,6 +7,12 @@ install:
 	bash ./install_toolchain.sh
 	poetry install
 
+bump_minor:
+	poetry run bump2version minor
+
+publish:
+	poetry run publish
+
 update:
 	poetry update
 
