@@ -1,12 +1,13 @@
 from typing import Optional
 from mtkcpu.cpu.cpu import MtkCpu
-from mtkcpu.tests.models import MemoryContents, RegistryContents, MemState
+from mtkcpu.utils.tests.memory import MemoryContents, MemState
+
 
 def get_sim_memory_test(
     cpu: MtkCpu,
     mem_dict: Optional[MemoryContents],
 ):
-    from nmigen.back.pysim import Simulator, Active, Passive, Tick, Settle
+    from nmigen.back.pysim import Passive
     def mem_test():
         yield Passive()
         # yield Tick()
@@ -74,7 +75,7 @@ def get_sim_register_test(
     expected_val: Optional[int],
     default_timeout_extra: int = 25,
 ):
-    from nmigen.back.pysim import Simulator, Active, Passive, Tick, Settle
+    from nmigen.back.pysim import Active, Tick, Settle
     check_mem = reg_num is not None
 
     def reg_test(timeout=default_timeout_extra+timeout_cycles):

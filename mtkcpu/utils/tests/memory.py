@@ -1,21 +1,22 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from mtkcpu.cpu.cpu import MtkCpu
-from mtkcpu.tests.exceptions import OverlappingMemoryError, EmptyMemoryError, InvalidMemoryValueError
-from typing import List, Dict, Optional, Iterable, Generator
+from mtkcpu.utils.tests.exceptions import OverlappingMemoryError, EmptyMemoryError, InvalidMemoryValueError
+from typing import Dict, Iterable, Generator, Tuple
+from itertools import groupby, islice
 from enum import Enum, unique
-from itertools import count, groupby, islice
-from mtkcpu.asm.asm_dump import dump_asm
-from mtkcpu.utils.common import START_ADDR
-from enum import Enum, unique
-
-from io import StringIO
 
 
 def ranges(i: Iterable[int]) -> Generator[Tuple[int, int], None, None]:
     for a, b in groupby(enumerate(i), lambda pair: pair[1] - pair[0]):
         b = list(b)
         yield b[0][1], b[-1][1]
+
+
+@unique
+class MemState(Enum):
+    FREE = 0
+    BUSY_READ = 1
+    BUSY_WRITE = 2
 
 
 @dataclass(frozen=True)
@@ -73,22 +74,3 @@ class MemoryContents:
     def empty(cls):
         return MemoryContents(memory=dict())
 
-
-@dataclass(frozen=True)
-class RegistryContents:
-    reg: List[int]
-
-    @classmethod
-    def empty(cls, size: int = 32, value: int = 0):
-        return RegistryContents(reg=[value for _ in range(size)])
-
-    @property
-    def size(self):
-        return len(self.reg)
-
-
-@unique
-class MemState(Enum):
-    FREE = 0
-    BUSY_READ = 1
-    BUSY_WRITE = 2

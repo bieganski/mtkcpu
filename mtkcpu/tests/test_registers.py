@@ -1,8 +1,7 @@
 import pytest
-from mtkcpu.utils.common import START_ADDR
-from mtkcpu.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test
-from mtkcpu.tests.models import RegistryContents, MemoryContents
-from bitstring import Bits
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test
+from mtkcpu.utils.tests.registers import RegistryContents
+from mtkcpu.utils.tests.memory import MemoryContents
 
 REGISTERS_TESTS = [
     MemTestCase(
