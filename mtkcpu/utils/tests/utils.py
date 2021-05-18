@@ -77,8 +77,7 @@ def reg_test(
 
 def get_code_mem(case: MemTestCase) -> MemoryContents:
     if case.source_type == MemTestSourceType.TEXT:
-        source_file = StringIO(case.source)
-        code = dump_asm(source_file, verbose=False)
+        code = dump_asm(case.source, verbose=False)
         return MemoryContents(
             memory=dict(zip(count(START_ADDR, 4), code)),
         )
