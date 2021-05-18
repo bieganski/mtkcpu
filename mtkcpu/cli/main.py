@@ -1,4 +1,5 @@
 import typer
+
 from .tests import tests_cli
 
 

@@ -1,7 +1,8 @@
 import pytest
+
 from mtkcpu.utils.common import START_ADDR
-from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 from mtkcpu.utils.tests.registers import RegistryContents
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 
 BRANCH_TESTS = [
     MemTestCase(
@@ -15,7 +16,6 @@ BRANCH_TESTS = [
         out_val=START_ADDR + 4,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'jalr'",
         source_type=MemTestSourceType.TEXT,
@@ -29,7 +29,6 @@ BRANCH_TESTS = [
         out_val=20,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken backward 'jalr'",
         source_type=MemTestSourceType.TEXT,
@@ -44,11 +43,9 @@ BRANCH_TESTS = [
         out_val=20,
         timeout=20,
     ),
-
     # NOTE:
     # ppci got problems with compiling 'jal' and branching instructions, thus compile it and test ELF
     # (note we use 'source_raw' instead of 'source').
-
     MemTestCase(
         name="rd write 'jal'",
         source_type=MemTestSourceType.RAW,
@@ -60,7 +57,6 @@ BRANCH_TESTS = [
         out_val=START_ADDR + 4,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'jal'",
         source_type=MemTestSourceType.RAW,
@@ -75,7 +71,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken backward 'jal'",
         source_type=MemTestSourceType.RAW,
@@ -90,7 +85,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'beq'",
         source_type=MemTestSourceType.RAW,
@@ -106,7 +100,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump not taken 'beq'",
         source_type=MemTestSourceType.RAW,
@@ -122,7 +115,6 @@ BRANCH_TESTS = [
         out_val=111,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'bne'",
         source_type=MemTestSourceType.RAW,
@@ -138,7 +130,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump not taken 'bne'",
         source_type=MemTestSourceType.RAW,
@@ -154,7 +145,6 @@ BRANCH_TESTS = [
         out_val=111,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'blt'",
         source_type=MemTestSourceType.RAW,
@@ -170,7 +160,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump not taken 'blt'",
         source_type=MemTestSourceType.RAW,
@@ -186,7 +175,6 @@ BRANCH_TESTS = [
         out_val=111,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'bltu'",
         source_type=MemTestSourceType.RAW,
@@ -202,7 +190,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump not taken 'bltu'",
         source_type=MemTestSourceType.RAW,
@@ -218,7 +205,6 @@ BRANCH_TESTS = [
         out_val=111,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'bge'",
         source_type=MemTestSourceType.RAW,
@@ -234,7 +220,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump not taken 'bge'",
         source_type=MemTestSourceType.RAW,
@@ -250,7 +235,6 @@ BRANCH_TESTS = [
         out_val=111,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump taken 'bgeu'",
         source_type=MemTestSourceType.RAW,
@@ -266,7 +250,6 @@ BRANCH_TESTS = [
         out_val=222,
         timeout=10,
     ),
-
     MemTestCase(
         name="jump not taken 'bgeu'",
         source_type=MemTestSourceType.RAW,
@@ -283,6 +266,7 @@ BRANCH_TESTS = [
         timeout=10,
     ),
 ]
+
 
 @pytest.mark.skip(reason="This fails")
 @mem_test(BRANCH_TESTS)

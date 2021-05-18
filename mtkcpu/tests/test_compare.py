@@ -1,6 +1,5 @@
-import pytest
-from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 from mtkcpu.utils.tests.registers import RegistryContents
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 
 COMPARE_TESTS = [
     MemTestCase(
@@ -57,4 +56,3 @@ COMPARE_TESTS = [
 @mem_test(COMPARE_TESTS)
 def test_compare(_):
     pass
-

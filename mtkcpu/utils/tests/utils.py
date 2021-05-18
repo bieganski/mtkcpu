@@ -1,19 +1,21 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from mtkcpu.cpu.cpu import MtkCpu
-from typing import Optional, List
-from itertools import count
-from mtkcpu.asm.asm_dump import dump_asm
-from mtkcpu.utils.common import START_ADDR
 from enum import Enum, unique
+from io import StringIO
+from itertools import count
+from typing import List, Optional
+
 import pytest
 
+from mtkcpu.asm.asm_dump import dump_asm
+from mtkcpu.cpu.cpu import MtkCpu
+from mtkcpu.utils.common import START_ADDR
 from mtkcpu.utils.decorators import parametrized, rename
-from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.memory import MemoryContents
-from mtkcpu.utils.tests.sim_tests import get_sim_memory_test, get_sim_register_test
-
-from io import StringIO
+from mtkcpu.utils.tests.registers import RegistryContents
+from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
+                                          get_sim_register_test)
 
 
 @unique
@@ -47,14 +49,25 @@ def reg_test(
     verbose: bool = False,
 ):
     from nmigen.back.pysim import Simulator
+
     cpu = MtkCpu(reg_init=reg_init.reg)
     sim = Simulator(cpu)
     sim.add_clock(1e-6)
 
-    assert ((reg_num is None and expected_val is None) or (reg_num is not None and expected_val is not None))
+    assert (reg_num is None and expected_val is None) or (
+        reg_num is not None and expected_val is not None
+    )
 
     sim.add_sync_process(get_sim_memory_test(cpu=cpu, mem_dict=mem_dict))
-    sim.add_sync_process(get_sim_register_test(name=name, cpu=cpu, reg_num=reg_num, expected_val=expected_val, timeout_cycles=timeout_cycles))
+    sim.add_sync_process(
+        get_sim_register_test(
+            name=name,
+            cpu=cpu,
+            reg_num=reg_num,
+            expected_val=expected_val,
+            timeout_cycles=timeout_cycles,
+        )
+    )
     with sim.write_vcd("cpu.vcd"):
         sim.run()
 
@@ -70,7 +83,9 @@ def get_code_mem(case: MemTestCase) -> MemoryContents:
             memory=dict(zip(count(START_ADDR, 4), code)),
         )
     else:
-        raise KeyError(f"Unsupported MemTestSourceType in MemTestCase: {case.source_type}")
+        raise KeyError(
+            f"Unsupported MemTestSourceType in MemTestCase: {case.source_type}"
+        )
 
 
 def assert_mem_test(case: MemTestCase):
@@ -87,7 +102,8 @@ def assert_mem_test(case: MemTestCase):
         expected_mem=case.mem_out,
         reg_init=reg_init,
         mem_dict=program,
-        verbose=True)
+        verbose=True,
+    )
 
 
 @parametrized
@@ -97,4 +113,5 @@ def mem_test(f, cases: List[MemTestCase]):
     def aux(test_case):
         assert_mem_test(test_case)
         f(test_case)
+
     return aux

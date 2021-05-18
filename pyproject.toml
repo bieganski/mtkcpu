@@ -54,11 +54,12 @@ include = '\.pyi?$'
 line-length = 79
 
 [tool.flakehell]
-exclude = ["README.rst", "README.md"]
+exclude = ["README.rst", "README.md", "submodules"]
 format = "colored"
 max_line_length = 120
 show_source = true
 whitelist = "../../allowlist.txt"
+extended_default_ignore=[]
 
 [tool.flakehell.plugins]
 flake8-bandit = ["+*", "-S322"]

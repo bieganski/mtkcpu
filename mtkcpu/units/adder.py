@@ -1,15 +1,17 @@
-from nmigen import *
+from nmigen import Signal, Elaboratable, Module, Cat, Mux
+from mtkcpu.utils.common import matcher
+from mtkcpu.utils.isa import Funct3, Funct7, InstrType
+
 
 class AdderUnit(Elaboratable):
     def __init__(self):
-        self.sub = Signal() # add or sub
+        self.sub = Signal()  # add or sub
         self.src1 = Signal(32, name="adder_src1")
         self.src2 = Signal(32, name="adder_src2")
         self.res = Signal(32, name="adder_res")
 
         self.overflow = Signal(name="adder_overflow")
         self.carry = Signal(name="adder_carry")
-        
 
     def elaborate(self, platform):
         m = Module()
@@ -18,10 +20,7 @@ class AdderUnit(Elaboratable):
         res_and_carry = Cat(self.res, self.carry)
 
         m.d.comb += res_and_carry.eq(
-            Mux(self.sub,
-                self.src1 - self.src2,
-                self.src1 + self.src2
-            )
+            Mux(self.sub, self.src1 - self.src2, self.src1 + self.src2)
         )
 
         with m.If(self.sub):
@@ -40,12 +39,12 @@ class AdderUnit(Elaboratable):
 
         return m
 
-from mtkcpu.utils.common import matcher
-from mtkcpu.utils.isa import Funct3, Funct7, InstrType
 
-match_adder_unit = matcher([
-    (InstrType.ALU, Funct3.ADD, Funct7.ADD),
-    (InstrType.ALU, Funct3.SUB, Funct7.SUB),
-    (InstrType.OP_IMM, Funct3.ADD),
-    (InstrType.OP_IMM, Funct3.SUB),
-])
+match_adder_unit = matcher(
+    [
+        (InstrType.ALU, Funct3.ADD, Funct7.ADD),
+        (InstrType.ALU, Funct3.SUB, Funct7.SUB),
+        (InstrType.OP_IMM, Funct3.ADD),
+        (InstrType.OP_IMM, Funct3.SUB),
+    ]
+)
