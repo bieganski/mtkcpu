@@ -1,6 +1,6 @@
 import pytest
 from mtkcpu.utils.common import START_ADDR
-from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 from mtkcpu.utils.tests.registers import RegistryContents
 
 BRANCH_TESTS = [
@@ -284,8 +284,7 @@ BRANCH_TESTS = [
     ),
 ]
 
-
 @pytest.mark.skip(reason="This fails")
-@pytest.mark.parametrize("test_case", BRANCH_TESTS)
-def test_branch(test_case):
-    assert_mem_test(test_case)
+@mem_test(BRANCH_TESTS)
+def test_branch(_):
+    pass
