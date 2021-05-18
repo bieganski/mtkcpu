@@ -1,7 +1,6 @@
 from enum import Enum, unique
 
 
-@unique
 class Funct3(int, Enum):
     ADD = SUB = ADDI = B = JALR = BEQ = 0b000
     SLL = SLLI = H = BNE = 0b001
@@ -14,8 +13,7 @@ class Funct3(int, Enum):
     AND = BGEU = 0b111
 
 
-@unique
-class Funct7(Enum):
+class Funct7(int, Enum):
     ADD = SRL = SLL = SRLI = SLLI = 0b0000000
     SUB = SRA = SRAI = 0b0100000
 
