@@ -1,16 +1,15 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from mtkcpu.cpu.cpu import MtkCpu
-from mtkcpu.tests.exceptions import OverlappingMemoryError, EmptyMemoryError, InvalidMemoryValueError
-from typing import List, Dict, Optional, Iterable, Generator
-from enum import Enum, unique
-from itertools import count, groupby, islice
+from typing import Optional
+from itertools import count
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.utils.common import START_ADDR
 from enum import Enum, unique
 
-from mtkcpu.tests.models import MemoryContents, RegistryContents
-from mtkcpu.tests.sim_tests import get_sim_memory_test, get_sim_register_test
+from mtkcpu.utils.tests.registers import RegistryContents
+from mtkcpu.utils.tests.memory import MemoryContents
+from mtkcpu.utils.tests.sim_tests import get_sim_memory_test, get_sim_register_test
 
 from io import StringIO
 
