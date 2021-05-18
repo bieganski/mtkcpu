@@ -1,6 +1,6 @@
 from nmigen import *
 
-from isa import Funct3, InstrType
+from mtkcpu.utils.isa import Funct3, InstrType
 from functools import reduce
 from operator import or_
 
@@ -24,7 +24,7 @@ class LogicUnit(Elaboratable):
         return m
 
 
-from common import matcher
+from mtkcpu.utils.common import matcher
 
 match_logic_unit = matcher([
     (InstrType.ALU, Funct3.OR, 0b0000000),

@@ -1,6 +1,6 @@
 from nmigen import *
 
-from isa import Funct3, Funct7, InstrType
+from mtkcpu.utils.isa import Funct3, Funct7, InstrType
 from functools import reduce
 from operator import or_
 
@@ -29,7 +29,7 @@ class ShifterUnit(Elaboratable):
         return m
 
 
-from common import matcher
+from mtkcpu.utils.common import matcher
 
 match_shifter_unit = matcher([
     (InstrType.OP_IMM,  Funct3.SLLI,    Funct7.SLLI),
