@@ -1,19 +1,16 @@
-#!/usr/bin/env python3
 import io
+import os
+from typing import List, Union, Generator
+import subprocess
 
 from ppci.api import asm, link
 
-source_file = io.StringIO(
-    """
-        .section code
-            jalr x10, x8, 0x0
-        """
-)
 
-
-def dump_asm_to_S_file(val_lst, filename="asm.S", verbose=False):
-    import os
-
+def dump_asm_to_S_file(
+    val_lst: List[int],
+    filename: str = "asm.S",
+    verbose: bool = False,
+):
     if os.path.isfile(filename):
         os.remove(filename)
     with open(filename, "w") as f:
@@ -28,9 +25,7 @@ def dump_asm_to_S_file(val_lst, filename="asm.S", verbose=False):
         )
     LOG(f"OK, file '{filename}'' dumped!", verbose=verbose)
 
-    import subprocess
-
-    obj_filename = filename.split(".")[-2] + ".o"
+    obj_filename = f"{filename.split('.')[-2]}.o"
     subprocess.getoutput(
         f"riscv-none-embed-gcc -c {filename} -o {obj_filename}"
     )
@@ -41,7 +36,7 @@ def dump_asm_to_S_file(val_lst, filename="asm.S", verbose=False):
 
 
 # https://stackoverflow.com/a/312464
-def chunks(lst, n):
+def chunks(lst: bytes, n: int) -> Generator[bytes, None, None]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
@@ -56,18 +51,14 @@ def LOG(*args, **kwargs):
 
 
 # returns bytearray with asm.
-def dump_asm(string, verbose=False):
+def dump_asm(
+    code_input: str,
+    verbose: bool = False,
+) -> List[int]:
 
-    # from ppci.common import CompilerError
-    obj = asm(string, "riscv")
-    # try:
-    #     obj = asm(source_file, 'riscv')
-    #     print("ASM succeeded...")
-    # except CompilerError:
-    #     print("ASM didn't work, trying CC...")
-    #     obj = cc(source_file, 'riscv')
+    obj = asm(io.StringIO(code_input), "riscv") # NOQA
     obj = link([obj])
-    # print(obj.sections)
+
     code = obj.get_section("code").data
     code = bytes_to_u32_arr(code)
     dump_instrs(code)
@@ -75,13 +66,13 @@ def dump_asm(string, verbose=False):
     return code
 
 
-def bytes_to_u32_arr(raw):
+def bytes_to_u32_arr(raw: bytes) -> List[int]:
     return [
         int.from_bytes(x, "little") for x in chunks(raw, 4)
     ]  # 4 byte chunks
 
 
-def dump_instrs(u32_arr):
+def dump_instrs(u32_arr: List[int]):
     verbose = True
     code = u32_arr
     LOG(code, verbose=verbose)
@@ -103,4 +94,7 @@ def dump_instrs(u32_arr):
 
 
 if __name__ == "__main__":
-    dump_asm(source_file, verbose=True)
+    dump_asm("""
+    .section code
+        jalr x10, x8, 0x0
+    """, verbose=True)
