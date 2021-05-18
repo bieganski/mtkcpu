@@ -8,7 +8,7 @@ from operator import or_
 from nmigen import *
 from nmigen.hdl.rec import *
 
-from isa import *
+from mtkcpu.utils.isa import *
 # from ..wishbone import *
 
 

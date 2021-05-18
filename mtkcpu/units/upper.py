@@ -1,5 +1,5 @@
-from common import matcher
-from isa import Funct3, InstrType
+from mtkcpu.utils.common import matcher
+from mtkcpu.utils.isa import Funct3, InstrType
 
 match_lui = matcher([
     (InstrType.LUI, ),

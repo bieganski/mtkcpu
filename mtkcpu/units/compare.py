@@ -1,6 +1,6 @@
 from nmigen import *
 
-from isa import Funct3, InstrType
+from mtkcpu.utils.isa import Funct3, InstrType
 from functools import reduce
 from operator import or_
 
@@ -42,7 +42,7 @@ class CompareUnit(Elaboratable):
         return m
 
 
-from common import matcher
+from mtkcpu.utils.common import matcher
 
 match_compare_unit = matcher([
     (InstrType.ALU, Funct3.SLT),

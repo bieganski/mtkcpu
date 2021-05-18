@@ -40,8 +40,8 @@ class AdderUnit(Elaboratable):
 
         return m
 
-from common import matcher
-from isa import Funct3, Funct7, InstrType
+from mtkcpu.utils.common import matcher
+from mtkcpu.utils.isa import Funct3, Funct7, InstrType
 
 match_adder_unit = matcher([
     (InstrType.ALU, Funct3.ADD, Funct7.ADD),
