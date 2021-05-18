@@ -1,5 +1,5 @@
 import pytest
-from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test, mem_test
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.memory import MemoryContents
 
@@ -233,6 +233,6 @@ REGISTERS_TESTS = [
 ]
 
 
-@pytest.mark.parametrize("test_case", REGISTERS_TESTS)
-def test_registers(test_case):
-    assert_mem_test(test_case)
+@mem_test(REGISTERS_TESTS)
+def test_registers(_):
+    pass

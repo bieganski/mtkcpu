@@ -1,6 +1,6 @@
 import pytest
 from mtkcpu.utils.common import START_ADDR
-from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 from mtkcpu.utils.tests.registers import RegistryContents
 from bitstring import Bits
 
@@ -45,6 +45,6 @@ UPPER_TESTS = [
 ]
 
 
-@pytest.mark.parametrize("test_case", UPPER_TESTS)
-def test_upper(test_case):
-    assert_mem_test(test_case)
+@mem_test(UPPER_TESTS)
+def test_upper(_):
+    pass

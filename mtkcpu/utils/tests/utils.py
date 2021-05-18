@@ -1,17 +1,20 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from mtkcpu.cpu.cpu import MtkCpu
-from typing import Optional
+from typing import Optional, List
 from itertools import count
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.utils.common import START_ADDR
 from enum import Enum, unique
+import pytest
 
+from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.sim_tests import get_sim_memory_test, get_sim_register_test
 
 from io import StringIO
+
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -85,3 +88,13 @@ def assert_mem_test(case: MemTestCase):
         reg_init=reg_init,
         mem_dict=program,
         verbose=True)
+
+
+@parametrized
+def mem_test(f, cases: List[MemTestCase]):
+    @pytest.mark.parametrize("test_case", cases)
+    @rename(f.__name__)
+    def aux(test_case):
+        assert_mem_test(test_case)
+        f(test_case)
+    return aux

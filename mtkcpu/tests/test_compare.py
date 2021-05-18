@@ -1,5 +1,5 @@
 import pytest
-from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, assert_mem_test
+from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 from mtkcpu.utils.tests.registers import RegistryContents
 
 COMPARE_TESTS = [
@@ -54,6 +54,7 @@ COMPARE_TESTS = [
 ]
 
 
-@pytest.mark.parametrize("test_case", COMPARE_TESTS)
-def test_compare(test_case):
-    assert_mem_test(test_case)
+@mem_test(COMPARE_TESTS)
+def test_compare(_):
+    pass
+
