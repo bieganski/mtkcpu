@@ -1,6 +1,13 @@
 from typing import Optional
+from functools import reduce
+
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.utils.tests.memory import MemoryContents, MemState
+
+
+def get_sel_bus_mask(sel):
+    sel = format(sel, "04b")  # '1111' string for full mask
+    return reduce(lambda val, el: (val << 8) + el, map(lambda x: 0xFF if int(x) == 1 else 0x00, sel))
 
 
 def get_sim_memory_test(
@@ -8,11 +15,12 @@ def get_sim_memory_test(
     mem_dict: Optional[MemoryContents],
 ):
     from nmigen.back.pysim import Passive
+
     def mem_test():
         yield Passive()
         # yield Tick()
         # yield Settle()
-        p = .4  # .5 # probability of mem access in current cycle
+        p = 0.4  # .5 # probability of mem access in current cycle
         # TODO legacy - not used for now.
         # cursed - if we use state == MemState.FREE instead of list, 'timeout_range' generator wouldn't work.
         # param need to be passed by reference not by value, for actual binding to be visible in each loop iter.
@@ -20,12 +28,12 @@ def get_sim_memory_test(
 
         arbiter = cpu.arbiter
 
-        while (True):  # that's ok, I'm passive.
+        while True:  # that's ok, I'm passive.
             import numpy.random as random
 
             rdy = random.choice((0, 1), p=[1 - p, p])
 
-            ctr = yield cpu.DEBUG_CTR
+            yield cpu.DEBUG_CTR
 
             if state[0] == MemState.FREE:
                 ack = yield arbiter.bus.ack
@@ -40,7 +48,9 @@ def get_sim_memory_test(
                 read = cyc and not we
                 mem_addr = yield arbiter.bus.adr
                 if read and write:
-                    raise ValueError("ERROR (TODO handle): simultaneous 'read' and 'write' detected.")
+                    raise ValueError(
+                        "ERROR (TODO handle): simultaneous 'read' and 'write' detected."
+                    )
                 if read:
                     state[0] = MemState.BUSY_READ
                 elif write:
@@ -50,20 +60,19 @@ def get_sim_memory_test(
                 if rdy:  # random indicated transaction done in current cycle
                     yield arbiter.bus.ack.eq(1)
                     sel = yield arbiter.bus.sel
-                    sel = format(sel, '04b')  # '1111' string for full mask
-                    f = lambda x: 0xFF if int(x) == 1 else 0x00
-                    g = lambda val, el: (val << 8) + el
-                    from functools import reduce
-                    mask = reduce(g, map(f, sel))
+                    mask = get_sel_bus_mask(sel)
                     read_val = mem_dict.get_default(mem_addr)
                     if state[0] == MemState.BUSY_WRITE:
-                        mem_dict.set(mem_addr, (read_val & ~mask) | (data & mask))
+                        mem_dict.set(
+                            mem_addr, (read_val & ~mask) | (data & mask)
+                        )
                     elif state[0] == MemState.BUSY_READ:
                         read_val &= mask
                         yield arbiter.bus.dat_r.eq(read_val)
                         # print(f"cyc {ctr}: fetched {read_val} (from {mem_dict})...")
                     state[0] = MemState.FREE
             yield
+
     return mem_test
 
 
@@ -75,10 +84,11 @@ def get_sim_register_test(
     expected_val: Optional[int],
     default_timeout_extra: int = 25,
 ):
-    from nmigen.back.pysim import Active, Tick, Settle
+    from nmigen.back.pysim import Active, Settle, Tick
+
     check_mem = reg_num is not None
 
-    def reg_test(timeout=default_timeout_extra+timeout_cycles):
+    def reg_test(timeout=default_timeout_extra + timeout_cycles):
         yield Active()
         yield Tick()
         yield Settle()
@@ -93,14 +103,21 @@ def get_sim_register_test(
                     val = yield cpu.reg_write_port.data
                     if check_mem and (val != expected_val):
                         # TODO that mechanism for now allows for only one write to reg, extend it if neccessary.
-                        print(f"== ERROR: Expected data write to reg x{addr} of value {expected_val},"
-                              f" got value {val}.. \n== fail test: {name}\n")
-                        print(f"{format(expected_val, '32b')} vs {format(val, '32b')}")
+                        print(
+                            f"== ERROR: Expected data write to reg x{addr} of value {expected_val},"
+                            f" got value {val}.. \n== fail test: {name}\n"
+                        )
+                        print(
+                            f"{format(expected_val, '32b')} vs {format(val, '32b')}"
+                        )
                         exit(1)
                     return
             yield Tick()
 
         if check_mem:
-            print(f"== ERROR: Test timeouted! No register write observed. Test: {name}\n")
+            print(
+                f"== ERROR: Test timeouted! No register write observed. Test: {name}\n"
+            )
             exit(1)
+
     return reg_test

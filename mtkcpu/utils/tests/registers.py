@@ -1,6 +1,11 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Callable, Optional
+from typing import Callable, List, Optional
+
+
+def id_fn(i):
+    return i
 
 
 @dataclass(frozen=True)
@@ -14,10 +19,9 @@ class RegistryContents:
     @classmethod
     def fill(cls, value: Optional[Callable[[], int]] = None, size: int = 32):
         if value is None:
-            value = lambda i: i
+            value = id_fn
         return RegistryContents(reg=[value(i) for i in range(size)])
 
     @property
     def size(self):
         return len(self.reg)
-

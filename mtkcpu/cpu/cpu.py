@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
-from nmigen import *
 from enum import Enum
-from nmigen.hdl.rec import *  # Record, Layout
-from operator import or_
 from functools import reduce
+from operator import or_
+from nmigen import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
+from nmigen.hdl.rec import Layout
 from mtkcpu.utils.common import START_ADDR
+from mtkcpu.units.adder import AdderUnit, match_adder_unit
+from mtkcpu.units.compare import CompareUnit, match_compare_unit
+from mtkcpu.units.loadstore import (LoadStoreUnit, MemoryArbiter, MemoryUnit,
+                                    match_load, match_loadstore_unit)
+from mtkcpu.units.logic import LogicUnit, match_logic_unit
+from mtkcpu.units.rvficon import RVFIController, rvfi_layout
+from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
+from mtkcpu.units.upper import match_auipc, match_lui
+from mtkcpu.utils.common import matcher
+from mtkcpu.utils.isa import Funct3, InstrType, Funct7
+
 
 MEM_WORDS = 10
 
@@ -15,49 +26,46 @@ class Error(Enum):
     MISALIGNED_INSTR = 2
 
 
-from mtkcpu.utils.isa import *
-from mtkcpu.units.loadstore import LoadStoreUnit, MemoryUnit, MemoryArbiter, match_load, match_loadstore_unit
-from mtkcpu.units.logic import LogicUnit, match_logic_unit
-from mtkcpu.units.adder import AdderUnit, match_adder_unit
-from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
-from mtkcpu.units.compare import CompareUnit, match_compare_unit
-from mtkcpu.units.upper import match_lui, match_auipc
-from mtkcpu.units.rvficon import RVFIController, rvfi_layout
+match_jal = matcher(
+    [
+        (InstrType.JAL,),
+    ]
+)
 
-from mtkcpu.utils.common import matcher
+match_jalr = matcher(
+    [
+        (InstrType.JALR, Funct3.JALR),
+    ]
+)
 
-match_jal = matcher([
-    (InstrType.JAL,),
-])
-
-match_jalr = matcher([
-    (InstrType.JALR, Funct3.JALR),
-])
-
-match_branch = matcher([
-    (InstrType.BRANCH, Funct3.BEQ),
-    (InstrType.BRANCH, Funct3.BNE),
-    (InstrType.BRANCH, Funct3.BLT),
-    (InstrType.BRANCH, Funct3.BGE),
-    (InstrType.BRANCH, Funct3.BLTU),
-    (InstrType.BRANCH, Funct3.BGEU),
-])
+match_branch = matcher(
+    [
+        (InstrType.BRANCH, Funct3.BEQ),
+        (InstrType.BRANCH, Funct3.BNE),
+        (InstrType.BRANCH, Funct3.BLT),
+        (InstrType.BRANCH, Funct3.BGE),
+        (InstrType.BRANCH, Funct3.BLTU),
+        (InstrType.BRANCH, Funct3.BGEU),
+    ]
+)
 
 
 class ActiveUnitLayout(Layout):
     def __init__(self):
-        super().__init__([
-            ("logic", 1),
-            ("adder", 1),
-            ("shifter", 1),
-            ("mem_unit", 1),
-            ("compare", 1),
-            ("lui", 1),
-            ("auipc", 1),
-            ("jal", 1),
-            ("jalr", 1),
-            ("branch", 1),
-        ])
+        super().__init__(
+            [
+                ("logic", 1),
+                ("adder", 1),
+                ("shifter", 1),
+                ("mem_unit", 1),
+                ("compare", 1),
+                ("lui", 1),
+                ("auipc", 1),
+                ("jal", 1),
+                ("jalr", 1),
+                ("branch", 1),
+            ]
+        )
 
 
 class ActiveUnit(Record):
@@ -69,10 +77,14 @@ class MtkCpu(Elaboratable):
     def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False):
 
         if len(reg_init) > 32:
-            raise ValueError(f"Register init length (={len(reg_init)}) exceedes 32!")
+            raise ValueError(
+                f"Register init length (={len(reg_init)}) exceedes 32!"
+            )
 
         if reg_init[0] != 0:
-            print(f"WARNING, register x0 set to value {reg_init[0]}, however it will be overriden with zero..")
+            print(
+                f"WARNING, register x0 set to value {reg_init[0]}, however it will be overriden with zero.."
+            )
         reg_init[0] = 0
 
         self.with_rvfi = with_rvfi
@@ -101,7 +113,7 @@ class MtkCpu(Elaboratable):
         sync = m.d.sync
 
         if self.with_rvfi:
-            rvficon = m.submodules.rvficon = RVFIController()
+            rvficon = m.submodules.rvficon = RVFIController() # NOQA
             self.rvfi = Record(rvfi_layout)
 
         sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
@@ -109,13 +121,17 @@ class MtkCpu(Elaboratable):
         # Memory interface.
         arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter()
 
-        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(mem_port=arbiter.port(priority=1))
+        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(
+            mem_port=arbiter.port(priority=1)
+        )
 
         # CPU units used.
         logic = m.submodules.logic = LogicUnit()
         adder = m.submodules.adder = AdderUnit()
         shifter = m.submodules.shifter = ShifterUnit()
-        mem_unit = m.submodules.mem_unit = MemoryUnit(mem_port=arbiter.port(priority=0))
+        mem_unit = m.submodules.mem_unit = MemoryUnit(
+            mem_port=arbiter.port(priority=0)
+        )
         compare = m.submodules.compare = CompareUnit()
 
         # Current decoding state signals.
@@ -132,18 +148,19 @@ class MtkCpu(Elaboratable):
         uimm = Signal(20)
         opcode = Signal(InstrType)
 
-        # Register file. Contains two read ports (for rs1, rs2) and one write port. 
+        # Register file. Contains two read ports (for rs1, rs2) and one write port.
         regs = Memory(width=32, depth=32, init=self.reg_init)
         reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
         reg_read_port2 = m.submodules.reg_read_port2 = regs.read_port()
-        reg_write_port = self.reg_write_port = m.submodules.reg_write_port = regs.write_port()
+        reg_write_port = (
+            self.reg_write_port
+        ) = m.submodules.reg_write_port = regs.write_port()
 
         comb += [
             reg_read_port1.addr.eq(rs1),
             reg_read_port2.addr.eq(rs2),
             rs1val.eq(reg_read_port1.data),
             rs2val.eq(reg_read_port2.data),
-
             reg_write_port.addr.eq(rd),
             reg_write_port.data.eq(rdval),
             # reg_write_port.en set later
@@ -165,29 +182,21 @@ class MtkCpu(Elaboratable):
             comb += [
                 logic.funct3.eq(funct3),
                 logic.src1.eq(rs1val),
-                logic.src2.eq(Mux(
-                    opcode == InstrType.OP_IMM,
-                    imm,
-                    rs2val
-                )),
+                logic.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
             ]
         with m.Elif(active_unit.adder):
             comb += [
                 adder.src1.eq(rs1val),
-                adder.src2.eq(Mux(
-                    opcode == InstrType.OP_IMM,
-                    imm,
-                    rs2val
-                )),
+                adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
             ]
         with m.Elif(active_unit.shifter):
             comb += [
                 shifter.funct3.eq(funct3),
                 shifter.src1.eq(rs1val),
-                shifter.shift.eq(Mux(
-                    opcode == InstrType.OP_IMM,
-                    imm[0:5],
-                    rs2val[0:5])  # TODO check semantics
+                shifter.shift.eq(
+                    Mux(
+                        opcode == InstrType.OP_IMM, imm[0:5], rs2val[0:5]
+                    )  # TODO check semantics
                 ),
             ]
         with m.Elif(active_unit.mem_unit):
@@ -197,31 +206,23 @@ class MtkCpu(Elaboratable):
                 mem_unit.src1.eq(rs1val),
                 mem_unit.src2.eq(rs2val),
                 mem_unit.store.eq(opcode == InstrType.STORE),
-                mem_unit.offset.eq(Mux(
-                    opcode == InstrType.LOAD,
-                    imm,
-                    Cat(rd, imm[5:12])
-                )),
+                mem_unit.offset.eq(
+                    Mux(opcode == InstrType.LOAD, imm, Cat(rd, imm[5:12]))
+                ),
             ]
         with m.Elif(active_unit.compare):
             comb += [
                 compare.funct3.eq(funct3),
-
-                # Compare Unit uses Adder for carry and overflow flags. 
+                # Compare Unit uses Adder for carry and overflow flags.
                 adder.src1.eq(rs1val),
-                adder.src2.eq(Mux(
-                    opcode == InstrType.OP_IMM,
-                    imm,
-                    rs2val)
-                ),
+                adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
                 # adder.sub set somewhere below
             ]
 
         with m.Elif(active_unit.branch):
             comb += [
                 compare.funct3.eq(funct3),
-
-                # Compare Unit uses Adder for carry and overflow flags. 
+                # Compare Unit uses Adder for carry and overflow flags.
                 adder.src1.eq(rs1val),
                 adder.src2.eq(rs2val),
                 # adder.sub set somewhere below
@@ -234,8 +235,9 @@ class MtkCpu(Elaboratable):
             compare.zero.eq(adder.res == 0),
         ]
 
-        # Decoding state (with redundancy - instr. type not known yet).     
-        # We use 'ibus.read_data' instead of 'instr' (that is driven by sync domain) for getting registers to save 1 cycle.           
+        # Decoding state (with redundancy - instr. type not known yet).
+        # We use 'ibus.read_data' instead of 'instr' (that is driven by sync domain)
+        # for getting registers to save 1 cycle.
         comb += [
             opcode.eq(instr[0:7]),
             rd.eq(instr[7:12]),
@@ -245,7 +247,7 @@ class MtkCpu(Elaboratable):
             funct7.eq(instr[25:32]),
         ]
 
-        with m.FSM() as fsm:
+        with m.FSM():
             with m.State("FETCH"):
                 with m.If(pc & 0b11):
                     comb += self.err.eq(Error.MISALIGNED_INSTR)
@@ -283,7 +285,9 @@ class MtkCpu(Elaboratable):
                 with m.Elif(match_adder_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.adder.eq(1),
-                        adder.sub.eq((opcode == InstrType.ALU) & (funct7 == Funct7.SUB)),
+                        adder.sub.eq(
+                            (opcode == InstrType.ALU) & (funct7 == Funct7.SUB)
+                        ),
                     ]
                 with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
                     sync += [
@@ -353,9 +357,7 @@ class MtkCpu(Elaboratable):
                     ]
                 with m.Elif(active_unit.auipc):
                     sync += [
-                        rdval.eq(
-                            pc + Cat(Const(0, 12), uimm)
-                        ),
+                        rdval.eq(pc + Cat(Const(0, 12), uimm)),
                     ]
                 with m.Elif(active_unit.jal | active_unit.jalr):
                     sync += [
@@ -376,21 +378,33 @@ class MtkCpu(Elaboratable):
                     sync += active_unit.eq(0)
 
                 pc_offset = Signal(signed(32))
-                comb += pc_offset.eq(Mux(
-                    active_unit.jal,
-                    Cat(Const(0, 1), instr[21:31], instr[20], instr[12:20], instr[31]),
-                    rs1val + imm,  # jalr, TODO get rid of that DSP here
-                ))
+                comb += pc_offset.eq(
+                    Mux(
+                        active_unit.jal,
+                        Cat(
+                            Const(0, 1),
+                            instr[21:31],
+                            instr[20],
+                            instr[12:20],
+                            instr[31],
+                        ),
+                        rs1val + imm,  # jalr, TODO get rid of that DSP here
+                    )
+                )
                 pc_addend = Signal(signed(32))
-                sync += pc_addend.eq(Mux(
-                    active_unit.jal | active_unit.jalr,
-                    pc_offset,
-                    4
-                ))
+                sync += pc_addend.eq(
+                    Mux(active_unit.jal | active_unit.jalr, pc_offset, 4)
+                )
 
                 branch_addend = Signal(signed(13))
                 comb += branch_addend.eq(
-                    Cat(Const(0, 1), instr[8:12], instr[25:31], instr[7], instr[31])
+                    Cat(
+                        Const(0, 1),
+                        instr[8:12],
+                        instr[25:31],
+                        instr[7],
+                        instr[31],
+                    )
                 )
 
                 with m.If(active_unit.branch):
@@ -401,19 +415,23 @@ class MtkCpu(Elaboratable):
                 sync += pc.eq(pc + pc_addend)
 
                 # Here, rdval is already calculated. If neccessary, put it into register file.
-                should_write_rd = reduce(or_,
-                                         [
-                                             match_shifter_unit(opcode, funct3, funct7),
-                                             match_adder_unit(opcode, funct3, funct7),
-                                             match_logic_unit(opcode, funct3, funct7),
-                                             match_load(opcode, funct3, funct7),
-                                             match_compare_unit(opcode, funct3, funct7),
-                                             match_lui(opcode, funct3, funct7),
-                                             match_auipc(opcode, funct3, funct7),
-                                             match_jal(opcode, funct3, funct7),
-                                             match_jalr(opcode, funct3, funct7),
-                                         ]
-                                         ) & (rd != 0)
+                should_write_rd = (
+                    reduce(
+                        or_,
+                        [
+                            match_shifter_unit(opcode, funct3, funct7),
+                            match_adder_unit(opcode, funct3, funct7),
+                            match_logic_unit(opcode, funct3, funct7),
+                            match_load(opcode, funct3, funct7),
+                            match_compare_unit(opcode, funct3, funct7),
+                            match_lui(opcode, funct3, funct7),
+                            match_auipc(opcode, funct3, funct7),
+                            match_jal(opcode, funct3, funct7),
+                            match_jalr(opcode, funct3, funct7),
+                        ],
+                    )
+                    & (rd != 0)
+                )
 
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
@@ -422,36 +440,40 @@ class MtkCpu(Elaboratable):
         # TODO
         # That piece of code comes from minerva CPU, for now it's only copy-pasted.
         # Let's make it work.
-        if self.with_rvfi:
-            cpu.d.comb += [
-                rvficon.d_insn.eq(decoder.instruction),
-                rvficon.d_rs1_addr.eq(Mux(decoder.rs1_re, decoder.rs1, 0)),
-                rvficon.d_rs2_addr.eq(Mux(decoder.rs2_re, decoder.rs2, 0)),
-                rvficon.d_rs1_rdata.eq(Mux(decoder.rs1_re, d_src1, 0)),
-                rvficon.d_rs2_rdata.eq(Mux(decoder.rs2_re, d_src2, 0)),
-                rvficon.d_stall.eq(d.stall),
-                rvficon.x_mem_addr.eq(loadstore.x_addr[2:] << 2),
-                rvficon.x_mem_wmask.eq(Mux(loadstore.x_store, loadstore.x_mask, 0)),
-                rvficon.x_mem_rmask.eq(Mux(loadstore.x_load, loadstore.x_mask, 0)),
-                rvficon.x_mem_wdata.eq(loadstore.x_store_data),
-                rvficon.x_stall.eq(x.stall),
-                rvficon.m_mem_rdata.eq(loadstore.m_load_data),
-                rvficon.m_fetch_misaligned.eq(exception.m_fetch_misaligned),
-                rvficon.m_illegal_insn.eq(m.sink.illegal),
-                rvficon.m_load_misaligned.eq(exception.m_load_misaligned),
-                rvficon.m_store_misaligned.eq(exception.m_store_misaligned),
-                rvficon.m_exception.eq(exception.m_raise),
-                rvficon.m_mret.eq(m.sink.mret),
-                rvficon.m_branch_taken.eq(m.sink.branch_taken),
-                rvficon.m_branch_target.eq(m.sink.branch_target),
-                rvficon.m_pc_rdata.eq(m.sink.pc),
-                rvficon.m_stall.eq(m.stall),
-                rvficon.m_valid.eq(m.valid),
-                rvficon.w_rd_addr.eq(Mux(gprf_wp.en, gprf_wp.addr, 0)),
-                rvficon.w_rd_wdata.eq(Mux(gprf_wp.en, gprf_wp.data, 0)),
-                rvficon.mtvec_r_base.eq(exception.mtvec.r.base),
-                rvficon.mepc_r_value.eq(exception.mepc.r),
-                rvficon.rvfi.connect(self.rvfi)
-            ]
+        # if self.with_rvfi:
+        #     cpu.d.comb += [
+        #         rvficon.d_insn.eq(decoder.instruction),
+        #         rvficon.d_rs1_addr.eq(Mux(decoder.rs1_re, decoder.rs1, 0)),
+        #         rvficon.d_rs2_addr.eq(Mux(decoder.rs2_re, decoder.rs2, 0)),
+        #         rvficon.d_rs1_rdata.eq(Mux(decoder.rs1_re, d_src1, 0)),
+        #         rvficon.d_rs2_rdata.eq(Mux(decoder.rs2_re, d_src2, 0)),
+        #         rvficon.d_stall.eq(d.stall),
+        #         rvficon.x_mem_addr.eq(loadstore.x_addr[2:] << 2),
+        #         rvficon.x_mem_wmask.eq(
+        #             Mux(loadstore.x_store, loadstore.x_mask, 0)
+        #         ),
+        #         rvficon.x_mem_rmask.eq(
+        #             Mux(loadstore.x_load, loadstore.x_mask, 0)
+        #         ),
+        #         rvficon.x_mem_wdata.eq(loadstore.x_store_data),
+        #         rvficon.x_stall.eq(x.stall),
+        #         rvficon.m_mem_rdata.eq(loadstore.m_load_data),
+        #         rvficon.m_fetch_misaligned.eq(exception.m_fetch_misaligned),
+        #         rvficon.m_illegal_insn.eq(m.sink.illegal),
+        #         rvficon.m_load_misaligned.eq(exception.m_load_misaligned),
+        #         rvficon.m_store_misaligned.eq(exception.m_store_misaligned),
+        #         rvficon.m_exception.eq(exception.m_raise),
+        #         rvficon.m_mret.eq(m.sink.mret),
+        #         rvficon.m_branch_taken.eq(m.sink.branch_taken),
+        #         rvficon.m_branch_target.eq(m.sink.branch_target),
+        #         rvficon.m_pc_rdata.eq(m.sink.pc),
+        #         rvficon.m_stall.eq(m.stall),
+        #         rvficon.m_valid.eq(m.valid),
+        #         rvficon.w_rd_addr.eq(Mux(gprf_wp.en, gprf_wp.addr, 0)),
+        #         rvficon.w_rd_wdata.eq(Mux(gprf_wp.en, gprf_wp.data, 0)),
+        #         rvficon.mtvec_r_base.eq(exception.mtvec.r.base),
+        #         rvficon.mepc_r_value.eq(exception.mepc.r),
+        #         rvficon.rvfi.connect(self.rvfi),
+        #     ]
 
         return m

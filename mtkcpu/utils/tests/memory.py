@@ -1,9 +1,13 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from mtkcpu.utils.tests.exceptions import OverlappingMemoryError, EmptyMemoryError, InvalidMemoryValueError
-from typing import Dict, Iterable, Generator, Tuple
-from itertools import groupby, islice
 from enum import Enum, unique
+from itertools import groupby, islice
+from typing import Dict, Generator, Iterable, Tuple
+
+from mtkcpu.utils.tests.exceptions import (EmptyMemoryError,
+                                           InvalidMemoryValueError,
+                                           OverlappingMemoryError)
 
 
 def ranges(i: Iterable[int]) -> Generator[Tuple[int, int], None, None]:
@@ -27,7 +31,9 @@ class MemoryContents:
     def size(self):
         return len(self.memory)
 
-    def get_overlap(self, mem: MemoryContents) -> Generator[Tuple[int, int], None, None]:
+    def get_overlap(
+        self, mem: MemoryContents
+    ) -> Generator[Tuple[int, int], None, None]:
         mem_keys = set(mem.memory.keys())
         self_keys = set(self.memory)
         return ranges(mem_keys.intersection(self_keys))
@@ -40,7 +46,9 @@ class MemoryContents:
             return self.memory[index]
         return default
 
-    def assert_equality(self, expected: MemoryContents, raise_errors: bool = True) -> bool:
+    def assert_equality(
+        self, expected: MemoryContents, raise_errors: bool = True
+    ) -> bool:
         for index, value in expected.memory.items():
             if index not in self.memory:
                 if not raise_errors:
@@ -49,7 +57,9 @@ class MemoryContents:
             if self.memory[index] != value:
                 if not raise_errors:
                     return False
-                raise InvalidMemoryValueError(index=index, actual=self.memory[index], expected=value)
+                raise InvalidMemoryValueError(
+                    index=index, actual=self.memory[index], expected=value
+                )
         return True
 
     def patch(
@@ -73,4 +83,3 @@ class MemoryContents:
     @classmethod
     def empty(cls):
         return MemoryContents(memory=dict())
-
