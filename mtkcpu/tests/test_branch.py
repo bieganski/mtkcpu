@@ -118,7 +118,7 @@ BRANCH_TESTS = [
                 addi x1, x0, 222
         """,
         out_reg=1,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         out_val=111,
         timeout=10,
     ),
@@ -134,7 +134,7 @@ BRANCH_TESTS = [
                 addi x1, x0, 222
         """,
         out_reg=1,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         out_val=222,
         timeout=10,
     ),
@@ -166,7 +166,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         out_val=222,
         timeout=10,
     ),
@@ -182,7 +182,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         out_val=111,
         timeout=10,
     ),
@@ -198,7 +198,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         out_val=222,
         timeout=10,
     ),
@@ -214,7 +214,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         out_val=111,
         timeout=10,
     ),
@@ -230,7 +230,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         out_val=222,
         timeout=10,
     ),
@@ -246,7 +246,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         out_val=111,
         timeout=10,
     ),
@@ -262,7 +262,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         out_val=222,
         timeout=10,
     ),
@@ -278,7 +278,7 @@ BRANCH_TESTS = [
                 addi x10, x0, 222
         """,
         out_reg=10,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         out_val=111,
         timeout=10,
     ),

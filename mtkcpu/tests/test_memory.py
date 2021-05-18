@@ -18,7 +18,7 @@ MEMORY_TESTS = [
         out_val=0xdeadbeef,
         timeout=10,
         mem_init=MemoryContents(memory={0xde: 0xdeadbeef}),
-        mem_out=MemoryContents.empty() # empty dict means whatever (no memory checks performed)
+        mem_out=MemoryContents.empty(), # empty dict means whatever (no memory checks performed)
     ),
     MemTestCase(
         name="simple 'sw'",
@@ -29,7 +29,7 @@ MEMORY_TESTS = [
             sw x11, 0xaa(x0)
         """,
         timeout=10,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         mem_out=MemoryContents(memory={0xaa: 11}),
     ),
     MemTestCase(
@@ -43,7 +43,7 @@ MEMORY_TESTS = [
         timeout=10,
         out_reg=5,
         out_val=Bits(bin=format(0b11111111_11111111_11111111_00000000, '32b')).uint, # uint because of bus unsigned..
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         mem_init=MemoryContents(memory={0xab: Bits(bin=format(0b11111111_00000000_11111111_00000000, '32b')).int}),
     ),
     MemTestCase(
@@ -94,7 +94,7 @@ MEMORY_TESTS = [
             sh x5, 0(x0)
         """,
         timeout=10,
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
         mem_init=MemoryContents(memory={0x0: 5}),
         mem_out=MemoryContents(memory={0x0: 5}),
     ),
