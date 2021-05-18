@@ -1,0 +1,22 @@
+
+name: Build and test the Docker image
+
+on: [pull_request]
+
+jobs:
+  build:
+    name: Build and test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Specify here the list of images to use for the machine
+        os: [ubuntu-20.04]
+    steps:
+      - name: Checkout the project
+        uses: actions/checkout@v2
+      - name: Build the Docker image
+        shell: bash
+        run: make build-docker
+      - name: Run tests
+        shell: bash
+        run: make test-docker
