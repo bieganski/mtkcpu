@@ -36,7 +36,7 @@ COMPARE_TESTS = [
         """,
         out_reg=1,
         out_val=1,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         timeout=10,
     ),
     MemTestCase(
@@ -48,7 +48,7 @@ COMPARE_TESTS = [
         """,
         out_reg=1,
         out_val=1,
-        reg_init=RegistryContents(reg=[-i for i in range(32)]),
+        reg_init=RegistryContents.fill(lambda i: -i),
         timeout=10,
     ),
 ]

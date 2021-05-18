@@ -17,7 +17,7 @@ REGISTERS_TESTS = [
         out_val=5,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)])
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'sub'",
@@ -31,7 +31,7 @@ REGISTERS_TESTS = [
         out_val=1,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'srli'",
@@ -59,7 +59,7 @@ REGISTERS_TESTS = [
         out_val=0b101,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'slli'",
@@ -87,7 +87,7 @@ REGISTERS_TESTS = [
         out_val=0b10110,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'sra'",
@@ -101,7 +101,7 @@ REGISTERS_TESTS = [
         out_val=0b101,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'srai'",
@@ -158,7 +158,7 @@ REGISTERS_TESTS = [
         out_val=0b111,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'and'",
@@ -172,7 +172,7 @@ REGISTERS_TESTS = [
         out_val=0b11,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'xor'",
@@ -186,7 +186,7 @@ REGISTERS_TESTS = [
         out_val=0b11010,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'xori'",
@@ -200,7 +200,7 @@ REGISTERS_TESTS = [
         out_val=0b10101,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'ori'",
@@ -214,7 +214,7 @@ REGISTERS_TESTS = [
         out_val=0b111,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
         name="simple 'andi'",
@@ -228,7 +228,7 @@ REGISTERS_TESTS = [
         out_val=0b11,
         timeout=5,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents(reg=[i for i in range(32)]),
+        reg_init=RegistryContents.fill(),
     ),
 ]
 
