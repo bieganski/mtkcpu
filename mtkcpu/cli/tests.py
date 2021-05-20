@@ -1,5 +1,6 @@
 from typing import Optional
 
+from pytest import main as run_tests
 import typer
 
 tests_cli = typer.Typer()
@@ -11,4 +12,4 @@ def run_cpu_tests(
         None, help="Simulate given ELF binary"
     ),
 ):
-    pass
+    run_tests([])
