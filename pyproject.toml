@@ -8,6 +8,15 @@ authors = [
 ]
 license = "MIT"
 
+[tool.poetry.scripts]
+mtkcpu = 'mtkcpu.cli.main:run_cli'
+
+# pyproject.toml
+[tool.pytest.ini_options]
+testpaths = [
+    "mtkcpu/tests",
+]
+
 [tool.poetry.dependencies]
 python = "^3.8"
 ppci = "^0.5.8"
@@ -17,6 +26,7 @@ pytest = "^6.2.4"
 pytest-xdist = "^2.2.1"
 pyelftools = "^0.27"
 bitstring = "^3.1.7"
+typer = "^0.3.2"
 
 [tool.poetry.dev-dependencies]
 black = "^20.8b1"
@@ -44,11 +54,12 @@ include = '\.pyi?$'
 line-length = 79
 
 [tool.flakehell]
-exclude = ["README.rst", "README.md"]
+exclude = ["README.rst", "README.md", "submodules"]
 format = "colored"
 max_line_length = 120
 show_source = true
 whitelist = "../../allowlist.txt"
+extended_default_ignore=[]
 
 [tool.flakehell.plugins]
 flake8-bandit = ["+*", "-S322"]

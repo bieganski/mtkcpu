@@ -1,10 +1,14 @@
-from common import matcher
-from isa import Funct3, InstrType
+from mtkcpu.utils.common import matcher
+from mtkcpu.utils.isa import InstrType
 
-match_lui = matcher([
-    (InstrType.LUI, ),
-])
+match_lui = matcher(
+    [
+        (InstrType.LUI,),
+    ]
+)
 
-match_auipc = matcher([
-    (InstrType.AUIPC, ),
-])
+match_auipc = matcher(
+    [
+        (InstrType.AUIPC,),
+    ]
+)
