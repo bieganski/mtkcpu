@@ -2,8 +2,10 @@
 from enum import Enum
 from functools import reduce
 from operator import or_
+
 from nmigen import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from nmigen.hdl.rec import Layout
+
 from mtkcpu.utils.common import START_ADDR
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
@@ -15,7 +17,8 @@ from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
 from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType, Funct7
-
+from mtkcpu.units.debug.jtag import JTAGTap
+from mtkcpu.units.debug.top import DebugUnit
 
 MEM_WORDS = 10
 
@@ -74,7 +77,7 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False):
+    def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False, with_debug=True):
 
         if len(reg_init) > 32:
             raise ValueError(
@@ -88,6 +91,8 @@ class MtkCpu(Elaboratable):
         reg_init[0] = 0
 
         self.with_rvfi = with_rvfi
+
+        self.with_debug = with_debug
 
         # 0xDE for debugging (uninitialized data magic byte)
         self.reg_init = reg_init + [0x0] * (len(reg_init) - 32)
@@ -107,7 +112,7 @@ class MtkCpu(Elaboratable):
         self.DEBUG_CTR = Signal(32)
 
     def elaborate(self, platform):
-        m = Module()
+        self.m = m = Module()
 
         comb = m.d.comb
         sync = m.d.sync
@@ -115,6 +120,9 @@ class MtkCpu(Elaboratable):
         if self.with_rvfi:
             rvficon = m.submodules.rvficon = RVFIController() # NOQA
             self.rvfi = Record(rvfi_layout)
+
+        if self.with_debug:
+            m.submodules.debug = debug = self.debug = DebugUnit()
 
         sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 

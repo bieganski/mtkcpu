@@ -5,6 +5,7 @@ from enum import Enum, unique
 from io import StringIO
 from itertools import count
 from typing import List, Optional
+from nmigen.hdl.ast import Signal, Value
 
 import pytest
 
@@ -15,7 +16,8 @@ from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
-                                          get_sim_register_test)
+                                          get_sim_register_test,
+                                          get_sim_jtag_test)
 
 
 @unique
@@ -36,6 +38,11 @@ class MemTestCase:
     timeout: Optional[int] = None
     mem_init: Optional[MemoryContents] = None
     reg_init: Optional[RegistryContents] = None
+
+
+@dataclass(frozen=True)
+class JtagTestCase:
+    pass
 
 
 def reg_test(
@@ -104,6 +111,71 @@ def assert_mem_test(case: MemTestCase):
         verbose=True,
     )
 
+def assert_jtag_test(
+    name: str,
+    timeout_cycles: Optional[int],
+):
+    from nmigen.back.pysim import Simulator
+
+    cpu = MtkCpu(reg_init=[0 for _ in range(32)], with_debug=True)
+    
+
+    # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
+    # https://freenode.irclog.whitequark.org/nmigen/2020-07-26#27592720;
+    # sim = Simulator(cpu)
+    from nmigen.hdl.ir import Fragment
+    from nmigen import Signal, ClockDomain
+
+    frag = Fragment.get(cpu, platform=None)
+    fsm = frag.find_generated("debug", "jtag", "fsm")
+    sim = Simulator(frag)
+
+    # clk = Signal()
+    # clk_domain = ClockDomain()
+    # clk_domain.clk = clk
+    # frag.domains["sync"] = clk_domain
+
+    sim.add_clock(1e-6) # "clk_domain")
+
+    # raise ValueError(f"DOM: {cpu.domains}")
+
+    sim.add_sync_process(
+        get_sim_jtag_test(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=fsm)
+    )
+
+    jtag_fsm_sig = fsm.state
+    main_clk_sig = sim._fragment.domains["sync"].clk
+
+
+    jtag_loc = cpu.debug.jtag
+
+    vcd_traces = [
+        jtag_loc.tdi,
+        jtag_loc.tdo,
+        jtag_loc.port.tdo,
+        jtag_loc.tck,
+        jtag_loc.tms,
+        jtag_loc.rising_tck,
+        jtag_loc.falling_tck,
+        jtag_loc.port.tms,
+        jtag_loc.dr,
+        # jtag_loc.dr.w,
+        main_clk_sig,
+        jtag_fsm_sig,
+        jtag_loc.TDO,
+        jtag_loc.ir,
+    ]
+
+    with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
+        sim.run()
+
+
+def test_jtag(_: JtagTestCase):
+    assert_jtag_test(
+        name="JTAG IDCODE+BYPASS test",
+        timeout_cycles=1000,
+    )
+
 
 @parametrized
 def mem_test(f, cases: List[MemTestCase]):
@@ -113,4 +185,13 @@ def mem_test(f, cases: List[MemTestCase]):
         assert_mem_test(test_case)
         f(test_case)
 
+    return aux
+
+@parametrized
+def jtag_test(f, cases: List[JtagTestCase]):
+    @pytest.mark.parametrize("test_case", cases)
+    @rename(f.__name__)
+    def aux(test_case):
+        test_jtag(test_case)
+        f(test_case)
     return aux

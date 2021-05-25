@@ -1,8 +1,188 @@
-from typing import Optional
+import socket
 from functools import reduce
+from typing import Optional
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.utils.tests.memory import MemoryContents, MemState
+
+HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
+PORT = 9824        # Port to listen on (non-privileged ports are > 1023)
+
+
+from enum import Enum
+
+
+    # B - Blink on
+	# b - Blink off
+	# R - Read request
+	# Q - Quit request
+	# 0 - Write 0 0 0
+	# 1 - Write 0 0 1
+	# 2 - Write 0 1 0
+	# 3 - Write 0 1 1
+	# 4 - Write 1 0 0
+	# 5 - Write 1 0 1
+	# 6 - Write 1 1 0
+	# 7 - Write 1 1 1
+	# r - Reset 0 0
+	# s - Reset 0 1
+	# t - Reset 1 0
+	# u - Reset 1 1
+class OcdCommand(Enum):
+    SAMPLE = b'R'
+    QUIT = b'Q'
+    BLINK_ON = b"B"
+    BLINK_OFF = b"b"
+    RESET = b"r"
+    # RESET = 
+
+    # @classmethod
+    def skip(self):
+        return self.value in [OcdCommand.BLINK_ON.value, OcdCommand.BLINK_OFF.value]
+
+# TODO
+# after https://www.python.org/dev/peps/pep-0622/
+# unify JTAGInput and OcdCommand.
+class JTAGInput():
+    def __init__(self, ocd_bitbang_val):
+        self.tck = int(ocd_bitbang_val & 0x4 != 0)
+        self.tms = int(ocd_bitbang_val & 0x2 != 0)
+        self.tdi = int(ocd_bitbang_val & 0x1 != 0)
+    
+    def __repr__(self):
+        return f"TCK: {self.tck}, TMS: {self.tms}, TDI: {self.tdi}"
+
+    # cursed
+    def skip(self):
+        return False
+
+
+
+def decode_cmd(char):
+    # from openocd/.../remote_bitbang.c
+    # char c = '0' + ((tck ? 0x4 : 0x0) | (tms ? 0x2 : 0x0) | (tdi ? 0x1 : 0x0));
+    if ord(char) < ord('8') and ord(char) >= ord('0'):
+        return JTAGInput(ord(char) - ord('0'))
+    return OcdCommand(char)
+        
+def remote_jtag_get_cmd(conn):
+    while True:
+        data = conn.recv(1)
+        # print(f"data: {data}")
+        if not data:
+            break
+        cmd = decode_cmd(data)
+        # print(cmd)
+        if cmd.skip():
+            continue
+        yield cmd
+
+def AAA(conn):
+    data = conn.recv(1)
+    cmd = decode_cmd(data)
+    return cmd
+
+
+def remote_jtag_send_response(conn, tdo):
+    if type(tdo) != bytes:
+        raise ValueError(f"remote_jtag_send_response: 'tdo' must be bytes instance, not {type(tdo)}!")
+    assert len(tdo) == 1
+    conn.sendall(tdo)
+
+from nmigen import Signal
+
+def get_sim_jtag_test(
+    cpu: MtkCpu, # must be initialized with 'with_debug=True` param
+    timeout_cycles: int,
+    jtag_fsm,
+):
+    from nmigen.back.pysim import Active, Settle, Tick
+
+    def jtag_test(timeout=10000):
+
+        jtag_fsm_state = jtag_fsm.state
+
+        def get_state_name(fsm, num):
+            states = jtag_fsm.encoding
+            rev = lambda xy: (xy[1],xy[0])
+            mapping = dict(map(rev, states.items()))
+            return mapping[num]
+
+        jtag_get_state = lambda num: get_state_name(jtag_fsm, num)
+
+        # yield Tick()
+        # yield Settle()
+
+        print("Waiting for OCD connection...")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((HOST, PORT))
+        s.listen()
+        conn, addr = s.accept()
+        print(f'OCD Connected! From addr: {addr}')
+
+        jtag_loc = cpu.debug.jtag
+
+        cpu_tdi = jtag_loc.tdi
+        cpu_tdo = jtag_loc.port.tdo
+        cpu_tms = jtag_loc.tms
+        cpu_tck = jtag_loc.tck
+
+        CPU_JTAG_CLK_FACTOR = 10 # how many times JTAG clock is slower than CPU clock.
+
+        DEBUGS = []
+
+        prev_tck = None
+
+        from termcolor import colored
+
+        # cmd_gen = remote_jtag_get_cmd(conn)
+        for i in range(timeout):
+            cmd = AAA(conn)
+            # cmd = next(cmd_gen)
+
+            if isinstance(cmd, OcdCommand):
+                if i < 100:
+                    print(f"DEBUG: {cmd.value}")
+                if cmd == OcdCommand.SAMPLE:
+                    # print("SAMPLE! TODO")
+                    tdo = yield cpu_tdo
+                    # DEBUGS.append(tdo)
+                    # print(f"TDO: {tdo}")
+                    remote_jtag_send_response(conn, bytes(str(tdo), 'ascii'))
+
+                elif cmd == OcdCommand.RESET:
+                    # MtkCpu doesn't support TRST signal for now.
+                    for _ in range(5):
+                        yield cpu_tms.eq(1)
+                        for _ in range(CPU_JTAG_CLK_FACTOR):
+                            yield
+
+                    # print("RESET! TODO")
+            elif isinstance(cmd, JTAGInput):
+                if i < 100:
+                    state_num = yield jtag_fsm_state
+                    print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {jtag_get_state(state_num)}")
+                yield cpu_tck.eq(cmd.tck)
+                yield cpu_tms.eq(cmd.tms)
+                # dummy = 1 - dummy
+                # yield cpu_tms.eq(dummy)
+                yield cpu_tdi.eq(cmd.tdi)
+                DEBUGS.append((cmd.tms, cmd.tck))
+                prev_tck = cmd.tck
+                for _ in range(CPU_JTAG_CLK_FACTOR):
+                    yield
+            else:
+                raise ValueError(f"Type mismatch! cmd must be either OcdCommand or JTAGInput, not {type(cmd)}!")
+        
+        def f(tms, tck):
+            if tck == 0:
+                return colored(str(tms), 'yellow')
+            return str(tms)
+        
+        print(", ".join([f(tms, tck) for (tms, tck) in DEBUGS]))
+
+    return jtag_test
+
 
 
 def get_sel_bus_mask(sel):
@@ -92,13 +272,11 @@ def get_sim_register_test(
         yield Active()
         yield Tick()
         yield Settle()
-        print(f"CHECK KURWA {name}")
 
         for _ in range(timeout):
             en = yield cpu.reg_write_port.en
             if en == 1:
                 addr = yield cpu.reg_write_port.addr
-                print(f"SPIERDALAJ GEJUJUY CHECK {addr} {reg_num}")
                 if addr == reg_num:
                     val = yield cpu.reg_write_port.data
                     if check_mem and (val != expected_val):
