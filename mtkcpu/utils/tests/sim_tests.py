@@ -98,12 +98,12 @@ def get_sim_jtag_test(
 ):
     from nmigen.back.pysim import Active, Settle, Tick
 
-    def jtag_test(timeout=10000):
+    def jtag_test(timeout=4000):
 
         jtag_fsm_state = jtag_fsm.state
 
         def get_state_name(fsm, num):
-            states = jtag_fsm.encoding
+            states = fsm.encoding
             rev = lambda xy: (xy[1],xy[0])
             mapping = dict(map(rev, states.items()))
             return mapping[num]
@@ -127,7 +127,7 @@ def get_sim_jtag_test(
         cpu_tms = jtag_loc.tms
         cpu_tck = jtag_loc.tck
 
-        CPU_JTAG_CLK_FACTOR = 10 # how many times JTAG clock is slower than CPU clock.
+        CPU_JTAG_CLK_FACTOR = 5 # how many times JTAG clock is slower than CPU clock.
 
         DEBUGS = []
 

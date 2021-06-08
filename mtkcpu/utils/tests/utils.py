@@ -5,6 +5,7 @@ from enum import Enum, unique
 from io import StringIO
 from itertools import count
 from typing import List, Optional
+
 from nmigen.hdl.ast import Signal, Value
 
 import pytest
@@ -18,7 +19,8 @@ from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_test)
-
+from mtkcpu.units.debug.jtag import JtagIR
+from mtkcpu.units.debug.top import DMIReg
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -149,21 +151,37 @@ def assert_jtag_test(
 
     jtag_loc = cpu.debug.jtag
 
+    dmcontrol_r = cpu.debug.dmi_regs[DMIReg.DMCONTROL].r.fields.values()
+    dmcontrol_w = cpu.debug.dmi_regs[DMIReg.DMCONTROL].w.fields.values()
+
     vcd_traces = [
-        jtag_loc.tdi,
-        jtag_loc.tdo,
-        jtag_loc.port.tdo,
-        jtag_loc.tck,
-        jtag_loc.tms,
-        jtag_loc.rising_tck,
-        jtag_loc.falling_tck,
-        jtag_loc.port.tms,
-        jtag_loc.dr,
+        # jtag_loc.tdi,
+        # jtag_loc.tdo,
+        # jtag_loc.port.tdo,
+        # jtag_loc.tck,
+        # jtag_loc.tms,
+        # jtag_loc.rising_tck,
+        # jtag_loc.falling_tck,
+        # jtag_loc.port.tms,
+        # jtag_loc.dr,
         # jtag_loc.dr.w,
         main_clk_sig,
         jtag_fsm_sig,
-        jtag_loc.TDO,
         jtag_loc.ir,
+        cpu.debug.dmi_op,
+        cpu.debug.dmi_address,
+        cpu.debug.dmi_data,
+        jtag_loc.regs[JtagIR.DMI].update,
+        jtag_loc.regs[JtagIR.DMI].capture,
+        jtag_loc.DATA_WRITE,
+        jtag_loc.DATA_READ,
+        cpu.debug.ONWRITE,
+        cpu.debug.ONREAD,
+        cpu.debug.HANDLER,
+        cpu.debug.DBG_DMI_ADDR,
+
+        *dmcontrol_r,
+        *dmcontrol_w,
     ]
 
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
