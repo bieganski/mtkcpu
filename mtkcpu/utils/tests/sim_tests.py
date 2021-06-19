@@ -98,7 +98,7 @@ def get_sim_jtag_test(
 ):
     from nmigen.back.pysim import Active, Settle, Tick
 
-    def jtag_test(timeout=4000):
+    def jtag_test(timeout=6000):
 
         jtag_fsm_state = jtag_fsm.state
 
@@ -141,10 +141,9 @@ def get_sim_jtag_test(
             # cmd = next(cmd_gen)
 
             if isinstance(cmd, OcdCommand):
-                if i < 100:
-                    print(f"DEBUG: {cmd.value}")
+                # if i < 100:
+                #     print(f"DEBUG: {cmd.value}")
                 if cmd == OcdCommand.SAMPLE:
-                    # print("SAMPLE! TODO")
                     tdo = yield cpu_tdo
                     # DEBUGS.append(tdo)
                     # print(f"TDO: {tdo}")
@@ -161,7 +160,7 @@ def get_sim_jtag_test(
             elif isinstance(cmd, JTAGInput):
                 if i < 100:
                     state_num = yield jtag_fsm_state
-                    print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {jtag_get_state(state_num)}")
+                    # print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {jtag_get_state(state_num)}")
                 yield cpu_tck.eq(cmd.tck)
                 yield cpu_tms.eq(cmd.tms)
                 # dummy = 1 - dummy
@@ -179,7 +178,7 @@ def get_sim_jtag_test(
                 return colored(str(tms), 'yellow')
             return str(tms)
         
-        print(", ".join([f(tms, tck) for (tms, tck) in DEBUGS]))
+        # print(", ".join([f(tms, tck) for (tms, tck) in DEBUGS]))
 
     return jtag_test
 

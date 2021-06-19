@@ -154,6 +154,12 @@ def assert_jtag_test(
     dmcontrol_r = cpu.debug.dmi_regs[DMIReg.DMCONTROL].r.fields.values()
     dmcontrol_w = cpu.debug.dmi_regs[DMIReg.DMCONTROL].w.fields.values()
 
+    hartinfo_r = cpu.debug.dmi_regs[DMIReg.HARTINFO].r.fields.values()
+    hartinfo_w = cpu.debug.dmi_regs[DMIReg.HARTINFO].w.fields.values()
+
+    abstracts_r = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].r.fields.values()
+    abstracts_w = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].w.fields.values()
+
     vcd_traces = [
         # jtag_loc.tdi,
         # jtag_loc.tdo,
@@ -180,8 +186,17 @@ def assert_jtag_test(
         cpu.debug.HANDLER,
         cpu.debug.DBG_DMI_ADDR,
 
-        *dmcontrol_r,
+        # *dmcontrol_r,
+        jtag_loc.BAR,
         *dmcontrol_w,
+        jtag_loc.BAR,
+        *dmcontrol_r,
+        jtag_loc.BAR,
+        jtag_loc.regs[JtagIR.DMI].r.op,
+        jtag_loc.BAR,
+        *hartinfo_w,
+        jtag_loc.BAR,
+        *abstracts_w,
     ]
 
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):

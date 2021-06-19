@@ -103,6 +103,9 @@ class JTAGTap(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
 
+        self.BAR = Signal()
+        sync += self.BAR.eq(~self.BAR)
+
         self.tms = tms = Signal.like(self.port.tms)
         self.tck = tck = Signal.like(self.port.tck)
         self.tdi = tdi = Signal.like(self.port.tdi)

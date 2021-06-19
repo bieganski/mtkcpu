@@ -10,6 +10,9 @@ from mtkcpu.units.debug.jtag import JTAGTap, JtagIR, JtagIRValue, DMISTAT, debug
 class DMIReg(IntEnum):
     DMSTATUS = 0x11
     DMCONTROL = 0x10
+    HARTINFO = 0x12
+    ABSTRACTS = 0x16
+    SBCS = 0x38
 
 
 dmi_regs = {
@@ -38,13 +41,36 @@ dmi_regs = {
     DMIReg.DMCONTROL: [
         ("dmactive", 1),
         ("ndmreset", 1),
-        ("_zero1",  14),
-        ("hartsel", 10),
+        ("clrresethaltreq", 1),
+        ("setresethaltreq", 1),
+        ("_zero1",  2),
+        ("hartselhi", 10),
+        ("hartsello", 10),
         ("hasel",    1),
-        ("_zero2",   2),
+        ("_zero2",   1),
+        ("ackhavereset",   1),
         ("hartreset",1),
         ("resumereq",1),
         ("haltreq",  1),
+    ],
+    DMIReg.HARTINFO: [
+        ("dataaddr", 12),
+        ("datasize", 4),
+        ("dataaccess", 1),
+        ("_zero1", 3),
+        ("nscratch", 4),
+        ("_zero2", 8),
+    ],
+
+    DMIReg.ABSTRACTS: [
+        ("datacount", 4),
+        ("_zero1", 4),
+        ("cmderr", 3),
+        ("_zero2", 1),
+        ("busy", 1),
+        ("_zero3", 11),
+        ("progbufsize", 5),
+        ("_zero4", 3),
     ],
 }
 
@@ -83,6 +109,11 @@ handlers = {
     DMIReg.DMCONTROL: dmcontrol_handler,
 }
 
+class DMIOP(IntEnum):
+    NOP = 0
+    READ = 1
+    WRITE = 2
+
 # Jtag FSM described here:
 # https://www.xilinx.com/support/answers/3203.html
 class DebugUnit(Elaboratable):
@@ -117,7 +148,7 @@ class DebugUnit(Elaboratable):
         with m.If(dtmcs.update & dtmcs.w.dmireset):
             comb += sticky.eq(0) # TODO
 
-        dmi_op      = self.dmi_op       = Signal(debug_module_get_width(JtagIR.DMI, "op"))
+        dmi_op      = self.dmi_op       = Signal(DMIOP)# Signal(debug_module_get_width(JtagIR.DMI, "op"))
         dmi_address = self.dmi_address  = Signal(debug_module_get_width(JtagIR.DMI, "address"))
         dmi_data    = self.dmi_data     = Signal(debug_module_get_width(JtagIR.DMI, "data"))
 
@@ -133,10 +164,6 @@ class DebugUnit(Elaboratable):
             dmi_data.eq(dmi.w.data),
         ]
 
-        sync += [
-            # TODO i use 'w' because below its sync += r.data.eq(record.w)
-            self.dmi_regs[DMIReg.DMSTATUS].w.version.eq(2),
-        ]
 
         sync += [
             dmi.r.address.eq(dmi_address),
@@ -152,8 +179,8 @@ class DebugUnit(Elaboratable):
             with m.Switch(addr):
                 for addr2, record in self.dmi_regs.items():
                     with m.Case(addr2):
-                        sync += self.jtag.regs[JtagIR.DMI].r.data.eq(record.w), # TODO record.w
-                        sync += self.jtag.regs[JtagIR.DMI].r.op.eq(0),
+                        sync += dmi.r.data.eq(record.w), # TODO record.w
+                        sync += dmi.r.op.eq(0),
             sync += self.ONREAD.eq(1)
             
 
@@ -163,7 +190,7 @@ class DebugUnit(Elaboratable):
             with m.Switch(addr):
                 for addr2, record in self.dmi_regs.items():
                     with m.Case(addr2):
-                        # sync += self.jtag.regs[JtagIR.DMI].r.eq(record.r)
+                        # sync += dmi.r.eq(record.r)
                         sync += record.w.eq(data)
 
 
@@ -195,6 +222,9 @@ class DebugUnit(Elaboratable):
             # TODO i use 'w' because below its sync += r.data.eq(record.w)
             self.dmi_regs[DMIReg.DMSTATUS].w.version.eq(2),
             self.dmi_regs[DMIReg.DMSTATUS].w.authenticated.eq(1),
+
+            self.dmi_regs[DMIReg.DMCONTROL].r.hartsello.eq(1),
+            self.dmi_regs[DMIReg.DMCONTROL].r.hartselhi.eq(0),
         ]
 
         return m
