@@ -134,6 +134,7 @@ class JTAGTap(Elaboratable):
 
         self.DATA_WRITE = Signal(debug_module_register_len(JtagIR.DMI))
         self.DATA_READ = Signal(debug_module_register_len(JtagIR.DMI))
+        self.DMI_WRITE = Signal(32)
 
         # TODO
         for ir, record in self.regs.items():
@@ -208,6 +209,8 @@ class JTAGTap(Elaboratable):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
                             sync += self.DATA_WRITE.eq(self.dr)
+                            with m.If(ir == JtagIR.DMI):
+                                sync += self.DMI_WRITE.eq(self.dr[2:34])
                             sync += record.w.eq(self.dr)
                             sync += record.update.eq(falling_tck)
                 with m.If(rising_tck):

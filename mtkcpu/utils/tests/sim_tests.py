@@ -98,7 +98,7 @@ def get_sim_jtag_test(
 ):
     from nmigen.back.pysim import Active, Settle, Tick
 
-    def jtag_test(timeout=6000):
+    def jtag_test(timeout=10000):
 
         jtag_fsm_state = jtag_fsm.state
 

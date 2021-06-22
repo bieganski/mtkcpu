@@ -20,7 +20,7 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_test)
 from mtkcpu.units.debug.jtag import JtagIR
-from mtkcpu.units.debug.top import DMIReg
+from mtkcpu.units.debug.top import DMIReg, DMICommand
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -160,6 +160,12 @@ def assert_jtag_test(
     abstracts_r = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].r.fields.values()
     abstracts_w = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].w.fields.values()
 
+    dmstatus_r = cpu.debug.dmi_regs[DMIReg.DMSTATUS].r.fields.values()
+    dmstatus_w = cpu.debug.dmi_regs[DMIReg.DMSTATUS].w.fields.values()
+
+    command_w = cpu.debug.dmi_regs[DMIReg.COMMAND].w.fields.values()
+    command_r = cpu.debug.dmi_regs[DMIReg.COMMAND].r.fields.values()
+
     vcd_traces = [
         # jtag_loc.tdi,
         # jtag_loc.tdo,
@@ -181,22 +187,30 @@ def assert_jtag_test(
         jtag_loc.regs[JtagIR.DMI].capture,
         jtag_loc.DATA_WRITE,
         jtag_loc.DATA_READ,
+        jtag_loc.DMI_WRITE,
         cpu.debug.ONWRITE,
         cpu.debug.ONREAD,
         cpu.debug.HANDLER,
         cpu.debug.DBG_DMI_ADDR,
 
+        cpu.debug.WTF,
+
         # *dmcontrol_r,
-        jtag_loc.BAR,
-        *dmcontrol_w,
-        jtag_loc.BAR,
-        *dmcontrol_r,
-        jtag_loc.BAR,
-        jtag_loc.regs[JtagIR.DMI].r.op,
-        jtag_loc.BAR,
-        *hartinfo_w,
+        # jtag_loc.BAR,
+        # *dmcontrol_w,
+        # jtag_loc.BAR,
+        # *dmcontrol_r,
+        # jtag_loc.BAR,
+        # jtag_loc.regs[JtagIR.DMI].r.op,
+        # jtag_loc.BAR,
+        # *dmstatus_r,
+        # *hartinfo_w,
         jtag_loc.BAR,
         *abstracts_w,
+        jtag_loc.BAR,
+        *command_w,
+        jtag_loc.BAR,
+        *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
     ]
 
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
