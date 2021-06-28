@@ -7,7 +7,9 @@ from itertools import count
 from typing import List, Optional
 
 from nmigen.hdl.ast import Signal, Value
-
+from nmigen.hdl.ir import Fragment
+from nmigen import Elaboratable, Signal, ClockDomain
+from nmigen.back.pysim import Simulator
 import pytest
 
 from mtkcpu.asm.asm_dump import dump_asm
@@ -18,7 +20,8 @@ from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
-                                          get_sim_jtag_test)
+                                          get_sim_jtag_controller,
+                                          get_sim_jtag_examine_passive)
 from mtkcpu.units.debug.jtag import JtagIR
 from mtkcpu.units.debug.top import DMIReg, DMICommand
 
@@ -44,6 +47,10 @@ class MemTestCase:
 
 @dataclass(frozen=True)
 class JtagTestCase:
+    pass
+
+@dataclass(frozen=True)
+class JtagOCDTestCase:
     pass
 
 
@@ -113,41 +120,22 @@ def assert_mem_test(case: MemTestCase):
         verbose=True,
     )
 
-def assert_jtag_test(
-    name: str,
-    timeout_cycles: Optional[int],
-):
-    from nmigen.back.pysim import Simulator
 
-    cpu = MtkCpu(reg_init=[0 for _ in range(32)], with_debug=True)
-    
-
+# Returns dict with keys:
+# "sim" - Simulator object
+# "frag" - Fragment object
+# "vcd_traces" - List of JTAG/DM signals to be traced
+# "jtag_fsm" - JTAG FSM
+def create_jtag_simulator(cpu):
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
     # https://freenode.irclog.whitequark.org/nmigen/2020-07-26#27592720;
-    # sim = Simulator(cpu)
-    from nmigen.hdl.ir import Fragment
-    from nmigen import Signal, ClockDomain
-
     frag = Fragment.get(cpu, platform=None)
-    fsm = frag.find_generated("debug", "jtag", "fsm")
+    jtag_fsm = frag.find_generated("debug", "jtag", "fsm")
     sim = Simulator(frag)
+    sim.add_clock(1e-6)
 
-    # clk = Signal()
-    # clk_domain = ClockDomain()
-    # clk_domain.clk = clk
-    # frag.domains["sync"] = clk_domain
-
-    sim.add_clock(1e-6) # "clk_domain")
-
-    # raise ValueError(f"DOM: {cpu.domains}")
-
-    sim.add_sync_process(
-        get_sim_jtag_test(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=fsm)
-    )
-
-    jtag_fsm_sig = fsm.state
+    jtag_fsm_sig = jtag_fsm.state
     main_clk_sig = sim._fragment.domains["sync"].clk
-
 
     jtag_loc = cpu.debug.jtag
 
@@ -212,6 +200,85 @@ def assert_jtag_test(
         jtag_loc.BAR,
         *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
     ]
+    return {
+        "sim": sim,
+        "frag": frag,
+        "vcd_traces": vcd_traces,
+        "jtag_fsm": jtag_fsm,
+    }
+
+
+def assert_jtag_ocd_examine_test(
+    name: str
+):
+    from subprocess import Popen, PIPE
+    from pathlib import Path
+
+    # same as './src/REMOTE_BITBANG.cfg' below"
+    OCD_CFG = """
+interface remote_bitbang
+remote_bitbang_host localhost
+remote_bitbang_port 9824
+
+set _CHIPNAME riscv
+jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x10e31913
+
+set _TARGETNAME $_CHIPNAME.cpu
+target create $_TARGETNAME riscv -chain-position $_TARGETNAME
+
+gdb_report_data_abort enable
+
+# init
+# halt
+
+    """
+    OCD_PATH = Path("/home/mateusz/github/openocd_riscv")
+    OCD_CMD = "sleep 1 && ./src/openocd -f ./src/REMOTE_BITBANG.cfg"
+    OCD_OUTPUT_REDIRECT_PATH = OCD_PATH / Path("OUT")
+
+    import sys
+    output = open(OCD_OUTPUT_REDIRECT_PATH, "w") # sys.stdout
+
+    print(f"=== OCD Output redirected to {OCD_OUTPUT_REDIRECT_PATH} file")
+
+    cpu = MtkCpu(reg_init=[0 for _ in range(32)], with_debug=True)
+    
+    sim_gadgets = create_jtag_simulator(cpu)
+    sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
+    
+    sim.add_sync_process(
+        get_sim_jtag_controller(cpu=cpu, timeout_cycles=10000, jtag_fsm=jtag_fsm)
+    )
+    sim.add_sync_process(
+        get_sim_jtag_examine_passive(cpu=cpu, jtag_fsm=jtag_fsm)
+    )
+
+    process = Popen(OCD_CMD, stdout=output, stderr=output, cwd=OCD_PATH, shell=True)
+
+    # stdout, stderr = process.communicate()
+    with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
+        # import time
+        # time.sleep(3.0)
+        sim.run()
+        
+    stdout, stderr = process.communicate()
+    
+
+
+def assert_jtag_test(
+    name: str,
+    timeout_cycles: Optional[int],
+):
+    from nmigen.back.pysim import Simulator
+
+    cpu = MtkCpu(reg_init=[0 for _ in range(32)], with_debug=True)
+    
+    sim_gadgets = create_jtag_simulator(cpu)
+    sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
+    
+    sim.add_sync_process(
+        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=jtag_fsm)
+    )    
 
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
         sim.run()
@@ -219,8 +286,13 @@ def assert_jtag_test(
 
 def test_jtag(_: JtagTestCase):
     assert_jtag_test(
-        name="JTAG IDCODE+BYPASS test",
+        name="JTAG manual test",
         timeout_cycles=1000,
+    )
+
+def test_jtag_ocd_examine(_: JtagOCDTestCase):
+    assert_jtag_ocd_examine_test(
+        name="JTAG openOCD examine test",
     )
 
 
@@ -241,4 +313,15 @@ def jtag_test(f, cases: List[JtagTestCase]):
     def aux(test_case):
         test_jtag(test_case)
         f(test_case)
+
+    return aux
+
+@parametrized
+def jtag_ocd_examine_test(f, cases: List[JtagOCDTestCase]):
+    @pytest.mark.parametrize("test_case", cases)
+    @rename(f.__name__)
+    def aux(test_case):
+        test_jtag_ocd_examine(test_case)
+        f(test_case)
+
     return aux

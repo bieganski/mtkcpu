@@ -1,33 +1,49 @@
 import socket
 from functools import reduce
+from subprocess import TimeoutExpired
+from time import time
 from typing import Optional
+from enum import Enum
+from nmigen.hdl.ast import Signal
+from nmigen.back.pysim import Active, Settle, Tick, Passive
+from nmigen.hdl.ir import Elaboratable, Fragment
+
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.utils.tests.memory import MemoryContents, MemState
+# from mtkcpu.utils.tests.utils import find_fsm
+
+
+def find_fsm(top, *path):
+    assert isinstance(top, Elaboratable)
+    # ugly hack for retrieving jtag FSM state for 'traces=vcd_traces' variable
+    # https://freenode.irclog.whitequark.org/nmigen/2020-07-26#27592720;
+    frag = Fragment.get(top, platform=None)
+    fsm = frag.find_generated(*path) 
+    # returned fsm instance has got attributes "state" (for current state signal) and "encoding" for state names mapping 
+    return fsm
 
 HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
 PORT = 9824        # Port to listen on (non-privileged ports are > 1023)
 
 
-from enum import Enum
-
-
-    # B - Blink on
-	# b - Blink off
-	# R - Read request
-	# Q - Quit request
-	# 0 - Write 0 0 0
-	# 1 - Write 0 0 1
-	# 2 - Write 0 1 0
-	# 3 - Write 0 1 1
-	# 4 - Write 1 0 0
-	# 5 - Write 1 0 1
-	# 6 - Write 1 1 0
-	# 7 - Write 1 1 1
-	# r - Reset 0 0
-	# s - Reset 0 1
-	# t - Reset 1 0
-	# u - Reset 1 1
+# =============== from openOCD documentation:
+# B - Blink on
+# b - Blink off
+# R - Read request
+# Q - Quit request
+# 0 - Write 0 0 0
+# 1 - Write 0 0 1
+# 2 - Write 0 1 0
+# 3 - Write 0 1 1
+# 4 - Write 1 0 0
+# 5 - Write 1 0 1
+# 6 - Write 1 1 0
+# 7 - Write 1 1 1
+# r - Reset 0 0
+# s - Reset 0 1
+# t - Reset 1 0
+# u - Reset 1 1
 class OcdCommand(Enum):
     SAMPLE = b'R'
     QUIT = b'Q'
@@ -91,27 +107,50 @@ def remote_jtag_send_response(conn, tdo):
 
 from nmigen import Signal
 
-def get_sim_jtag_test(
-    cpu: MtkCpu, # must be initialized with 'with_debug=True` param
+def get_state_name(fsm, num):
+    states = fsm.encoding
+    rev = lambda xy: (xy[1],xy[0])
+    mapping = dict(map(rev, states.items()))
+    return mapping[num]
+
+
+def get_sim_jtag_examine_passive(
+    cpu: MtkCpu,
+    jtag_fsm,
+    timeout=10000,
+):
+    def f():
+        yield Passive()
+        addrs = []
+        for i in range(20000):
+        # for i in iter(int, 1):
+        # while(True):
+            state_num = yield jtag_fsm.state
+            state_name = get_state_name(jtag_fsm, state_num)
+            # if state_name != "TEST-LOGIC-RESET":
+                # raise ValueError(f"state_name: .{state_name}.")
+            addr = yield cpu.debug.dmi_address
+            addrs.append(addr)
+            if addr == 0x16:
+                print(f"=== OK, dmi_addr eventually got value 0x16 (in {i} cycle).")
+                return
+            yield
+        raise ValueError(f"Erorr: dmi_address never reached state 0x16! Addresses: {set(addrs)}")
+    return f
+
+
+
+def get_sim_jtag_controller(
+    cpu: MtkCpu,
     timeout_cycles: int,
     jtag_fsm,
 ):
-    from nmigen.back.pysim import Active, Settle, Tick
 
-    def jtag_test(timeout=10000):
+    if not cpu.with_debug:
+        raise ValueError("CPU must be initialized with Debug Module present!")
 
-        jtag_fsm_state = jtag_fsm.state
-
-        def get_state_name(fsm, num):
-            states = fsm.encoding
-            rev = lambda xy: (xy[1],xy[0])
-            mapping = dict(map(rev, states.items()))
-            return mapping[num]
-
-        jtag_get_state = lambda num: get_state_name(jtag_fsm, num)
-
-        # yield Tick()
-        # yield Settle()
+    def jtag_controller(timeout=6000):
+        yield Active()
 
         print("Waiting for OCD connection...")
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -121,7 +160,7 @@ def get_sim_jtag_test(
         print(f'OCD Connected! From addr: {addr}')
 
         jtag_loc = cpu.debug.jtag
-
+        jtag_fsm_state = jtag_fsm.state
         cpu_tdi = jtag_loc.tdi
         cpu_tdo = jtag_loc.port.tdo
         cpu_tms = jtag_loc.tms
@@ -180,7 +219,7 @@ def get_sim_jtag_test(
         
         # print(", ".join([f(tms, tck) for (tms, tck) in DEBUGS]))
 
-    return jtag_test
+    return jtag_controller
 
 
 
@@ -263,8 +302,6 @@ def get_sim_register_test(
     expected_val: Optional[int],
     default_timeout_extra: int = 25,
 ):
-    from nmigen.back.pysim import Active, Settle, Tick
-
     check_mem = reg_num is not None
 
     def reg_test(timeout=default_timeout_extra + timeout_cycles):
