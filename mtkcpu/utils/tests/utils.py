@@ -154,6 +154,9 @@ def create_jtag_simulator(cpu):
     command_w = cpu.debug.dmi_regs[DMIReg.COMMAND].w.fields.values()
     command_r = cpu.debug.dmi_regs[DMIReg.COMMAND].r.fields.values()
 
+    data0_w = cpu.debug.dmi_regs[DMIReg.DATA0].w.fields.values()
+    data0_r = cpu.debug.dmi_regs[DMIReg.DATA0].r.fields.values()
+
     vcd_traces = [
         # jtag_loc.tdi,
         # jtag_loc.tdo,
@@ -181,7 +184,8 @@ def create_jtag_simulator(cpu):
         cpu.debug.HANDLER,
         cpu.debug.DBG_DMI_ADDR,
 
-        cpu.debug.WTF,
+        jtag_loc.BAR,
+        *data0_r,
 
         # *dmcontrol_r,
         # jtag_loc.BAR,
@@ -196,9 +200,19 @@ def create_jtag_simulator(cpu):
         jtag_loc.BAR,
         *abstracts_w,
         jtag_loc.BAR,
+        *abstracts_r,
+        jtag_loc.BAR,
         *command_w,
         jtag_loc.BAR,
         *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
+        jtag_loc.BAR,
+        *dmstatus_r,
+        jtag_loc.BAR,
+        *dmcontrol_w,
+
+        cpu.gprf_debug_r_data,
+        cpu.gprf_debug_r_addr,
+        cpu.halt,
     ]
     return {
         "sim": sim,
@@ -241,7 +255,7 @@ gdb_report_data_abort enable
 
     print(f"=== OCD Output redirected to {OCD_OUTPUT_REDIRECT_PATH} file")
 
-    cpu = MtkCpu(reg_init=[0 for _ in range(32)], with_debug=True)
+    cpu = MtkCpu(reg_init=[0x2137 + i for i in range(32)], with_debug=True)
     
     sim_gadgets = create_jtag_simulator(cpu)
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
@@ -271,7 +285,7 @@ def assert_jtag_test(
 ):
     from nmigen.back.pysim import Simulator
 
-    cpu = MtkCpu(reg_init=[0 for _ in range(32)], with_debug=True)
+    cpu = MtkCpu(reg_init=[0x1000 + i for i in range(32)], with_debug=True)
     
     sim_gadgets = create_jtag_simulator(cpu)
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]

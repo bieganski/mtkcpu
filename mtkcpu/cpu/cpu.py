@@ -111,6 +111,12 @@ class MtkCpu(Elaboratable):
 
         self.DEBUG_CTR = Signal(32)
 
+        self.halt = Signal()
+
+        self.gprf_debug_r_addr = Signal(32)
+        self.gprf_debug_r_data = Signal(32)
+
+
     def elaborate(self, platform):
         self.m = m = Module()
 
@@ -122,7 +128,7 @@ class MtkCpu(Elaboratable):
             self.rvfi = Record(rvfi_layout)
 
         if self.with_debug:
-            m.submodules.debug = debug = self.debug = DebugUnit()
+            m.submodules.debug = self.debug = DebugUnit(self)
 
         sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 
@@ -164,8 +170,24 @@ class MtkCpu(Elaboratable):
             self.reg_write_port
         ) = m.submodules.reg_write_port = regs.write_port()
 
+
+        # DebugModule is able to read and write GPR values.
+        if self.with_debug:
+            comb += self.halt.eq(self.debug.HALT)
+            comb += reg_read_port1.addr.eq(
+                Mux(
+                    self.halt,
+                    self.gprf_debug_r_addr,
+                    rs1
+                )
+            )
+            with m.If(self.halt):
+                comb += self.gprf_debug_r_data.eq(reg_read_port1.data)
+        else:
+            comb += reg_read_port1.addr.eq(rs1),
+        
         comb += [
-            reg_read_port1.addr.eq(rs1),
+            # reg_read_port1.addr.eq(rs1),
             reg_read_port2.addr.eq(rs2),
             rs1val.eq(reg_read_port1.data),
             rs2val.eq(reg_read_port2.data),
@@ -173,8 +195,8 @@ class MtkCpu(Elaboratable):
             reg_write_port.data.eq(rdval),
             # reg_write_port.en set later
         ]
-        # Additional register - program counter.
-        pc = Signal(32, reset=START_ADDR)
+
+        pc = self.pc = Signal(32, reset=START_ADDR)
 
         # assert ( popcount(active_unit) in [0, 1] )
         active_unit = ActiveUnit()

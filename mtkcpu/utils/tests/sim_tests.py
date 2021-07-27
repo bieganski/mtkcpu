@@ -27,6 +27,15 @@ HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
 PORT = 9824        # Port to listen on (non-privileged ports are > 1023)
 
 
+# XXX
+# If  the  operation  didn’t  complete  in  time, 'op' will be 3 
+# and the value in 'data' must be ignored.  
+# The busy condition must be cleared by writing 'dmireset' in 'dtmcs', 
+# and then the second scan scan must be performed again.
+
+
+
+
 # =============== from openOCD documentation:
 # B - Blink on
 # b - Blink off
@@ -117,12 +126,13 @@ def get_state_name(fsm, num):
 def get_sim_jtag_examine_passive(
     cpu: MtkCpu,
     jtag_fsm,
-    timeout=10000,
+    # timeout=10000,
 ):
     def f():
         yield Passive()
         addrs = []
-        for i in range(20000):
+        # for i in range(23000):
+        while(True):
         # for i in iter(int, 1):
         # while(True):
             state_num = yield jtag_fsm.state
@@ -149,7 +159,7 @@ def get_sim_jtag_controller(
     if not cpu.with_debug:
         raise ValueError("CPU must be initialized with Debug Module present!")
 
-    def jtag_controller(timeout=6000):
+    def jtag_controller(timeout=15000):
         yield Active()
 
         print("Waiting for OCD connection...")
@@ -166,7 +176,7 @@ def get_sim_jtag_controller(
         cpu_tms = jtag_loc.tms
         cpu_tck = jtag_loc.tck
 
-        CPU_JTAG_CLK_FACTOR = 5 # how many times JTAG clock is slower than CPU clock.
+        CPU_JTAG_CLK_FACTOR = 4 # how many times JTAG clock is slower than CPU clock.
 
         DEBUGS = []
 
@@ -175,7 +185,18 @@ def get_sim_jtag_controller(
         from termcolor import colored
 
         # cmd_gen = remote_jtag_get_cmd(conn)
-        for i in range(timeout):
+        def inf(i = 0):
+            while(True):
+                yield i
+                i += 1
+                if (i % 1000 == 0):
+                    print(f"i = {i}")
+                    if i == 12000:
+                        from beepy import beep
+                        beep()
+        timeout = None
+        iter = inf() if not timeout else range(timeout)
+        for i in iter:
             cmd = AAA(conn)
             # cmd = next(cmd_gen)
 
