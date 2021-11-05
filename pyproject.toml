@@ -20,13 +20,16 @@ testpaths = [
 [tool.poetry.dependencies]
 python = "^3.8"
 ppci = "^0.5.8"
-nmigen = "^0.2"
+nmigen = {git = "https://github.com/nmigen/nmigen"}
 numpy = "^1.20.3"
 pytest = "^6.2.4"
 pytest-xdist = "^2.2.1"
 pyelftools = "^0.27"
 bitstring = "^3.1.7"
 typer = "^0.3.2"
+termcolor = "^1.1.0"
+beepy = "^1.0.7"
+nmigen-boards = "^0.0"
 
 [tool.poetry.dev-dependencies]
 black = "^20.8b1"

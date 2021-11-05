@@ -29,7 +29,7 @@ class InvalidMemoryContentsError(Exception):
 
     def __init__(self, message: str, index: int):
         super().__init__(
-            f"Invalid memory contents at index {self.index}: {message}"
+            f"Invalid memory contents at index {index}: {message}"
         )
         self.index = index
 

@@ -12,7 +12,7 @@ COMPARE_TESTS = [
         """,
         out_reg=2,
         out_val=1,
-        timeout=10,
+        timeout=30,
     ),
     MemTestCase(
         name="simple 'slti'",

@@ -16,6 +16,9 @@ publish:
 update:
 	poetry update
 
+build:
+	poetry build
+
 build-docker:
 	bash ./build_docker_image.sh
 
