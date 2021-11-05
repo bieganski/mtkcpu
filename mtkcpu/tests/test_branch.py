@@ -1,6 +1,6 @@
 import pytest
 
-from mtkcpu.utils.common import START_ADDR
+from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 
@@ -13,7 +13,7 @@ BRANCH_TESTS = [
             jalr x10, x0, 0
         """,
         out_reg=10,
-        out_val=START_ADDR + 4,
+        out_val=CODE_START_ADDR + 4,
         timeout=10,
     ),
     MemTestCase(
@@ -54,7 +54,7 @@ BRANCH_TESTS = [
                 jal x10, 0x0
         """,
         out_reg=10,
-        out_val=START_ADDR + 4,
+        out_val=CODE_START_ADDR + 4,
         timeout=10,
     ),
     MemTestCase(

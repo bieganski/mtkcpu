@@ -13,7 +13,7 @@ from typing import OrderedDict
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
-from mtkcpu.utils.common import START_ADDR, EBRMemConfig
+from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig
 from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
@@ -77,15 +77,9 @@ def reg_test(
     expected_val: Optional[int],
     expected_mem: Optional[MemoryContents],
     reg_init: RegistryContents,
-    mem_dict: Optional[MemoryContents],
+    mem_cfg: EBRMemConfig,
     verbose: bool = False,
 ):
-    mem_cfg = EBRMemConfig.from_mem_dict(
-        start_addr=START_ADDR, 
-        num_bytes=256, # for sim support 2-byte addressing
-        mem_dict=mem_dict,
-        simulate=True,
-    )
 
     cpu = MtkCpu(
         reg_init=reg_init.reg, 
@@ -134,7 +128,7 @@ def get_code_mem(case: MemTestCase) -> MemoryContents:
     if case.source_type == MemTestSourceType.TEXT:
         code = dump_asm(case.source, verbose=False)
         return MemoryContents(
-            memory=dict(zip(count(START_ADDR, 4), code)),
+            memory=dict(zip(count(CODE_START_ADDR, 4), code)),
         )
     else:
         from mtkcpu.utils.common import read_elf, compile_source
@@ -222,9 +216,19 @@ def assert_mem_test(case: MemTestCase):
     mem_init = case.mem_init or MemoryContents.empty()
 
     program = get_code_mem(case)
+    if case.mem_init:
+        case.mem_init.shift_addresses(MEM_START_ADDR)
     program.patch(mem_init, can_overlap=False)
     if program.size == 0:
         raise ValueError("Memory content cannot be empty! At least single instruction must be present.")
+
+    mem_cfg = EBRMemConfig.from_mem_dict(
+        start_addr=MEM_START_ADDR,
+        num_bytes=256, # for sim support 2-byte addressing
+        simulate=True,
+        mem_dict=program
+    )
+
     reg_test(
         name=name,
         timeout_cycles=case.timeout,
@@ -232,7 +236,7 @@ def assert_mem_test(case: MemTestCase):
         expected_val=case.out_val,
         expected_mem=case.mem_out,
         reg_init=reg_init,
-        mem_dict=program,
+        mem_cfg=mem_cfg,
         verbose=True,
     )
 
@@ -423,9 +427,6 @@ def mem_test(f, cases: List[MemTestCase]):
     @pytest.mark.parametrize("test_case", cases)
     @rename(f.__name__)
     def aux(test_case):
-        d = test_case.mem_init
-        if d:
-            d.shift_addresses(START_ADDR)
         assert_mem_test(test_case)
         f(test_case)
     return aux

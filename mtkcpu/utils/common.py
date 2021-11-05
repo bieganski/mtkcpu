@@ -6,8 +6,8 @@ from typing import List, Optional
 from itertools import count
 from mtkcpu.asm.asm_dump import bytes_to_u32_arr, dump_instrs
 
-
-START_ADDR = 0x1000
+MEM_START_ADDR = 0x1000
+CODE_START_ADDR = MEM_START_ADDR
 
 
 # https://github.com/lambdaconcept/minerva/blob/master/minerva/units/decoder.py

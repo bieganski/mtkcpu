@@ -1,6 +1,6 @@
 from bitstring import Bits
 
-from mtkcpu.utils.common import START_ADDR
+from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
 
@@ -36,7 +36,7 @@ UPPER_TESTS = [
             auipc x1, 0xaa
         """,
         out_reg=1,
-        out_val=START_ADDR + (0xAA << 12),
+        out_val=CODE_START_ADDR + (0xAA << 12),
         timeout=10,
     ),
 ]

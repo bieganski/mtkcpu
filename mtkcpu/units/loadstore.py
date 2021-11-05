@@ -1,10 +1,7 @@
-from __future__ import generator_stop
-from os import name
-from typing import overload
-from nmigen import Cat, Signal, Elaboratable, Module, signed, Array
-from nmigen.hdl import rec
+from typing import Tuple, List, OrderedDict
+from nmigen import Cat, Signal, Elaboratable, Module, signed
 from nmigen.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
-from mtkcpu.utils.common import START_ADDR, matcher
+from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType
 
 MEM_WORDS = 10
@@ -92,7 +89,6 @@ class BusSlaveOwnerInterface():
     def set_dat_r_sync(self, data):
         self.m.d.sync += self.dat_r.eq(data)
     
-    @overload
     def handle_transaction(self):
         raise NotImplementedError()
 
@@ -145,7 +141,7 @@ class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
         ws_bit_shift = Const(log2(ws_bytes))
 
         real_addr = Signal(32)
-        comb += real_addr.eq((addr - self.mem_config.mem_addr) >> ws_bit_shift)
+        comb += real_addr.eq(addr >> ws_bit_shift)
 
         # WARNING:
         # that FSM in nested in another one - we have to use Module instance
@@ -200,6 +196,44 @@ class WishboneSlave(Elaboratable):
 
         return m
 
+class GenericBusAddressDecoder(Elaboratable):
+    def __init__(self, generic_bus : LoadStoreInterface, word_size : int) -> None:
+        super().__init__()
+        self.ports : OrderedDict[Tuple[int, int], LoadStoreInterface] = {}
+        self.bus = generic_bus
+        self.word_size = word_size
+
+    def elaborate(self, platform):
+        m = Module()
+        
+        for (start_addr, num_words), slv_bus in self.ports.items():
+            max_legal_addr = start_addr + self.word_size * (num_words - 1)
+            req_addr = self.bus.addr
+            with m.If((req_addr >= start_addr) & (req_addr <= max_legal_addr)):
+                m.d.comb += slv_bus.connect(self.bus, exclude=["addr"])
+                m.d.comb += slv_bus.addr.eq(req_addr - start_addr)
+        
+        return m
+    
+    def check_addres_scheme(self, addr_scheme : Tuple[int, int]) -> None:
+        if addr_scheme[1] <= 0:
+            raise ValueError(f"ERROR: num_words={addr_scheme[1]}<=0. Must be positive!")
+        
+        def overlaps(r1, r2):
+            r1, r2 = sorted([r1, r2])
+            start_addr, num_words = r1
+            first_allowed = start_addr + num_words * self.word_size
+            return r1 < first_allowed
+        
+        for r in self.ports.keys():
+            if overlaps(addr_scheme, r):
+                raise ValueError(f"ERROR: address range {addr_scheme} overlaps with already defined: {r}")
+    
+    def port(self, addr_scheme : Tuple[int, int]):
+        self.check_addres_scheme(addr_scheme)
+        bus = self.ports[addr_scheme] = LoadStoreInterface()
+        return bus
+
 class MemoryArbiter(Elaboratable):
     def __init__(self, mem_config: EBRMemConfig):
         self.ports = {}
@@ -211,9 +245,14 @@ class MemoryArbiter(Elaboratable):
         m = Module()
         sync = m.d.sync
         comb = m.d.comb
-        # TODO lack of address decoder
+
         print("Initializing EBR memory..")
-        m.submodules.bridge = InterfaceToWishboneMasterBridge(wb_bus=self.wb_bus, generic_bus=self.generic_bus)
+        cfg = self.mem_config
+        decoder = self.decoder = m.submodules.decoder = GenericBusAddressDecoder(generic_bus=self.generic_bus, word_size=cfg.word_size)
+        
+        mem_decoder_cfg = (cfg.mem_addr, cfg.mem_size_words)
+        gb_mem = decoder.port(mem_decoder_cfg)
+        m.submodules.bridge = InterfaceToWishboneMasterBridge(wb_bus=self.wb_bus, generic_bus=gb_mem)
         m.submodules.ebr = self.ebr = EBR_Wishbone(m.submodules.bridge.wb_bus, self.mem_config)
         pe = m.submodules.pe = self.pe = PriorityEncoder(width=len(self.ports))
 

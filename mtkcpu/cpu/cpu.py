@@ -7,7 +7,7 @@ from operator import or_
 from nmigen import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from nmigen.hdl.rec import Layout
 
-from mtkcpu.utils.common import START_ADDR
+from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
 from mtkcpu.units.loadstore import (InterfaceToWishboneMasterBridge, MemoryArbiter, MemoryUnit,
@@ -211,7 +211,7 @@ class MtkCpu(Elaboratable):
                 rs2val.eq(reg_read_port2.data),
             ]
 
-        pc = self.pc = Signal(32, reset=START_ADDR)
+        pc = self.pc = Signal(32, reset=CODE_START_ADDR)
 
         # assert ( popcount(active_unit) in [0, 1] )
         active_unit = ActiveUnit()
