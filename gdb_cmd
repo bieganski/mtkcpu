@@ -1,0 +1,7 @@
+set arch riscv:rv32
+target extended-remote localhost:3333
+set mem inaccessible-by-default off
+set remotetimeout 10
+file elf/example.elf
+load
+run

@@ -6,3 +6,7 @@ xpack-riscv-none-embed-gcc-8.3.0-2.3
 *.swp
 __pycache__/
 **/__pycache__/
+dist/
+jtag.gtkw
+build/
+**/tmp.elf

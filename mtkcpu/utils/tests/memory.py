@@ -23,13 +23,16 @@ class MemState(Enum):
     BUSY_WRITE = 2
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class MemoryContents:
     memory: Dict[int, int]
 
     @property
     def size(self):
         return len(self.memory)
+
+    def shift_addresses(self, offset):
+        self.memory = dict([(k + offset, v) for k, v in self.memory.items()])
 
     def get_overlap(
         self, mem: MemoryContents
@@ -67,7 +70,7 @@ class MemoryContents:
         mem: MemoryContents,
         can_overlap: bool = True,
         overlap_message_limit: int = 5,
-    ) -> MemoryContents:
+    ) -> None:
         new_memory_contents = MemoryContents(
             memory={**self.memory, **mem.memory},
         )
@@ -78,7 +81,7 @@ class MemoryContents:
                     list(islice(self.get_overlap(mem), overlap_message_limit)),
                     overlap_message_limit,
                 )
-        return new_memory_contents
+        self.memory = new_memory_contents.memory
 
     @classmethod
     def empty(cls):

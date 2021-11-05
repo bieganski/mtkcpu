@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
+from __future__ import with_statement
 from enum import Enum
 from functools import reduce
 from operator import or_
+
 from nmigen import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from nmigen.hdl.rec import Layout
+
 from mtkcpu.utils.common import START_ADDR
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
-from mtkcpu.units.loadstore import (LoadStoreUnit, MemoryArbiter, MemoryUnit,
+from mtkcpu.units.loadstore import (InterfaceToWishboneMasterBridge, MemoryArbiter, MemoryUnit,
                                     match_load, match_loadstore_unit)
 from mtkcpu.units.logic import LogicUnit, match_logic_unit
 from mtkcpu.units.rvficon import RVFIController, rvfi_layout
@@ -15,7 +18,8 @@ from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
 from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType, Funct7
-
+from mtkcpu.units.debug.jtag import JTAGTap
+from mtkcpu.units.debug.top import DebugUnit
 
 MEM_WORDS = 10
 
@@ -24,6 +28,7 @@ class Error(Enum):
     OK = 0
     OP_CODE = 1
     MISALIGNED_INSTR = 2
+    WRONG_INSTR = 3
 
 
 match_jal = matcher(
@@ -74,7 +79,7 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False):
+    def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False, with_debug=True, mem_config=None):
 
         if len(reg_init) > 32:
             raise ValueError(
@@ -83,11 +88,18 @@ class MtkCpu(Elaboratable):
 
         if reg_init[0] != 0:
             print(
-                f"WARNING, register x0 set to value {reg_init[0]}, however it will be overriden with zero.."
+                f"WARNING, register x0 set to value {reg_init[0]}, however it will be overriden with zero (due to RiscV spec).."
             )
-        reg_init[0] = 0
+            reg_init[0] = 0
+
+        if not mem_config:
+            raise ValueError("mem_config must be passed! legacy note: previously memory simulation used custom model, "
+            "at some point we started taking advantage of nMigen's 'Memory' class simulation model.")
+        self.mem_config = mem_config
 
         self.with_rvfi = with_rvfi
+
+        self.with_debug = with_debug
 
         # 0xDE for debugging (uninitialized data magic byte)
         self.reg_init = reg_init + [0x0] * (len(reg_init) - 32)
@@ -106,24 +118,35 @@ class MtkCpu(Elaboratable):
 
         self.DEBUG_CTR = Signal(32)
 
+        self.halt = Signal()
+
+        self.gprf_debug_addr = Signal(32)
+        self.gprf_debug_data = Signal(32)
+        self.gprf_debug_write_en = Signal()
+
+        self.TRAP_ADDR = 0xAAA0
+
     def elaborate(self, platform):
-        m = Module()
+        self.m = m = Module()
 
         comb = m.d.comb
         sync = m.d.sync
+
+        # Memory interface.
+        arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter(mem_config=self.mem_config)
+
+        ibus = arbiter.port(priority=2)
 
         if self.with_rvfi:
             rvficon = m.submodules.rvficon = RVFIController() # NOQA
             self.rvfi = Record(rvfi_layout)
 
+        if self.with_debug:
+            m.submodules.debug = self.debug = DebugUnit(self)
+            self.debug_bus = arbiter.port(priority=1)
+
         sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 
-        # Memory interface.
-        arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter()
-
-        ibus = self.ibus = m.submodules.ibus = LoadStoreUnit(
-            mem_port=arbiter.port(priority=1)
-        )
 
         # CPU units used.
         logic = m.submodules.logic = LogicUnit()
@@ -156,17 +179,39 @@ class MtkCpu(Elaboratable):
             self.reg_write_port
         ) = m.submodules.reg_write_port = regs.write_port()
 
-        comb += [
-            reg_read_port1.addr.eq(rs1),
-            reg_read_port2.addr.eq(rs2),
-            rs1val.eq(reg_read_port1.data),
-            rs2val.eq(reg_read_port2.data),
-            reg_write_port.addr.eq(rd),
-            reg_write_port.data.eq(rdval),
-            # reg_write_port.en set later
-        ]
-        # Additional register - program counter.
-        pc = Signal(32, reset=START_ADDR)
+
+        # DebugModule is able to read and write GPR values.
+        if self.with_debug:
+            comb += self.halt.eq(self.debug.HALT)
+        else:
+            comb += self.halt.eq(0)
+
+        with m.If(self.halt):
+            comb += [
+                reg_read_port1.addr.eq(self.gprf_debug_addr),
+                reg_write_port.addr.eq(self.gprf_debug_addr),
+                reg_write_port.en.eq(self.gprf_debug_write_en)
+            ]
+
+            with m.If(self.gprf_debug_write_en):
+                comb += reg_write_port.data.eq(self.gprf_debug_data)
+            with m.Else():
+                comb += self.gprf_debug_data.eq(reg_read_port1.data)
+
+        with m.Else():
+            comb += [
+                reg_read_port1.addr.eq(rs1),
+                reg_read_port2.addr.eq(rs2),
+                
+                reg_write_port.addr.eq(rd),
+                reg_write_port.data.eq(rdval),
+                # reg_write_port.en set later
+
+                rs1val.eq(reg_read_port1.data),
+                rs2val.eq(reg_read_port2.data),
+            ]
+
+        pc = self.pc = Signal(32, reset=START_ADDR)
 
         # assert ( popcount(active_unit) in [0, 1] )
         active_unit = ActiveUnit()
@@ -246,6 +291,12 @@ class MtkCpu(Elaboratable):
             rs2.eq(instr[20:25]),
             funct7.eq(instr[25:32]),
         ]
+
+        self.EBREAK = Signal()
+        self.FENCE = Signal()
+
+        sync += self.EBREAK.eq(0)
+        sync += self.FENCE.eq(0)
 
         with m.FSM():
             with m.State("FETCH"):
@@ -327,6 +378,18 @@ class MtkCpu(Elaboratable):
                         active_unit.branch.eq(1),
                         adder.sub.eq(1),
                     ]
+                with m.Elif(opcode == 0b1110011):
+                    # EBREAK/ECALL
+                    sync += self.EBREAK.eq(1)
+                with m.Elif(opcode == 0b0001111):
+                    # FENCE
+                    sync += self.FENCE.eq(1)
+                with m.Else():
+                    # wrong instruction code:
+                    # set proper mcause and jump intro trap
+                    m.next = "FETCH"
+                    comb += self.err.eq(Error.WRONG_INSTR)
+                    sync += self.pc.eq(self.TRAP_ADDR)
                 m.next = "EXECUTE"
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
@@ -388,7 +451,7 @@ class MtkCpu(Elaboratable):
                             instr[12:20],
                             instr[31],
                         ),
-                        rs1val + imm,  # jalr, TODO get rid of that DSP here
+                        rs1val + imm,
                     )
                 )
                 pc_addend = Signal(signed(32))

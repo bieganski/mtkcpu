@@ -267,8 +267,6 @@ BRANCH_TESTS = [
     ),
 ]
 
-
-@pytest.mark.skip(reason="This fails")
 @mem_test(BRANCH_TESTS)
 def test_branch(_):
     pass

@@ -1,12 +1,16 @@
+from __future__ import generator_stop
+from os import name
+from typing import overload
 from nmigen import Cat, Signal, Elaboratable, Module, signed, Array
+from nmigen.hdl import rec
 from nmigen.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
-from mtkcpu.utils.common import matcher
+from mtkcpu.utils.common import START_ADDR, matcher
 from mtkcpu.utils.isa import Funct3, InstrType
 
 MEM_WORDS = 10
 
 
-bus_layout = [
+wb_bus_layout = [
     ("adr", 32, DIR_FANOUT),  # addresses aligned to 4
     ("dat_w", 32, DIR_FANOUT),
     ("dat_r", 32, DIR_FANIN),
@@ -16,24 +20,34 @@ bus_layout = [
     ("we", 1, DIR_FANOUT),
 ]
 
+generic_bus_layout = [
+    ("en", 1, DIR_FANIN),
+    ("store", 1, DIR_FANIN),
+    ("addr", 32, DIR_FANIN),
+    ("mask", 4, DIR_FANIN),
+    ("write_data", 32, DIR_FANIN),
 
-# implements 'ready/valid' via '~busy' and 'en' signals.
-class LoadStoreInterface:
-    def __init__(self):
-        # Input signals.
-        self.en = Signal(name="EN")
-        self.store = Signal()
+    ("busy", 1, DIR_FANOUT),
+    ("read_data", 32, DIR_FANOUT),
+    ("ack", 1, DIR_FANOUT),
+]
 
-        self.addr = Signal(32, name="ADDR")
-        self.mask = Signal(4, name="MASK")
+class WishboneBusRecord(Record):
+    def __init__(self, *args, **kwargs):
+        super().__init__(self.__layout, *args, **kwargs)
 
-        self.write_data = Signal(32)
+    @property
+    def __layout(self):
+        return wb_bus_layout
 
-        # Output signals.
-        self.busy = Signal(name="BUSY")
-        self.read_data = Signal(32)
 
-        self.ack = Signal(name="ACK")
+class LoadStoreInterface(Record):
+    def __init__(self, *args, **kwargs):
+        super().__init__(self.__layout, *args, **kwargs)
+
+    @property
+    def __layout(self):
+        return generic_bus_layout
 
 
 class PriorityEncoder(Elaboratable):
@@ -54,36 +68,172 @@ class PriorityEncoder(Elaboratable):
 
         return m
 
+from nmigen import *
+from mtkcpu.utils.common import EBRMemConfig
 
-class MemoryArbiter(Elaboratable):
+class BusSlaveOwnerInterface():
     def __init__(self):
-        self.ports = {}
-        self.bus = Record(bus_layout, name="BUS")
+        raise ValueError("__init__ call needs reference for owner instance's elaboratable module!")
+
+    def __init__(self, module: Module) -> None:
+        self.m = module
+        self.ack = Signal(reset=0)
+        self.dat_r = Signal(32, reset=0xdeadbeef)
+
+    def get_handled_signal(self):
+        return self.ack
+
+    def get_dat_r(self):
+        return self.dat_r
+
+    def mark_handled_instant(self):
+        self.m.d.comb += self.ack.eq(1)
+
+    def set_dat_r_sync(self, data):
+        self.m.d.sync += self.dat_r.eq(data)
+    
+    @overload
+    def handle_transaction(self):
+        raise NotImplementedError()
+
+
+class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
+    def __init__(self, bus : WishboneBusRecord, mem_config : EBRMemConfig) -> None:
+        self.wb_slave = WishboneSlave(bus, self)
+        self.mem_config = mem_config
 
     def elaborate(self, platform):
         m = Module()
+        BusSlaveOwnerInterface.__init__(self, module=m)
 
-        # TODO without '= m.submodules.pe' warning: UnusedElaboratable
-        pe = m.submodules.pe = PriorityEncoder(width=len(self.ports))
-        ports = [port for priority, port in sorted(self.ports.items())]
+        # XXX That's bad that each owner needs to remember about that line.
+        m.submodules.wb_slave = self.wb_slave
+        
+        cfg = self.mem_config
+        assert cfg.word_size == 4
 
-        # if no transacton in-progress..
-        with m.If(~self.bus.cyc):
-            for i, p in enumerate(ports):
-                m.d.sync += pe.i[i].eq(p.cyc)
+        mem = self.mem = Memory(
+            depth=cfg.mem_size_words, 
+            width=cfg.word_size * 8,
+            init=cfg.mem_content_words,
+            simulate=cfg.simulate,
+            # https://www.mimuw.edu.pl/~mwk/pul/03_ram/index.html
+        )
+        m.submodules.wp = self.wp = mem.write_port(granularity=8)
+        m.submodules.rp = self.rp = mem.read_port()
 
+        self.leds = Signal(32, attrs={"KEEP": True, "keep":True})
+            
+        return m
+
+    def handle_transaction(self, m):
+        comb = m.d.comb
+        sync = m.d.sync
+        wp = self.wp
+        rp = self.rp
+
+        cyc   = self.wb_slave.wb_bus.cyc
+        write = self.wb_slave.wb_bus.we
+        addr  = self.wb_slave.wb_bus.adr
+        data  = self.wb_slave.wb_bus.dat_w
+        mask  = self.wb_slave.wb_bus.sel
+
+        self.ACK = Signal(name="ACEK")
+
+        from math import log2
+        ws_bytes = self.mem_config.word_size
+        ws_bit_shift = Const(log2(ws_bytes))
+
+        real_addr = Signal(32)
+        comb += real_addr.eq((addr - self.mem_config.mem_addr) >> ws_bit_shift)
+
+        # WARNING:
+        # that FSM in nested in another one - we have to use Module instance
+        # from top-level FSM, otherwise it won't work.
+        with m.FSM():
+            with m.State("EBR_REQ"):
+                with m.If(cyc):
+                    with m.If(write):
+                        comb += [
+                            # wp.en.eq(1),
+                            wp.addr.eq(real_addr),
+                            wp.data.eq(data),
+                            wp.en.eq(mask),
+                        ]
+                    with m.Else():
+                        comb += [
+                            rp.addr.eq(real_addr),
+                            # TODO mask nie wspierane dla read_port
+                        ]
+                m.next = "RET"
+            with m.State("RET"):
+                sync += self.dat_r.eq(rp.data)
+                comb += self.ACK.eq(1)
+                m.next = "EBR_REQ"
+                # self.mark_handled_instant()
+
+class WishboneSlave(Elaboratable):
+    def __init__(self, wb_bus : WishboneBusRecord, owner: BusSlaveOwnerInterface) -> None:
+        self.wb_bus = wb_bus
+        self.owner = owner
+        assert isinstance(owner, BusSlaveOwnerInterface)
+    
+    def elaborate(self, platform):
+        m = Module()
+        comb = m.d.comb
+        sync = m.d.sync
+
+        with m.FSM():
+            with m.State("WB_SLV_TRY_HANDLE"):
+                comb += self.wb_bus.ack.eq(0)
+                with m.If(self.wb_bus.cyc):
+                    self.owner.handle_transaction(m)
+                    with m.If(self.owner.ACK):
+                        m.next = "WB_SLV_DONE"
+            with m.State("WB_SLV_DONE"):
+                dat_r = self.owner.dat_r
+                comb += [
+                    self.wb_bus.dat_r.eq(dat_r),
+                    self.wb_bus.ack.eq(1),
+                ]
+                m.next = "WB_SLV_TRY_HANDLE"
+
+        return m
+
+class MemoryArbiter(Elaboratable):
+    def __init__(self, mem_config: EBRMemConfig):
+        self.ports = {}
+        self.generic_bus = LoadStoreInterface(name="generic_bus")
+        self.wb_bus = WishboneBusRecord()
+        self.mem_config = mem_config
+
+    def elaborate(self, platform):
+        m = Module()
+        sync = m.d.sync
+        comb = m.d.comb
+        # TODO lack of address decoder
+        print("Initializing EBR memory..")
+        m.submodules.bridge = InterfaceToWishboneMasterBridge(wb_bus=self.wb_bus, generic_bus=self.generic_bus)
+        m.submodules.ebr = self.ebr = EBR_Wishbone(m.submodules.bridge.wb_bus, self.mem_config)
+        pe = m.submodules.pe = self.pe = PriorityEncoder(width=len(self.ports))
+
+        none_latch = Signal()
+        sync += none_latch.eq(pe.none)
+
+        sorted_ports = [port for priority, port in sorted(self.ports.items())]
+
+        with m.If(~self.generic_bus.busy):
+            # no transaction in-progress
+            for i, p in enumerate(sorted_ports):
+                m.d.sync += pe.i[i].eq(p.en)
+
+        # TODO not used as Array doesn't support 'connect' method
         # "winning" port idx is in 'pe.o'
-        source = Array(ports)[pe.o]
-
-        m.d.comb += [
-            self.bus.adr.eq(source.adr),
-            self.bus.dat_w.eq(source.dat_w),
-            self.bus.sel.eq(source.sel),
-            self.bus.cyc.eq(source.cyc),
-            self.bus.we.eq(source.we),
-            source.dat_r.eq(self.bus.dat_r),
-            source.ack.eq(self.bus.ack),
-        ]
+        # source = Array(sorted_ports)[pe.o]
+        with m.If(~pe.none):
+            for i, priority in enumerate(sorted_ports):
+                with m.If(pe.o == i):
+                    m.d.comb += self.generic_bus.connect(sorted_ports[i])
 
         return m
 
@@ -94,9 +244,7 @@ class MemoryArbiter(Elaboratable):
             raise ValueError(
                 "Conflicting priority passed to MemoryArbiter.port()"
             )
-        port = self.ports[priority] = Record.like(
-            self.bus, name=f"PORT{priority}"
-        )
+        port = self.ports[priority] = LoadStoreInterface()
         return port
 
 
@@ -159,63 +307,55 @@ def prefix_all_signals(obj, prefix):
             sig.name = prefix + sig.name
 
 
-# deasserts 'bus.cyc' if (bus.cyc & bus.ack) holds
-class LoadStoreUnit(Elaboratable, LoadStoreInterface):
-    def __init__(self, mem_port):
+class InterfaceToWishboneMasterBridge(Elaboratable):
+    def __init__(self, wb_bus : WishboneBusRecord, generic_bus : LoadStoreInterface):
         super().__init__()
-        self.mem_port = mem_port
+        self.wb_bus = wb_bus
+        self.generic_bus = generic_bus
 
     def elaborate(self, platform):
         m = Module()
-
         comb = m.d.comb
         sync = m.d.sync
+        gb = self.generic_bus
+        wb = self.wb_bus
 
-        comb += [
-            self.busy.eq(self.mem_port.cyc),
-        ]
-
-        # suppress ack signals (asserted during one cycle).
-        with m.If(self.ack):
-            sync += [self.ack.eq(0)]
-
+        # XXX for now we don't use strobe signal (cyc only)
         with m.FSM():
             with m.State("IDLE"):
                 sync += [
-                    self.mem_port.adr.eq(self.addr),
-                    self.mem_port.dat_w.eq(self.write_data),
-                    self.mem_port.sel.eq(self.mask),
-                    self.mem_port.we.eq(self.store),
+                    wb.adr.eq(gb.addr),
+                    wb.dat_w.eq(gb.write_data),
+                    wb.sel.eq(gb.mask),
+                    wb.we.eq(gb.store),
                 ]
-                with m.If(self.en):
-                    sync += self.mem_port.cyc.eq(1)
-                    m.next = "WAIT_MEM"
-                with m.Else():
-                    m.next = "IDLE"
-            with m.State("WAIT_MEM"):
-                with m.If(self.mem_port.ack):
+                with m.If(gb.en):
                     sync += [
-                        self.mem_port.cyc.eq(0),
-                        self.ack.eq(1),
-                        self.read_data.eq(self.mem_port.dat_r),
+                        wb.cyc.eq(1),
+                        gb.busy.eq(1),
                     ]
-                    m.next = "WAIT_ACK"
-                with m.Else():
                     m.next = "WAIT_MEM"
-            with m.State("WAIT_ACK"):
-                # it should took one cycle.
-                with m.If(~self.en):
-                    m.next = "IDLE"
-                with m.Else():
-                    m.next = "WAIT_ACK"
-
+            with m.State("WAIT_MEM"):
+                with m.If(wb.ack):
+                    sync += [
+                        wb.cyc.eq(0),
+                        gb.ack.eq(1),
+                        gb.read_data.eq(wb.dat_r),
+                    ]
+                    m.next = "PARK"
+            with m.State("PARK"):
+                sync += [
+                    gb.busy.eq(0),
+                    gb.ack.eq(0) # don't assert it for too long
+                ]
+                m.next = "IDLE"
         return m
 
 
 class MemoryUnit(Elaboratable):
-    def __init__(self, mem_port):
+    def __init__(self, mem_port : LoadStoreInterface):
 
-        self.loadstore = LoadStoreUnit(mem_port)
+        self.loadstore = mem_port
 
         # Input signals.
         self.store = Signal()  # assume 'load' if deasserted.
@@ -227,7 +367,7 @@ class MemoryUnit(Elaboratable):
         self.offset = Signal(signed(12), name="LD_ST_offset")
 
         self.res = Signal(signed(32), name="LD_ST_res")
-        self.en = Signal(name="LD_ST_en")  # TODO do 'ready/valid' interface
+        self.en = Signal(name="LD_ST_en")  # TODO implement 'ready/valid' interface
 
         # Output signals.
         self.ack = Signal(name="LD_ST_ack")
@@ -236,7 +376,7 @@ class MemoryUnit(Elaboratable):
         m = Module()
         comb = m.d.comb
         sync = m.d.sync
-        loadstore = m.submodules.loadstore = self.loadstore
+        loadstore = self.loadstore
 
         store = self.store
         addr = Signal(32)
@@ -326,7 +466,7 @@ class MemoryUnit(Elaboratable):
                         self.ack.eq(1),
                         self.res.eq(load_res),
                     ]
-                    sync += [loadstore.en.eq(0)]
+                    sync += loadstore.en.eq(0)
                     m.next = "IDLE"
 
         return m
