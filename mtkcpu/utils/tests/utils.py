@@ -8,6 +8,7 @@ from nmigen.hdl.ast import Signal
 
 from nmigen.hdl.ir import Elaboratable, Fragment
 from nmigen.sim import Simulator
+from nmigen import Signal
 from nmigen.sim.core import Active, Passive
 import pytest
 from typing import OrderedDict
@@ -23,7 +24,8 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_jtag_controller,
                                           get_ocd_checkpoint_checker)
 from mtkcpu.units.debug.top import DMIReg, DMICommand
-from mtkcpu.units.loadstore import GPIO_Wishbone, MemoryArbiter, WishboneBusRecord
+from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
+from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -138,8 +140,6 @@ def get_code_mem(case: MemTestCase) -> MemoryContents:
         return MemoryContents(
             memory=read_elf(tmp_elf_path, verbose=False)
         )
-
-from nmigen import Signal
 
 def gpio_tb():
     led1, led2 = Signal(), Signal()

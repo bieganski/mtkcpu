@@ -1,8 +1,10 @@
-from typing import Tuple, List, OrderedDict
+from typing import Tuple, OrderedDict
 from nmigen import Cat, Signal, Elaboratable, Module, signed
 from nmigen.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
 from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType
+from mtkcpu.utils.common import EBRMemConfig
+
 
 MEM_WORDS = 10
 
@@ -67,9 +69,6 @@ class PriorityEncoder(Elaboratable):
 
         return m
 
-from nmigen import *
-from mtkcpu.utils.common import EBRMemConfig
-
 class BusSlaveOwnerInterface():
     def __init__(self) -> None:
         raise NotImplementedError("I need 'bus' param!")
@@ -101,134 +100,7 @@ class BusSlaveOwnerInterface():
 
     def get_wb_slave_bus(self) -> "WishboneSlave":
         return self.wb_slave_bus
-     
-
-class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface):
-    def __init__(self, bus : WishboneBusRecord, signal_map : List[Signal]) -> None:
-        BusSlaveOwnerInterface.__init__(self, bus)
-        if len(signal_map) > bus.bus_width:
-            raise ValueError(f"Error: for now GPIO supports at most 32 signals, passed {len(signal_map)}")
-        if len(signal_map) == 0:
-            raise ValueError(f"Error: empty GPIO signal map passed! Disable it if not used.")
-        self.signal_map = signal_map
-
-    def elaborate(self, platform):
-        m = self.init_owner_module()
-        return m
-
-    # for now support single 32-bit word.
-    def handle_transaction(self, wb_slv_module):
-        m = wb_slv_module
-        comb = m.d.comb
-        sync = m.d.sync
-
-        wb_slave = self.get_wb_slave_bus()
-        cyc   = wb_slave.wb_bus.cyc
-        write = wb_slave.wb_bus.we
-        addr  = wb_slave.wb_bus.adr
-        data  = wb_slave.wb_bus.dat_w
-        mask  = wb_slave.wb_bus.sel
-
-        gpio_output = Signal(32)
-
-        for i, s in enumerate(self.signal_map):
-            if isinstance(s, Signal):
-                if s.width != 1:
-                    raise ValueError("GPIO: only single bits signals supported!")
-                comb += s.eq(gpio_output[i])
-            else:
-                print(f"GPIO: skipping non-signal value at index {i}..")
-
-        with m.FSM():
-            with m.State("GPIO_REQ"):
-                with m.If(cyc & (addr == 0x0)):
-                    with m.If(write):
-                        granularity = 8
-                        bus_width = wb_slave.wb_bus.bus_width
-                        mask_width = bus_width // granularity
-                        assert mask_width == mask.width
-                        for i in range(mask_width):
-                            # try to emulate 'select'
-                            start_incl = i * granularity
-                            end_excl = start_incl + granularity
-                            with m.If(mask[i]):
-                                sync += gpio_output[start_incl:end_excl].eq(data[start_incl:end_excl])
-                    with m.Else():
-                        sync += self.get_dat_r().eq(gpio_output)
-                m.next = "GPIO_RET"
-            with m.State("GPIO_RET"):
-                comb += self.mark_handled_stmt()
-                m.next = "GPIO_REQ"
-
-
-class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
-    def __init__(self, bus : WishboneBusRecord, mem_config : EBRMemConfig) -> None:
-        BusSlaveOwnerInterface.__init__(self, bus)
-        self.mem_config = mem_config
-
-    def elaborate(self, platform):
-        m = self.init_owner_module()
-        
-        cfg = self.mem_config
-        assert cfg.word_size == 4
-
-        mem = self.mem = Memory(
-            depth=cfg.mem_size_words, 
-            width=cfg.word_size * 8,
-            init=cfg.mem_content_words,
-            simulate=cfg.simulate,
-            # https://www.mimuw.edu.pl/~mwk/pul/03_ram/index.html
-        )
-        m.submodules.wp = self.wp = mem.write_port(granularity=8)
-        m.submodules.rp = self.rp = mem.read_port()
-
-        self.leds = Signal(32, attrs={"KEEP": True, "keep":True})
-            
-        return m
-
-    def handle_transaction(self, wb_slv_module):
-        wb_comb = wb_slv_module.d.comb
-        wb_sync = wb_slv_module.d.sync
-        wp = self.wp
-        rp = self.rp
-
-        wb_slave = self.get_wb_slave_bus()
-
-        cyc   = wb_slave.wb_bus.cyc
-        write = wb_slave.wb_bus.we
-        addr  = wb_slave.wb_bus.adr
-        data  = wb_slave.wb_bus.dat_w
-        mask  = wb_slave.wb_bus.sel
-
-        from math import log2
-        ws_bytes = self.mem_config.word_size
-        ws_bit_shift = Const(log2(ws_bytes))
-
-        real_addr = Signal(32)
-        wb_comb += real_addr.eq(addr >> ws_bit_shift)
-
-        # WARNING:
-        # that FSM in nested in another one - we have to use Module instance
-        # from top-level FSM, otherwise it won't work.
-        m = wb_slv_module
-        with m.FSM():
-            with m.State("EBR_REQ"):
-                with m.If(cyc):
-                    with m.If(write):
-                        wb_comb += [
-                            wp.addr.eq(real_addr),
-                            wp.data.eq(data),
-                            wp.en.eq(mask),
-                        ]
-                    with m.Else():
-                        wb_comb += [
-                            rp.addr.eq(real_addr),
-                        ]
-                m.next = "RET"
-            with m.State("RET"):
-                wb_sync += self.set_dat_r_stmt(rp.data)
-                wb_comb += self.mark_handled_stmt()
-                m.next = "EBR_REQ"
+    
 
 class WishboneSlave(Elaboratable):
     def __init__(self, wb_bus : WishboneBusRecord, owner: BusSlaveOwnerInterface) -> None:
@@ -324,6 +196,9 @@ class MemoryArbiter(Elaboratable):
             led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
         gpio_map = [led_r, led_g]
         
+        from mtkcpu.units.mmio.gpio import GPIO_Wishbone
+        from mtkcpu.units.mmio.ebr import EBR_Wishbone
+
         m.submodules.ebr = self.ebr = EBR_Wishbone(wb_mem_bus, self.mem_config)
         m.submodules.gpio = self.gpio = GPIO_Wishbone(wb_gpio_bus, signal_map=gpio_map)
         
@@ -374,7 +249,6 @@ match_store = matcher(
         # (InstrType.STORE, Funct3.HU), # it doesn't exist
     ]
 )
-
 
 def match_loadstore_unit(op, f3, f7):
     return match_load(op, f3, f7) | match_store(

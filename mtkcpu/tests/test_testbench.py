@@ -1,6 +1,7 @@
 from mtkcpu.utils.tests.utils import component_testbench, ComponentTestbenchCase
+from mtkcpu.units.loadstore import MemoryArbiter
+from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 
-from mtkcpu.units.loadstore import MemoryArbiter, GPIO_Wishbone
 TESTBENCHES = [
     ComponentTestbenchCase(
         name="MemoryArbiter",
