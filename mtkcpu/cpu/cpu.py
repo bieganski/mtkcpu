@@ -10,7 +10,7 @@ from nmigen.hdl.rec import Layout
 from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
-from mtkcpu.units.loadstore import (InterfaceToWishboneMasterBridge, MemoryArbiter, MemoryUnit,
+from mtkcpu.units.loadstore import (MemoryArbiter, MemoryUnit,
                                     match_load, match_loadstore_unit)
 from mtkcpu.units.logic import LogicUnit, match_logic_unit
 from mtkcpu.units.rvficon import RVFIController, rvfi_layout

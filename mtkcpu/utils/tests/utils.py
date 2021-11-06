@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
 from typing import List, Optional
+from nmigen.hdl.ast import Signal
 
 from nmigen.hdl.ir import Elaboratable, Fragment
 from nmigen.sim import Simulator
-from nmigen.sim.core import Passive
+from nmigen.sim.core import Active, Passive
 import pytest
 from typing import OrderedDict
 
@@ -22,7 +23,7 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_jtag_controller,
                                           get_ocd_checkpoint_checker)
 from mtkcpu.units.debug.top import DMIReg, DMICommand
-from mtkcpu.units.loadstore import MemoryArbiter
+from mtkcpu.units.loadstore import GPIO_Wishbone, MemoryArbiter, WishboneBusRecord
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -138,7 +139,58 @@ def get_code_mem(case: MemTestCase) -> MemoryContents:
             memory=read_elf(tmp_elf_path, verbose=False)
         )
 
+from nmigen import Signal
 
+def gpio_tb():
+    led1, led2 = Signal(), Signal()
+    bus  = WishboneBusRecord()
+    signal_map = [0 for _ in range(32)]
+    idx1, idx2 = 0, 20
+    signal_map[idx1] = led1
+    signal_map[idx2] = led2
+
+    m = GPIO_Wishbone(bus, signal_map)
+    def f():
+        def wait(timeout=10):
+            for _ in range(timeout):
+                yield
+        def wait_ack(timeout=10):
+            lst = []
+            for _ in range(timeout):
+                ack = yield bus.ack
+                lst.append(ack)
+                yield
+            assert 1 in lst
+
+        yield from wait()
+
+        l1, l2 = (yield led1), (yield led2)
+        assert not l1
+        assert not l2
+        
+        yield bus.cyc.eq(1)
+        yield bus.sel.eq(0b0001)
+        yield bus.we.eq(1)
+        yield bus.adr.eq(0)
+        yield bus.dat_w.eq(0xffff_ffff)
+        yield from wait_ack()
+
+        l1, l2 = (yield led1), (yield led2)
+        assert l1
+        assert not l2
+
+        yield bus.cyc.eq(0)
+        wait()
+        yield bus.cyc.eq(1)
+        yield bus.sel.eq(0b1111)
+
+        yield from wait_ack()
+
+        l1, l2 = (yield led1), (yield led2)
+        assert l1
+        assert l2
+        
+    return m, f
 
 def memory_arbiter_tb():
     mem = {
@@ -198,6 +250,8 @@ def memory_arbiter_tb():
 def unit_testbench(case: ComponentTestbenchCase):
     if case.component_type == MemoryArbiter:
         m, f = memory_arbiter_tb()
+    elif case.component_type == GPIO_Wishbone:
+        m, f = gpio_tb()
     else:
         print(f"===== Skipping not covered type {case.component_type}")
         return
