@@ -96,6 +96,8 @@ class MtkCpu(Elaboratable):
             raise ValueError("mem_config must be passed! legacy note: previously memory simulation used custom model, "
             "at some point we started taking advantage of nMigen's 'Memory' class simulation model.")
         self.mem_config = mem_config
+        # we need it in __init__ for bsp generation.
+        self.arbiter = MemoryArbiter(mem_config=self.mem_config)
 
         self.with_rvfi = with_rvfi
 
@@ -133,7 +135,7 @@ class MtkCpu(Elaboratable):
         sync = m.d.sync
 
         # Memory interface.
-        arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter(mem_config=self.mem_config)
+        arbiter = m.submodules.arbiter = self.arbiter
 
         ibus = arbiter.port(priority=2)
 

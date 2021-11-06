@@ -198,9 +198,15 @@ class MemoryArbiter(Elaboratable):
         
         from mtkcpu.units.mmio.gpio import GPIO_Wishbone
         from mtkcpu.units.mmio.ebr import EBR_Wishbone
-
+        
         m.submodules.ebr = self.ebr = EBR_Wishbone(wb_mem_bus, self.mem_config)
         m.submodules.gpio = self.gpio = GPIO_Wishbone(wb_gpio_bus, signal_map=gpio_map)
+
+        # TODO very ugly
+        self.addressing_configs_bsp_gen = [
+            # (mem_decoder_cfg, self.ebr),
+            (gpio_decoder_cfg, self.gpio)
+        ]
         
         pe = m.submodules.pe = self.pe = PriorityEncoder(width=len(self.ports))
         sorted_ports = [port for priority, port in sorted(self.ports.items())]
