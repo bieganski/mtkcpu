@@ -3,19 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
-from typing import List, Optional
-from nmigen.hdl.ast import Signal
+from typing import List, Optional, OrderedDict
+import pytest
+from pathlib import Path
 
+from nmigen.hdl.ast import Signal
 from nmigen.hdl.ir import Elaboratable, Fragment
 from nmigen.sim import Simulator
 from nmigen import Signal
 from nmigen.sim.core import Active, Passive
-import pytest
-from typing import OrderedDict
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
-from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig
+from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig, read_elf
 from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
@@ -33,6 +33,12 @@ class MemTestSourceType(str, Enum):
     RAW = "raw"
     ELF = "elf"
 
+
+@dataclass
+class CpuTestbenchCase:
+    name : str
+    elf_path: Path
+    try_compile: bool
 
 @dataclass(frozen=True)
 class MemTestCase:
@@ -262,7 +268,52 @@ def unit_testbench(case: ComponentTestbenchCase):
 
     with sim.write_vcd(f"{case.name}.vcd"):
         sim.run()
+
+
+def cpu_testbench_test(case : CpuTestbenchCase):
+    if case.try_compile:
+        s_name = case.elf_path.with_suffix(".S").absolute()
+        import subprocess
+        process = subprocess.Popen(f"./compile.sh {s_name}", cwd="elf", shell=True)
+        process.communicate()
+        if process.returncode:
+            raise ValueError(f"ERROR: compilation of {s_name} failed!")
+        print("Ok, compile successed!")
+    program = read_elf(case.elf_path)
+
+    mem_cfg = EBRMemConfig.from_mem_dict(
+        start_addr=MEM_START_ADDR,
+        num_bytes=256,
+        simulate=True,
+        mem_dict=MemoryContents(program),
+    )
+
+    cpu = MtkCpu(
+        with_debug=False,
+        mem_config=mem_cfg
+    )
+
+    sim = Simulator(cpu)
+    sim.add_clock(1e-6)
+
+    def f():
+        yield
+        arbiter = cpu.arbiter
+        a = []
+        for _ in range(300_000): # ~15 cycles per instr
+            led_r = yield arbiter.led_r
+            led_g = yield arbiter.led_g
+            if led_g + led_r:
+                a.append([led_r, led_g])
+            yield
+        assert [1, 1] in a, a
+        assert [0, 1] in a, a # leds do switch eventually. 
+
+    sim.add_sync_process(f)
     
+    with sim.write_vcd("cpu.vcd"):
+        sim.run()
+
 
 def assert_mem_test(case: MemTestCase):
     name = case.name
@@ -482,6 +533,15 @@ def mem_test(f, cases: List[MemTestCase]):
     @rename(f.__name__)
     def aux(test_case):
         assert_mem_test(test_case)
+        f(test_case)
+    return aux
+
+@parametrized
+def cpu_testbench(f, cases: List[CpuTestbenchCase]):
+    @pytest.mark.parametrize("test_case", cases)
+    @rename(f.__name__)
+    def aux(test_case):
+        cpu_testbench_test(test_case)
         f(test_case)
     return aux
 

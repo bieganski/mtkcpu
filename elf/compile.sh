@@ -29,7 +29,7 @@ function red {
 LINKER=linker.ld
 TOOL=riscv-none-embed
 OPT=-Os
-
+ARCH=rv32i
 SRC="$1"
 DEFAULT_SRC="example.S"
 
@@ -42,7 +42,7 @@ fi
 
 ELF=${SRC%.*}.elf
 
-$TOOL-gcc $OPT -nostartfiles -T$LINKER $SRC -o $ELF
+$TOOL-gcc $OPT -march=$ARCH -nostartfiles -T$LINKER $SRC -o $ELF
 
 echo -ne "compilation successfull, "
 green $ELF 

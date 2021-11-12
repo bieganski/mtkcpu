@@ -443,17 +443,21 @@ class MtkCpu(Elaboratable):
                     sync += active_unit.eq(0)
 
                 pc_offset = Signal(signed(32))
+                jal_offset = Signal(signed(21))
+                comb += jal_offset.eq(
+                        Cat(
+                        Const(0, 1),
+                        instr[21:31],
+                        instr[20],
+                        instr[12:20],
+                        instr[31],
+                    ).as_signed()
+                )
                 comb += pc_offset.eq(
                     Mux(
                         active_unit.jal,
-                        Cat(
-                            Const(0, 1),
-                            instr[21:31],
-                            instr[20],
-                            instr[12:20],
-                            instr[31],
-                        ),
-                        rs1val + imm,
+                        jal_offset, # TODO it doesn't work without helper variable 'jal_offset'. no idea why
+                        rs1val.as_signed() + imm, # TODO is it ok that it's signed?
                     )
                 )
                 pc_addend = Signal(signed(32))
@@ -469,7 +473,7 @@ class MtkCpu(Elaboratable):
                         instr[25:31],
                         instr[7],
                         instr[31],
-                    )
+                    ).as_signed() # TODO is it ok that it's signed?
                 )
 
                 with m.If(active_unit.branch):

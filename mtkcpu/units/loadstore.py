@@ -1,6 +1,6 @@
 from typing import Tuple, OrderedDict
 from nmigen import Cat, Signal, Elaboratable, Module, signed
-from nmigen.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
+from nmigen.hdl.rec import Layout, Record, DIR_FANOUT, DIR_FANIN
 from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType
 from mtkcpu.utils.common import EBRMemConfig
@@ -190,22 +190,31 @@ class MemoryArbiter(Elaboratable):
         gpio_decoder_cfg = (0x8000_0000, 0x1000)
         wb_gpio_bus = decoder.port(gpio_decoder_cfg)
 
+        uart_decoder_cfg = (0x7000_0000, 0x1000)
+        # uart_gpio_bus = decoder.port(uart_decoder_cfg)
+
+
         if platform:
             led_r, led_g = platform.request("led_r"), platform.request("led_g")
+            serial = platform.request("serial")
         else:
             led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
+            serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
+        self.led_r, self.led_g = led_r, led_g
         gpio_map = [led_r, led_g]
         
         from mtkcpu.units.mmio.gpio import GPIO_Wishbone
         from mtkcpu.units.mmio.ebr import EBR_Wishbone
+        from mtkcpu.units.mmio.uart import UartTX
         
         m.submodules.ebr = self.ebr = EBR_Wishbone(wb_mem_bus, self.mem_config)
         m.submodules.gpio = self.gpio = GPIO_Wishbone(wb_gpio_bus, signal_map=gpio_map)
+        # m.submodules.uart = self.uart = UartTX(serial=serial, clk_freq=12_000_000, baud_rate=115200)
 
         # TODO very ugly
         self.addressing_configs_bsp_gen = [
-            # (mem_decoder_cfg, self.ebr),
-            (gpio_decoder_cfg, self.gpio)
+            (gpio_decoder_cfg, self.gpio),
+            # (uart_decoder_cfg, self.uart)
         ]
         
         pe = m.submodules.pe = self.pe = PriorityEncoder(width=len(self.ports))
