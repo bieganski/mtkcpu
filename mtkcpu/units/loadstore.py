@@ -196,10 +196,10 @@ class MemoryArbiter(Elaboratable):
 
         if platform:
             led_r, led_g = platform.request("led_r"), platform.request("led_g")
-            serial = platform.request("serial")
+            # serial = platform.request("serial")
         else:
             led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
-            serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
+            # serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
         self.led_r, self.led_g = led_r, led_g
         gpio_map = [led_r, led_g]
         

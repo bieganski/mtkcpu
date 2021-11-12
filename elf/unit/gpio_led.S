@@ -11,7 +11,7 @@ start:
 store:
 	xor x2, x2, x3
 	sb x2, 0(x1)
-	li x4, 10000
+	li x4, 1000000
 loop:
 	addi x4, x4, -1
 	bne x4, x0, loop

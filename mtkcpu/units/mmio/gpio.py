@@ -1,5 +1,5 @@
 from nmigen import *
-from typing import List
+from typing import List, OrderedDict
 
 from mtkcpu.units.loadstore import BusSlaveOwnerInterface, WishboneBusRecord
 from mtkcpu.units.mmio.bspgen import BspGeneratable, MMIOPeriphConfig, MMIORegister
@@ -57,11 +57,29 @@ class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
 
         gpio_output = Signal(32)
 
+        # NOTE
+        # we cannot use 'comb' domain here, as we are in 'transaction' context, 
+        # so the assignments won't be persistent.
         for i, s in enumerate(self.signal_map):
             if isinstance(s, Signal):
                 if s.width != 1:
                     raise ValueError("GPIO: only single bits signals supported!")
-                comb += s.eq(gpio_output[i])
+                sync += s.eq(gpio_output[i])
+            elif isinstance(s, Record):
+                if len(s.fields) > 1:
+                    print(f"ERROR: as part of sigal_map param GPIO received Record instance with more than 1 field! ({len(s.fields)})")
+                    exit(1)
+                fs = s.fields
+                sig_o = fs.get('o', None)
+                sig_i = fs.get('i', None)
+                if isinstance(sig_o, Signal):
+                    print(f"GPIO: adding output {sig_o} to GPIO pin {i}..")
+                    sync += sig_o.eq(gpio_output[i])
+                elif isinstance(sig_i, Signal):
+                    print(f"GPIO: adding input {sig_i} to GPIO pin {i}..")
+                    sync += gpio_output[i].eq(sig_i)
+                else:
+                    print(f"ERROR: as part of sigal_map param GPIO received Record instance without 'o' or 'i' field! {fs}")
             else:
                 print(f"GPIO: skipping non-signal value at index {i}..")
 
@@ -69,6 +87,7 @@ class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
             with m.State("GPIO_REQ"):
                 with m.If(cyc & (addr == 0x0)):
                     with m.If(write):
+                        # sync += gpio_output[0:2].eq(Const(0b11, 2)) # XXX REMOVE ME
                         granularity = 8
                         bus_width = wb_slave.wb_bus.bus_width
                         mask_width = bus_width // granularity

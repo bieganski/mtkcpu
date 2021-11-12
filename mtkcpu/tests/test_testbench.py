@@ -22,12 +22,12 @@ CPU_TESTBENCHES = [
     ),
 ]
 
-@component_testbench(TESTBENCHES)
-def test_tb(_):
-    pass
+# @component_testbench(TESTBENCHES)
+# def test_tb(_):
+#     pass
 
 # TODO
 # enable me in full-test mode (~80 secs).
-# @cpu_testbench(CPU_TESTBENCHES)
-# def test_tb(_):
-#     pass
+@cpu_testbench(CPU_TESTBENCHES)
+def test_tb(_):
+    pass

@@ -1,31 +1,32 @@
 #!/usr/bin/env python3
 from typing import List
+from pathlib import Path
 
 from mtkcpu.cpu.cpu import MtkCpu
-from mtkcpu.units.loadstore import WishboneBusRecord
 from mtkcpu.utils.common import EBRMemConfig, CODE_START_ADDR, read_elf
 from mtkcpu.utils.tests.memory import MemoryContents
-from mtkcpu.units.mmio.bspgen import BspGeneratable, MemMapCodeGen, MMIOPeriphConfig
+from mtkcpu.units.mmio.bspgen import BspGeneratable, MemMapCodeGen
 
 from nmigen_boards.icebreaker import ICEBreakerPlatform
 
 
-def get_board_cpu():
+def get_board_cpu(elf_path : Path):
+    mem = read_elf(elf_path, verbose=False)
+    print(f"READ ELF MEM: {mem}")
+    
     mem_config = EBRMemConfig.from_mem_dict(
         simulate=False,
         start_addr=CODE_START_ADDR,
         num_bytes=256,
-        mem_dict=MemoryContents(
-            read_elf("/home/mateusz/github/mtkcpu/elf/example.elf", verbose=False)
-        )
+        mem_dict=MemoryContents(mem)
     )
 
     return MtkCpu(mem_config=mem_config)
 
-def build(do_program=True):
+def build(elf_path : Path, do_program=True):
     plat = ICEBreakerPlatform()
-    m = get_board_cpu()
-    plat.build(m, do_program=True)
+    m = get_board_cpu(elf_path=elf_path)
+    plat.build(m, do_program=do_program)
 
 def main():
     from argparse import ArgumentParser
@@ -33,12 +34,13 @@ def main():
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--program", action="store_true")
     parser.add_argument("--gen_bsp", action="store_true")
+    parser.add_argument("--elf", type=Path, default=Path(__file__).parent / "../../elf/example.elf", help="ELF to be used for build")
     args = parser.parse_args()
 
     if args.build:
-        build(do_program=args.program)
+        build(elf_path=args.elf, do_program=args.program)
     elif args.gen_bsp:
-        cpu = get_board_cpu()
+        cpu = get_board_cpu(elf_path=args.elf)
         arbiter = cpu.arbiter
         plat = ICEBreakerPlatform()
         # from mtkcpu.units.mmio.gpio import GPIO_Wishbone 
