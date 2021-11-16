@@ -34,6 +34,10 @@ class EBRMemConfig():
 
     from mtkcpu.utils.tests.memory import MemoryContents
 
+    @property
+    def last_valid_addr_excl(self):
+        return self.mem_addr + self.mem_size_words * self.word_size
+
     @staticmethod
     def from_mem_dict(start_addr: int , num_bytes: int, mem_dict: MemoryContents, simulate: bool) -> "EBRMemConfig":
         ws = __class__.word_size

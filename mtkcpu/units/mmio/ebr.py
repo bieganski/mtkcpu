@@ -5,8 +5,8 @@ from mtkcpu.units.loadstore import BusSlaveOwnerInterface, WishboneBusRecord
 
 
 class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
-    def __init__(self, bus : WishboneBusRecord, mem_config : EBRMemConfig) -> None:
-        BusSlaveOwnerInterface.__init__(self, bus)
+    def __init__(self, mem_config : EBRMemConfig) -> None:
+        BusSlaveOwnerInterface.__init__(self)
         self.mem_config = mem_config
 
     def elaborate(self, platform):
@@ -25,8 +25,6 @@ class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
         m.submodules.wp = self.wp = mem.write_port(granularity=8)
         m.submodules.rp = self.rp = mem.read_port()
 
-        self.leds = Signal(32, attrs={"KEEP": True, "keep":True})
-            
         return m
 
     def handle_transaction(self, wb_slv_module):

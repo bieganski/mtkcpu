@@ -18,8 +18,9 @@ def _divisor(freq_in, freq_out, max_ppm=None):
 
     return divisor
 
-from mtkcpu.units.loadstore import BusSlaveOwnerInterface, LoadStoreInterface
-from mtkcpu.units.mmio.bspgen import BspGeneratable, MMIOPeriphConfig, MMIORegister
+from mtkcpu.units.loadstore import BusSlaveOwnerInterface
+from mtkcpu.units.mmio.bspgen import BspGeneratable
+from mtkcpu.units.memory_interface import MMIOPeriphConfig, MMIORegister
 
 class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
     def __init__(self, serial, clk_freq, baud_rate):

@@ -1,6 +1,8 @@
+from argparse import ArgumentError
+from dataclasses import dataclass
 from typing import Tuple, OrderedDict
 from nmigen import Cat, Signal, Elaboratable, Module, signed
-from nmigen.hdl.rec import Layout, Record, DIR_FANOUT, DIR_FANIN
+from nmigen.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
 from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType
 from mtkcpu.utils.common import EBRMemConfig
@@ -69,44 +71,11 @@ class PriorityEncoder(Elaboratable):
 
         return m
 
-class BusSlaveOwnerInterface():
-    def __init__(self) -> None:
-        raise NotImplementedError("I need 'bus' param!")
-
-    def __init__(self, bus) -> None:
-        self.wb_slave_bus = WishboneSlave(bus, self)
-        self.ack = Signal()
-        self.dat_r = Signal(32)
-
-    def get_handled_signal(self):
-        return self.ack
-
-    def get_dat_r(self):
-        return self.dat_r
-
-    def mark_handled_stmt(self):
-        return self.get_handled_signal().eq(1)
-
-    def set_dat_r_stmt(self, data):
-        return self.get_dat_r().eq(data)
-    
-    def handle_transaction(self, wb_slv_module):
-        raise NotImplementedError()
-
-    def init_owner_module(self) -> Module:
-        m = Module()
-        m.submodules.wb_slave_bus = self.get_wb_slave_bus() # we don't want each owner to remember about that line
-        return m
-
-    def get_wb_slave_bus(self) -> "WishboneSlave":
-        return self.wb_slave_bus
-    
 
 class WishboneSlave(Elaboratable):
-    def __init__(self, wb_bus : WishboneBusRecord, owner: BusSlaveOwnerInterface) -> None:
+    def __init__(self, wb_bus : WishboneBusRecord, owner: "BusSlaveOwnerInterface") -> None:
         self.wb_bus = wb_bus
         self.owner = owner
-        assert isinstance(owner, BusSlaveOwnerInterface)
     
     def elaborate(self, platform):
         m = Module()
@@ -130,17 +99,59 @@ class WishboneSlave(Elaboratable):
 
         return m
 
+
+class BusSlaveOwnerInterface:
+    def __init__(self) -> None:
+        self.wb_slave_bus = None
+        self.ack = Signal()
+        self.dat_r = Signal(32)
+        self._wb_slave_bus = None
+
+    def init_bus_slave(self, bus):
+        self._wb_slave_bus = WishboneSlave(bus, self)
+
+    def get_handled_signal(self):
+        return self.ack
+
+    def get_dat_r(self):
+        return self.dat_r
+
+    def mark_handled_stmt(self):
+        return self.get_handled_signal().eq(1)
+
+    def set_dat_r_stmt(self, data):
+        return self.get_dat_r().eq(data)
+
+    def handle_transaction(self, wb_slv_module) -> None:
+        raise NotImplementedError("BusSlaveOwnerInterface must implement 'handle_transaction' method!")
+
+    # TODO move it
+    def init_owner_module(self) -> Module:
+        m = Module()
+        m.submodules.wb_slave_bus = self.get_wb_slave_bus() # we don't want each owner to remember about that line
+        return m
+
+    def get_wb_slave_bus(self) -> WishboneSlave:
+        res = self._wb_slave_bus
+        if not res:
+            raise ValueError("ERROR: init_bus_slave method must be called before trying to access bus!")
+        return res
+    
+from mtkcpu.units.memory_interface import MMIOAddressSpace
+
 class WishboneBusAddressDecoder(Elaboratable):
     def __init__(self, wb_bus : WishboneBusRecord, word_size : int) -> None:
         super().__init__()
-        self.ports : OrderedDict[Tuple[int, int], LoadStoreInterface] = {}
+        self.ports : OrderedDict[MMIOAddressSpace, LoadStoreInterface] = {}
         self.bus = wb_bus
         self.word_size = word_size
 
     def elaborate(self, platform):
         m = Module()
         
-        for (start_addr, num_words), slv_bus in self.ports.items():
+        for addr_scheme, slv_bus in self.ports.items():
+            num_words = addr_scheme.num_words
+            start_addr = addr_scheme.first_valid_addr_incl
             max_legal_addr = start_addr + self.word_size * (num_words - 1)
             req_addr = self.bus.adr
             with m.If((req_addr >= start_addr) & (req_addr <= max_legal_addr)):
@@ -148,14 +159,14 @@ class WishboneBusAddressDecoder(Elaboratable):
                 m.d.comb += slv_bus.adr.eq(req_addr - start_addr)
         return m
     
-    def check_addres_scheme(self, addr_scheme : Tuple[int, int]) -> None:
-        if addr_scheme[1] <= 0:
-            raise ValueError(f"ERROR: num_words={addr_scheme[1]}<=0. Must be positive!")
+    def check_addres_scheme(self, addr_scheme : MMIOAddressSpace) -> None:
+        if addr_scheme.num_words == 0:
+            print(f"WARNING: num_words={addr_scheme[1]}==0. Efectively your design will lack of EBR memory!")
         
         def overlaps(r1, r2):
-            r1, r2 = sorted([r1, r2])
-            start_addr1, num_words1 = r1
-            start_addr2, _ = r2
+            r1, r2 = sorted([r1, r2], key=lambda x: x.first_valid_addr_incl)
+            start_addr1, num_words1 = r1.first_valid_addr_incl, r1.num_words
+            start_addr2 = r2.first_valid_addr_incl
             first_allowed = start_addr1 + num_words1 * self.word_size
             return start_addr2 < first_allowed
         
@@ -163,62 +174,83 @@ class WishboneBusAddressDecoder(Elaboratable):
             if overlaps(addr_scheme, r):
                 raise ValueError(f"ERROR: address range {addr_scheme} overlaps with already defined: {r}")
     
-    def port(self, addr_scheme : Tuple[int, int]):
+    def port(self, addr_scheme : MMIOAddressSpace):
         self.check_addres_scheme(addr_scheme)
         bus = self.ports[addr_scheme] = WishboneBusRecord()
         return bus
 
-class MemoryArbiter(Elaboratable):
+from typing import List, Tuple
+from nmigen.build import Platform
+
+from mtkcpu.units.mmio.ebr import EBR_Wishbone
+from mtkcpu.units.mmio.gpio import GPIO_Wishbone
+from mtkcpu.units.memory_interface import MMIOAddressSpace, AddressManager
+
+class MemoryArbiter(Elaboratable, AddressManager):
+    def __init__(self):
+        raise ArgumentError("lack of 'mem_config' param!")
+
     def __init__(self, mem_config: EBRMemConfig):
         self.ports = {}
+        self.word_size = 4
         self.generic_bus = LoadStoreInterface(name="generic_bus")
         self.wb_bus = WishboneBusRecord()
         self.mem_config = mem_config
+        self.__gen_mmio_devices_config_once()
+
+    def __gen_mmio_devices_config_once(self) -> None:
+        assert getattr(self, "mmio_cfg", None) is None
+
+        def gpio_gen(platform : Platform):
+            if platform:
+                led_r, led_g = platform.request("led_r"), platform.request("led_g")
+                # serial = platform.request("serial")
+            else:
+                led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
+                # serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
+            self.led_r, self.led_g = led_r, led_g # TODO this is obfuscated, but we need those signals for gpio simulation testbench
+            return [led_r, led_g]
+
+        # from mtkcpu.units.mmio.uart import UartTX
+        # m.submodules.uart = self.uart = UartTX(serial=serial, clk_freq=12_000_000, baud_rate=115200)
+        self.mmio_cfg = [
+            (
+                EBR_Wishbone(self.mem_config),
+                MMIOAddressSpace(
+                    ws=self.word_size,
+                    basename="ebr",
+                    first_valid_addr_incl=self.mem_config.mem_addr,
+                    last_valid_addr_excl=self.mem_config.last_valid_addr_excl,
+                )
+            ),
+            (
+                GPIO_Wishbone(signal_map_gen=gpio_gen),
+                MMIOAddressSpace(
+                    ws=self.word_size,
+                    basename="gpio",
+                    first_valid_addr_incl=0x8000_0000,
+                    last_valid_addr_excl=0x8000_1000,
+                )
+            )
+        ]
+
+    def get_mmio_devices_config(self) -> List[Tuple[BusSlaveOwnerInterface, MMIOAddressSpace]]:
+        return self.mmio_cfg
 
     def elaborate(self, platform):
         m = Module()
-        sync = m.d.sync
-        comb = m.d.comb
 
         cfg = self.mem_config
         bridge = m.submodules.bridge = GenericInterfaceToWishboneMasterBridge(generic_bus=self.generic_bus, wb_bus=self.wb_bus)
-        decoder = self.decoder = m.submodules.decoder = WishboneBusAddressDecoder(wb_bus=bridge.wb_bus, word_size=cfg.word_size)
-        
-        mem_decoder_cfg = (cfg.mem_addr, cfg.mem_size_words)
-        wb_mem_bus = decoder.port(mem_decoder_cfg)
-
-        gpio_decoder_cfg = (0x8000_0000, 0x1000)
-        wb_gpio_bus = decoder.port(gpio_decoder_cfg)
-
-        uart_decoder_cfg = (0x7000_0000, 0x1000)
-        # uart_gpio_bus = decoder.port(uart_decoder_cfg)
-
-
-        if platform:
-            led_r, led_g = platform.request("led_r"), platform.request("led_g")
-            # serial = platform.request("serial")
-        else:
-            led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
-            # serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
-        self.led_r, self.led_g = led_r, led_g
-        gpio_map = [led_r, led_g]
-        
-        from mtkcpu.units.mmio.gpio import GPIO_Wishbone
-        from mtkcpu.units.mmio.ebr import EBR_Wishbone
-        from mtkcpu.units.mmio.uart import UartTX
-        
-        m.submodules.ebr = self.ebr = EBR_Wishbone(wb_mem_bus, self.mem_config)
-        m.submodules.gpio = self.gpio = GPIO_Wishbone(wb_gpio_bus, signal_map=gpio_map)
-        # m.submodules.uart = self.uart = UartTX(serial=serial, clk_freq=12_000_000, baud_rate=115200)
-
-        # TODO very ugly
-        self.addressing_configs_bsp_gen = [
-            (gpio_decoder_cfg, self.gpio),
-            # (uart_decoder_cfg, self.uart)
-        ]
-        
+        self.decoder = m.submodules.decoder = WishboneBusAddressDecoder(wb_bus=bridge.wb_bus, word_size=cfg.word_size)
+        self.initialize_mmio_devices(self.decoder, m)
         pe = m.submodules.pe = self.pe = PriorityEncoder(width=len(self.ports))
         sorted_ports = [port for priority, port in sorted(self.ports.items())]
+        
+        # force 'elaborate' invocation for all mmio modules.
+        for mmio_module, addr_space in self.mmio_cfg:
+            setattr(m.submodules, addr_space.basename, mmio_module)
+        
         with m.If(~self.generic_bus.busy):
             # no transaction in-progress
             for i, p in enumerate(sorted_ports):

@@ -1,29 +1,39 @@
+from argparse import ArgumentError
 from nmigen import *
-from typing import List, OrderedDict
+from typing import List, Callable
 
-from mtkcpu.units.loadstore import BusSlaveOwnerInterface, WishboneBusRecord
-from mtkcpu.units.mmio.bspgen import BspGeneratable, MMIOPeriphConfig, MMIORegister
+from nmigen.build import Platform
+
+from mtkcpu.units.loadstore import BusSlaveOwnerInterface
+from mtkcpu.units.mmio.bspgen import BspGeneratable
+from mtkcpu.units.memory_interface import MMIOPeriphConfig, MMIORegister
 
 class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
-    def __init__(self, bus : WishboneBusRecord, signal_map : List[Signal]) -> None:
-        BusSlaveOwnerInterface.__init__(self, bus)
-        if len(signal_map) > bus.bus_width:
+    def __init__(self) -> None:
+        raise ArgumentError()
+
+    def __init__(self, signal_map_gen : Callable[[Platform], List[Signal]]) -> None:
+        BusSlaveOwnerInterface.__init__(self)
+        self.signal_map_gen = signal_map_gen
+
+    def sanity_check(self):
+        signal_map = self.signal_map
+        if len(signal_map) > 32:
             raise ValueError(f"Error: for now GPIO supports at most 32 signals, passed {len(signal_map)}")
         if len(signal_map) == 0:
             raise ValueError(f"Error: empty GPIO signal map passed! Disable it if not used.")
-        self.signal_map = signal_map
 
     def get_periph_config(self) -> MMIOPeriphConfig:
         bits=[
             (s.name, i) for i, s in enumerate(self.signal_map) if isinstance(s, Signal)
         ]
         # platform.request returns Record instance.
+        # TODO will throw KeyError in case of input signal
         bits += [
             (r['o'].name, i) for i, r in enumerate(self.signal_map) if isinstance(r, Record)
         ]
 
         cfg = MMIOPeriphConfig(
-            basename="gpio",
             regions=[],
             registers=[
                 MMIORegister(
@@ -33,12 +43,12 @@ class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
                     bits=bits
                 ),
             ],
-            first_valid_addr=0, # TODO thats very bad.. it will be filled in future.
-            last_valid_addr=0,
         )
         return cfg
 
     def elaborate(self, platform):
+        self.signal_map = self.signal_map_gen(platform)
+        self.sanity_check()
         m = self.init_owner_module()
         return m
 

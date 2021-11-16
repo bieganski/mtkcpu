@@ -79,7 +79,7 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, reg_init=[0 for _ in range(32)], with_rvfi=False, with_debug=True, mem_config=None):
+    def __init__(self, mem_config, reg_init=[0 for _ in range(32)], with_rvfi=False, with_debug=True):
 
         if len(reg_init) > 32:
             raise ValueError(
@@ -92,9 +92,6 @@ class MtkCpu(Elaboratable):
             )
             reg_init[0] = 0
 
-        if not mem_config:
-            raise ValueError("mem_config must be passed! legacy note: previously memory simulation used custom model, "
-            "at some point we started taking advantage of nMigen's 'Memory' class simulation model.")
         self.mem_config = mem_config
         # we need it in __init__ for bsp generation.
         self.arbiter = MemoryArbiter(mem_config=self.mem_config)
