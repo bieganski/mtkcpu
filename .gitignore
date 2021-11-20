@@ -9,5 +9,5 @@ __pycache__/
 dist/
 jtag.gtkw
 build/
+**/build
 **/tmp.elf
-bsp

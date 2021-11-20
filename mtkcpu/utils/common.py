@@ -45,9 +45,10 @@ class EBRMemConfig():
         
         d = dict([(k - start_addr, v) for k, v in mem_dict.memory.items()])
         if any([x < 0 for x in d.keys()]) or any([x >= num_bytes for x in d.keys()]):
-            raise ValueError(f"Passed MemoryContents contains initialized memory on addresses"
-                f"that doesn't fit into range [{start_addr}, {start_addr + num_bytes}]!"
-                f"(tried {mem_dict.memory})"
+            valid_range_fmt = f"[{hex(start_addr), hex(start_addr + num_bytes)}]"
+            raise ValueError(f"Passed MemoryContents contains initialized memory on addresses "
+                f"that doesn't fit into range {valid_range_fmt}!"
+                f"(tried {mem_dict})"
             )
         from math import log2
         mem_map = [0] * num_words
@@ -94,16 +95,14 @@ def compile_source(source_raw, output_elf_fname):
     from subprocess import Popen, PIPE
     from pathlib import Path
     import tempfile
+    from shutil import which
     
     COMPILER = "riscv-none-embed-gcc"
     GIT_ROOT = Path(Popen(['git', 'rev-parse', '--show-toplevel'], stdout=PIPE).communicate()[0].rstrip().decode('utf-8'))
-    LINKER_SCRIPT = GIT_ROOT / "./elf/linker.ld"
-    
-    p = Popen(["which", COMPILER], stdout=PIPE)
-    _, _ = p.communicate()
-    if p.returncode != 0:
-        raise ValueError(f"Error! Cannot find {COMPILER} compiler in your PATH!")
+    LINKER_SCRIPT = GIT_ROOT / "sw" / "common" / "linker.ld"
 
+    assert LINKER_SCRIPT.exists()
+    assert which(COMPILER)
     
     tmp_dir = tempfile.mkdtemp()
     asm_filename = f"{tmp_dir}/tmp.S"

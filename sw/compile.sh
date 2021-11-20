@@ -25,8 +25,8 @@ function red {
 
 
 
-
-LINKER=linker.ld
+set -x
+LINKER=common/linker.ld
 TOOL=riscv-none-embed
 OPT=-Os
 ARCH=rv32i

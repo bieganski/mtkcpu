@@ -15,9 +15,14 @@ TESTBENCHES = [
 ]
 
 CPU_TESTBENCHES = [
+    # CpuTestbenchCase(
+    #     name="GPIO LED ASM",
+    #     elf_path=Path("elf/unit/gpio_led.elf"),
+    #     try_compile=True
+    # ),
     CpuTestbenchCase(
-        name="GPIO LED",
-        elf_path=Path("elf/unit/gpio_led.elf"),
+        name="GPIO LED C++",
+        elf_path=Path("sw/blink_led/build/blink_led.elf"),
         try_compile=True
     ),
 ]
@@ -26,8 +31,6 @@ CPU_TESTBENCHES = [
 # def test_tb(_):
 #     pass
 
-# TODO
-# enable me in full-test mode (~80 secs).
-@cpu_testbench(CPU_TESTBENCHES)
-def test_tb(_):
-    pass
+# @cpu_testbench(CPU_TESTBENCHES)
+# def test_tb(_):
+#     pass

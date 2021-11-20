@@ -27,6 +27,12 @@ class MemState(Enum):
 class MemoryContents:
     memory: Dict[int, int]
 
+    def __repr__(self) -> str:
+        from pprint import pformat
+        return pformat(dict({
+            (hex(k), hex(v)) for k, v in self.memory.items()
+        }))
+
     @property
     def size(self):
         return len(self.memory)

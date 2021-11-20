@@ -157,7 +157,7 @@ class MtkCpu(Elaboratable):
         compare = m.submodules.compare = CompareUnit()
 
         # Current decoding state signals.
-        instr = Signal(32)
+        instr = self.instr = Signal(32)
         funct3 = Signal(3)
         funct7 = Signal(7)
         rd = Signal(5)
@@ -212,11 +212,11 @@ class MtkCpu(Elaboratable):
 
         pc = self.pc = Signal(32, reset=CODE_START_ADDR)
 
-        # assert ( popcount(active_unit) in [0, 1] )
+        # at most one active_unit at any time
         active_unit = ActiveUnit()
 
-        # this is not true for all instrutions, but in specific cases will be overwritten later
         comb += [
+            # following is not true for all instrutions, but in specific cases will be overwritten later
             imm.eq(instr[20:32]),
             uimm.eq(instr[12:]),
         ]
@@ -439,7 +439,6 @@ class MtkCpu(Elaboratable):
                     m.next = "WRITEBACK"
                     sync += active_unit.eq(0)
 
-                pc_offset = Signal(signed(32))
                 jal_offset = Signal(signed(21))
                 comb += jal_offset.eq(
                         Cat(
@@ -450,16 +449,10 @@ class MtkCpu(Elaboratable):
                         instr[31],
                     ).as_signed()
                 )
-                comb += pc_offset.eq(
-                    Mux(
-                        active_unit.jal,
-                        jal_offset, # TODO it doesn't work without helper variable 'jal_offset'. no idea why
-                        rs1val.as_signed() + imm, # TODO is it ok that it's signed?
-                    )
-                )
+                
                 pc_addend = Signal(signed(32))
                 sync += pc_addend.eq(
-                    Mux(active_unit.jal | active_unit.jalr, pc_offset, 4)
+                    Mux(active_unit.jal, jal_offset, 4)
                 )
 
                 branch_addend = Signal(signed(13))
@@ -477,8 +470,18 @@ class MtkCpu(Elaboratable):
                     with m.If(compare.condition_met):
                         sync += pc_addend.eq(branch_addend)
 
+                new_pc = Signal(32)
+                is_jalr_latch = Signal() # that's bad workaround
+                with m.If(active_unit.jalr):
+                    sync += is_jalr_latch.eq(1)
+                    sync += new_pc.eq(rs1val.as_signed() + imm)
+            
             with m.State("WRITEBACK"):
-                sync += pc.eq(pc + pc_addend)
+                with m.If(is_jalr_latch):
+                    sync += pc.eq(new_pc)
+                with m.Else():
+                    sync += pc.eq(pc + pc_addend)
+                sync += is_jalr_latch.eq(0)
 
                 # Here, rdval is already calculated. If neccessary, put it into register file.
                 should_write_rd = (

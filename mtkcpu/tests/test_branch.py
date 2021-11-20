@@ -17,11 +17,13 @@ BRANCH_TESTS = [
         timeout=10,
     ),
     MemTestCase(
+        # TODO that 'lui' assumes CODE_START_ADDR=0x1000, FIXME
         name="jump taken 'jalr'",
         source_type=MemTestSourceType.TEXT,
-        source="""
+        source=f"""
         .section code
-            jalr x10, x0, 8
+            lui  x2, 1
+            jalr x10, x2, {12}
             addi x5, x0, 10
             addi x5, x0, 20
         """,
@@ -30,18 +32,20 @@ BRANCH_TESTS = [
         timeout=10,
     ),
     MemTestCase(
+        # TODO that 'lui' assumes CODE_START_ADDR=0x1000, FIXME
         name="jump taken backward 'jalr'",
         source_type=MemTestSourceType.TEXT,
-        source="""
+        source=f"""
         .section code
-            jalr x10, x0, 12
+            lui x2, 1
+            jalr x10, x2, {16}
             addi x5, x0, 10
             addi x5, x0, 20
-            jalr x10, x0, -4
+            jalr x10, x2, {12}
         """,
         out_reg=5,
         out_val=20,
-        timeout=20,
+        timeout=50,
     ),
     # NOTE:
     # ppci got problems with compiling 'jal' and branching instructions, thus compile it and test ELF

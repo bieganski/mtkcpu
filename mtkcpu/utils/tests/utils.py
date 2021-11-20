@@ -15,6 +15,7 @@ from nmigen.sim.core import Active, Passive
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
+from mtkcpu.global_config import Config
 from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig, read_elf
 from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.memory import MemoryContents
@@ -154,8 +155,10 @@ def gpio_tb():
     idx1, idx2 = 0, 20
     signal_map[idx1] = led1
     signal_map[idx2] = led2
+    signal_map_gen = lambda platform: signal_map
 
-    m = GPIO_Wishbone(bus, signal_map)
+    m = GPIO_Wishbone(signal_map_gen)
+    m.init_bus_slave(bus)
     def f():
         def wait(timeout=10):
             for _ in range(timeout):
@@ -270,20 +273,29 @@ def unit_testbench(case: ComponentTestbenchCase):
         sim.run()
 
 
+# returns ELF path
+def compile_sw_project(proj_name : str) -> Path:
+    import subprocess
+    proj_dir = Config.sw_dir / proj_name
+    if not proj_dir.exists():
+        raise ValueError(f"Compilation failed: Directory {proj_dir} does not exists!")
+    process = subprocess.Popen(f"make -B", cwd=proj_dir, shell=True)
+    process.communicate()
+    elf_path = proj_dir / "build" / f"{proj_name}.elf"
+    if not elf_path.exists():
+        raise ValueError(f"Error: Compilation returned 0 (ok), but elf {elf_path} doesnt exists!")
+    return elf_path
+
 def cpu_testbench_test(case : CpuTestbenchCase):
     if case.try_compile:
-        s_name = case.elf_path.with_suffix(".S").absolute()
-        import subprocess
-        process = subprocess.Popen(f"./compile.sh {s_name}", cwd="elf", shell=True)
-        process.communicate()
-        if process.returncode:
-            raise ValueError(f"ERROR: compilation of {s_name} failed!")
+        proj_name = case.elf_path.parent.parent.name # hidden assumption - elf is named proj_dir.elf
+        compile_sw_project(proj_name)
         print("Ok, compile successed!")
+    
     program = read_elf(case.elf_path)
-
     mem_cfg = EBRMemConfig.from_mem_dict(
         start_addr=MEM_START_ADDR,
-        num_bytes=256,
+        num_bytes=1024,
         simulate=True,
         mem_dict=MemoryContents(program),
     )
@@ -296,23 +308,59 @@ def cpu_testbench_test(case : CpuTestbenchCase):
     sim = Simulator(cpu)
     sim.add_clock(1e-6)
 
-    def f():
+    def get_last_instr_addr(elfpath : Path):
+        from elftools.elf.elffile import ELFFile
+        elf = ELFFile(elfpath.open("rb"))
+        symtab = elf.get_section_by_name('.symtab')
+        assert symtab
+        from mtkcpu.global_config import Config
+        try:
+            sym = Config.after_main_sym_name
+            last_instr = symtab.get_symbol_by_name(sym)[0]
+        except IndexError:
+            raise ValueError(f"ERROR: {elfpath} ELF does not have {sym} symbol!")
+        e = last_instr.entry
+        addr = e.st_value
+        return addr
+    
+    last_instr_addr = get_last_instr_addr(case.elf_path)
+
+    def f(timeout=200_000):
         yield
-        arbiter = cpu.arbiter
-        a = []
-        for _ in range(300_000): # ~15 cycles per instr
-            led_r = yield arbiter.led_r
-            led_g = yield arbiter.led_g
-            if led_g + led_r:
-                a.append([led_r, led_g])
+        prev_instr = None
+        prev_pc = None
+        prev_led = None
+        for _ in range(timeout):
+            instr = yield cpu.instr
+            pc = yield cpu.pc
+            a = yield cpu.reg_write_port.addr
+            v = yield cpu.reg_write_port.data
+            en = yield cpu.reg_write_port.en
+            led = yield cpu.arbiter.gpio.signal_map[1]
+            addr = yield cpu.arbiter.generic_bus.addr
+            data = yield cpu.arbiter.generic_bus.write_data
+            if led != prev_led:
+                print(f"LED {led}")
+            prev_led = led
+            if en:
+                if a == 1:
+                    print(f"state ~ x1 (ra): {hex(v)}")
+            if instr != prev_instr:
+                print("====== instr:", hex(instr))
+            if pc != prev_pc:
+                print("====== pc:", hex(pc))
+            prev_instr = instr
+            prev_pc = pc
+            if pc == last_instr_addr:
+                print(f"== OK, 'main' function finished (reached instr at address {hex(last_instr_addr)})! Finishing sim..")
+                break
             yield
-        assert [1, 1] in a, a
-        assert [0, 1] in a, a # leds do switch eventually. 
 
     sim.add_sync_process(f)
     
     with sim.write_vcd("cpu.vcd"):
         sim.run()
+    print("== Waveform dumped to cpu.vcd file")
 
 
 def assert_mem_test(case: MemTestCase):
@@ -329,7 +377,7 @@ def assert_mem_test(case: MemTestCase):
 
     mem_cfg = EBRMemConfig.from_mem_dict(
         start_addr=MEM_START_ADDR,
-        num_bytes=256, # for sim support 2-byte addressing
+        num_bytes=1024,
         simulate=True,
         mem_dict=program
     )
@@ -516,6 +564,9 @@ gdb_report_data_abort enable
 #         with_ocd=test_case.with_ocd,
 #         with_checkpoints=test_case.with_checkpoints
 #     )
+
+# TODO
+# unify all functions below, we don't need it enumerated
 
 @parametrized
 def component_testbench(f, cases: List[ComponentTestbenchCase]):
