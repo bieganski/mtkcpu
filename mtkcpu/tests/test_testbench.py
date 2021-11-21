@@ -16,13 +16,13 @@ TESTBENCHES = [
 
 CPU_TESTBENCHES = [
     # CpuTestbenchCase(
-    #     name="GPIO LED ASM",
-    #     elf_path=Path("elf/unit/gpio_led.elf"),
+    #     name="GPIO LED C++",
+    #     elf_path=Path("sw/blink_led/build/blink_led.elf"),
     #     try_compile=True
     # ),
     CpuTestbenchCase(
-        name="GPIO LED C++",
-        elf_path=Path("sw/blink_led/build/blink_led.elf"),
+        name="UART C++",
+        elf_path=Path("sw/uart_tx/build/uart_tx.elf"),
         try_compile=True
     ),
 ]
@@ -31,6 +31,6 @@ CPU_TESTBENCHES = [
 # def test_tb(_):
 #     pass
 
-# @cpu_testbench(CPU_TESTBENCHES)
-# def test_tb(_):
-#     pass
+@cpu_testbench(CPU_TESTBENCHES)
+def test_tb(_):
+    pass

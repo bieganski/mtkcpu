@@ -1,6 +1,8 @@
+#include <stdint.h>
+
 #include "periph_baseaddr.h"
 #include "gpio.h"
-#include "stdint.h"
+#include "uart.h"
 
 #define __STRINGIFY(x) #x
 #define _STRINGIFY(x) __STRINGIFY(x)
@@ -19,12 +21,25 @@ void sleep(uint32_t ms) {
     }
 }
 
-int print(const char *format, ...) {
-    // TODO implement with UART
-    return 1;
+// int print(const char *format, ...) {
+//     // TODO 
+//     return 1;
+// }
+
+void uart_putc(char c) {
+    while(*((volatile uint32_t*)__tx_busy_addr));
+    *((volatile uint8_t*)__tx_data_addr) = c;
 }
 
-void _assert(int x, const char *msg) {
+void print(const char* msg) {
+    char c;
+    while(c = *(msg++)) {
+        uart_putc(c);
+    }
+    uart_putc('\n');
+}
+
+static void _assert(int x, const char *msg) {
   if (!x) {
     print(msg);
     while(true) {}

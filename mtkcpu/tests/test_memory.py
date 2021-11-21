@@ -113,6 +113,19 @@ MEMORY_TESTS = [
         mem_init=MemoryContents(memory={0x20: 5}),
     ),
     MemTestCase(
+        name="non-aligned 'lbu'",
+        source_type=MemTestSourceType.TEXT,
+        source=f"""
+        .section code
+            lbu x5, 0x21(x{fill_but_one.addr_reg_idx})
+        """,
+        timeout=10,
+        out_reg=5,
+        out_val=0xbe,
+        reg_init=fill_but_one(),
+        mem_init=MemoryContents(memory={0x20: 0xdeadbeef}),
+    ),
+    MemTestCase(
         name="simple 'sh'",
         source_type=MemTestSourceType.TEXT,
         source=f"""

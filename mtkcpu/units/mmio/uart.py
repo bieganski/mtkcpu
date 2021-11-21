@@ -23,7 +23,8 @@ from mtkcpu.units.mmio.bspgen import BspGeneratable
 from mtkcpu.units.memory_interface import MMIOPeriphConfig, MMIORegister
 
 class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
-    def __init__(self, serial, clk_freq, baud_rate):
+    def __init__(self, serial_record_gen, clk_freq, baud_rate):
+        BusSlaveOwnerInterface.__init__(self)
         self.rx_data = Signal(8)
         self.rx_ready = Signal()
         self.rx_ack = Signal()
@@ -40,17 +41,14 @@ class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
         self.tx_latch = None
         self.tx_fsm = None
 
-        self.serial = serial
+        self.serial_record_gen = serial_record_gen
 
         self.divisor = _divisor(
             freq_in=clk_freq, freq_out=baud_rate, max_ppm=50000)
 
     def get_periph_config(self) -> MMIOPeriphConfig:
         return MMIOPeriphConfig(
-            basename='uart',
             regions=[],
-            first_valid_addr=0, # XXX FIXME
-            last_valid_addr=0,
             registers=[
                 MMIORegister(
                     name="tx_busy",
@@ -62,7 +60,8 @@ class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
                 MMIORegister(
                     "tx_data",
                     addr=0x8,
-                    description="Data byte to be sent. Width of this register is 8 bits."
+                    description="Data byte to be sent. Width of this register is 8 bits.",
+                    bits=[],
                 ),
             ]
         )
@@ -72,32 +71,42 @@ class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
         sync = m.d.sync
         comb = m.d.comb
 
-        bus = self.get_wb_slave_bus()
+        wb_slave = self.get_wb_slave_bus()
+        cyc   = wb_slave.wb_bus.cyc
+        write_mask = wb_slave.wb_bus.we
+        addr  = wb_slave.wb_bus.adr
+        write_data  = wb_slave.wb_bus.dat_w
 
         with m.FSM():
             with m.State("IDLE"):
-                with m.If(bus.cyc):
-                    with m.Switch(bus.adr):
+                with m.If(cyc):
+                    with m.Switch(addr):
                         with m.Case(0x0):
-                            with m.If(bus.we == 0):
+                            with m.If(write_mask == 0):
                                 # read only.
                                 sync += [
                                     self.get_dat_r().eq(self.busy_mmio),
                                 ]
+                            m.next = "PARK"
                         with m.Case(0x8):
-                            with m.If(bus.we[0] == 1):
+                            with m.If(write_mask[0] == 1):
                                 # write only, of 8-bits width.
-                                comb += [
-                                    self.tx_data.eq(bus.dat_w[:8]),
-                                    self.tx_ready.eq(1),
-                                ]
+                                with m.If(self.tx_ack):
+                                    comb += [
+                                        self.tx_data.eq(write_data[:8]),
+                                        self.tx_ready.eq(1),
+                                    ]
+                                    m.next = "WAIT"
+            with m.State("WAIT"):
+                with m.If(self.tx_ack):
                     m.next = "PARK"
-            with m.State("PARK"): # TODO i think we can get rid of that FSM, and mark handled instantly.
+            with m.State("PARK"):
                 comb += self.mark_handled_stmt()
                 m.next = "IDLE"
 
     def elaborate(self, platform: Platform) -> Module:
         m = self.init_owner_module()
+        self.serial = self.serial_record_gen(platform, m)
 
         tx_counter = Signal(range(self.divisor))
         m.d.comb += self.tx_strobe.eq(tx_counter == 0)
@@ -145,61 +154,3 @@ class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
                     m.next = "IDLE"
 
         return m
-
-class _LoopbackTest(Elaboratable):
-    def __init__(self):
-        self.empty = Signal(reset=1)
-        self.data = Signal(8)
-        self.rx_strobe = Signal()
-        self.tx_strobe = Signal()
-        self.uart = None
-
-    def elaborate(self, platform: Platform) -> Module:
-        m = Module()
-
-        serial = platform.request("uart")
-        debug = platform.request("debug")
-
-        self.uart = UartTX(serial, clk_freq=12000000, baud_rate=115200)
-        m.submodules.uart = self.uart
-
-        arr = Array([Const(ord(x)) for x in "abcxyzpq!\n"])
-        max = max=len(arr)
-        idx = Signal(max)
-
-        with m.If(self.uart.tx_ack):
-            m.d.sync += [
-                idx.eq((idx + 1) % max),
-                self.uart.tx_data.eq(arr[idx]),
-            ]
-
-        m.d.comb += [
-            self.tx_strobe.eq(1),
-            self.uart.tx_ready.eq(1)
-        ]
-
-        m.d.comb += [
-            debug.eq(Cat(
-                serial.rx,
-                serial.tx,
-                self.uart.rx_strobe,
-                self.uart.tx_strobe,
-            ))
-        ]
-
-        return m
-
-
-if __name__ == "__main__":
-    plat = ICEBreakerPlatform()
-
-    # The debug pins are on the PMOD1A in the following order on the connector:
-    # 7 8 9 10 1 2 3 4
-    # Yes that means that the pins at the edge of the board come first
-    # and the pins further away from the edge second
-    plat.add_resources([
-        Resource("debug", 0, Pins("7 8 9 10 1 2 3 4", dir="o",
-                                    conn=("pmod", 0)), Attrs(IO_STANDARD="SB_LVCMOS"))
-    ])
-
-    plat.build(_LoopbackTest(), do_program=True)

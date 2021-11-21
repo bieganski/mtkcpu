@@ -204,16 +204,41 @@ class MemoryArbiter(Elaboratable, AddressManager):
         def gpio_gen(platform : Platform):
             if platform:
                 led_r, led_g = platform.request("led_r"), platform.request("led_g")
-                # serial = platform.request("serial")
             else:
                 led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
-                # serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
-            self.led_r, self.led_g = led_r, led_g # TODO this is obfuscated, but we need those signals for gpio simulation testbench
+            self.led_r, self.led_g = led_r, led_g # TODO this is obfuscated, but we need those signals for simulation testbench
             return [led_r, led_g]
 
-        # from mtkcpu.units.mmio.uart import UartTX
-        # m.submodules.uart = self.uart = UartTX(serial=serial, clk_freq=12_000_000, baud_rate=115200)
+        from mtkcpu.units.mmio.uart import UartTX
+        from nmigen.hdl.rec import Layout
+        from nmigen import Const
+
+        def uart_gen_serial_record(platform : Platform, m : Module):
+            if platform:
+                serial = platform.request("uart")
+                debug = platform.request("debug")
+                m.d.comb += [
+                    debug.eq(Cat(
+                        serial.tx,
+                        Const(0, 1), # GND
+                    ))
+                ]
+            else:
+                serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
+            self.serial = serial # TODO this is obfuscated, but we need those signals for simulation testbench
+            
+            return serial
+
         self.mmio_cfg = [
+            (
+                UartTX(serial_record_gen=uart_gen_serial_record, clk_freq=12_000_000, baud_rate=115200),
+                MMIOAddressSpace(
+                    ws=self.word_size,
+                    basename="uart",
+                    first_valid_addr_incl=0x7000_0000,
+                    last_valid_addr_excl=0x7000_1000,
+                )
+            ),
             (
                 EBR_Wishbone(self.mem_config),
                 MMIOAddressSpace(
@@ -430,17 +455,24 @@ class MemoryUnit(Elaboratable):
 
         load_res = Signal(signed(32))
 
+        addr_lsb = Signal(2)
+        m.d.comb += addr_lsb.eq(addr[:2]) # XXX
+
+        # allow naturally aligned addresses
+        # TODO trap on wrong address
         with m.If(store):
+            data = self.src2
             comb += [
-                word.eq(self.src2),
-                half_word.eq(self.src2[0:16]),
-                byte.eq(self.src2[0:8]),
+                word.eq(data),
+                half_word.eq(data.word_select(addr_lsb[1], 16)),
+                byte.eq(data.word_select(addr_lsb, 8)),
             ]
         with m.Else():
+            data = loadstore.read_data
             comb += [
-                word.eq(loadstore.read_data),
-                half_word.eq(loadstore.read_data[0:16]),
-                byte.eq(loadstore.read_data[0:8]),
+                word.eq(data),
+                half_word.eq(data.word_select(addr_lsb[1], 16)),
+                byte.eq(data.word_select(addr_lsb, 8))
             ]
 
         with m.If(~store):

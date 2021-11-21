@@ -318,14 +318,14 @@ def cpu_testbench_test(case : CpuTestbenchCase):
             sym = Config.after_main_sym_name
             last_instr = symtab.get_symbol_by_name(sym)[0]
         except IndexError:
-            raise ValueError(f"ERROR: {elfpath} ELF does not have {sym} symbol!")
+            raise ValueError(f"ERROR: {elfpath} ELF does not have {sym} symbol! Check your start.S file.")
         e = last_instr.entry
         addr = e.st_value
         return addr
     
     last_instr_addr = get_last_instr_addr(case.elf_path)
 
-    def f(timeout=200_000):
+    def gpio_fn(timeout=200_000):
         yield
         prev_instr = None
         prev_pc = None
@@ -355,6 +355,30 @@ def cpu_testbench_test(case : CpuTestbenchCase):
                 print(f"== OK, 'main' function finished (reached instr at address {hex(last_instr_addr)})! Finishing sim..")
                 break
             yield
+
+    def uart_tx_fn(timeout=50_000):
+        yield
+        prev_tx = None
+        txs = []
+        for _ in range(timeout):
+            pass
+            tx = yield cpu.arbiter.uart.serial.tx
+            if tx != prev_tx:
+                # tx data line edge
+                txs.append(tx)
+                prev_tx = tx
+            if len(txs) > 10:
+                print("OK, UART tx data line is working! sim passed")
+                # return # XXX
+            yield
+
+    elf_path_str = str(case.elf_path).lower()
+    if "gpio" in elf_path_str:
+        f = gpio_fn
+    elif "uart_tx" in elf_path_str:
+        f = uart_tx_fn
+    else:
+        assert False # TODO
 
     sim.add_sync_process(f)
     

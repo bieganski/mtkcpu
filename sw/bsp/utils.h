@@ -4,7 +4,9 @@
 
 void sleep(uint32_t us);
 
-int print(const char *format, ...);
+// int print(const char *format, ...); // TODO
+
+void print(const char *msg);
 
 void gpio_on(uint32_t offset);
 

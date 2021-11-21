@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 import logging
-from os import confstr
 from pathlib import Path
 from typing import Optional
 
+from nmigen.build.plat import Platform
 from nmigen.hdl.dsl import Module
-from nmigen_boards.icebreaker import ICEBreakerPlatform
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
@@ -18,10 +17,11 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
 
-def get_board_cpu(elf_path : Optional[Path]):
+def get_board_cpu(elf_path : Optional[Path] = None):
     if elf_path:
         mem = read_elf(elf_path, verbose=False)
         # logger.info(f"ELF {elf_path} memory content: {mem}")
+        print(f"== read elf: {len(mem)}*4 bytes = {len(mem) * 4} bytes")
         mem_config = EBRMemConfig.from_mem_dict(
             simulate=False,
             start_addr=CODE_START_ADDR,
@@ -37,10 +37,51 @@ def get_board_cpu(elf_path : Optional[Path]):
         )
     return MtkCpu(mem_config=mem_config)
 
+
+def get_platform() -> Platform:
+    from nmigen_boards.icebreaker import ICEBreakerPlatform
+    from nmigen.build.dsl import Resource, Pins, Attrs
+    
+    platform = ICEBreakerPlatform()
+
+    # for IceBreaker board - comes from 
+    # https://github.com/icebreaker-fpga/icebreaker-migen-examples/blob/master/uart/uart.py
+    # 
+    # The debug pins are on the PMOD1A in the following order on the connector:
+    # 7 8 9 10 1 2 3 4
+    # Yes that means that the pins at the edge of the board come first
+    # and the pins further away from the edge second
+    platform.add_resources([
+        Resource("debug", 0, Pins("7 8 9 10 1 2 3 4", dir="o",
+                                    conn=("pmod", 0)), Attrs(IO_STANDARD="SB_LVCMOS"))
+    ])
+
+    return platform
+    
+
 def build(elf_path : Path, do_program=True):
-    plat = ICEBreakerPlatform()
+    platform = get_platform()
     m = get_board_cpu(elf_path=elf_path)
-    plat.build(m, do_program=do_program)
+    platform.build(m, do_program=do_program)
+    logger.info(f"OK, Design was built successfully, printing out some stats..")
+    timing_report = Path("build/top.tim")
+    if not timing_report.exists():
+        raise ValueError(f"ERROR: Could not find {timing_report} timing report file in build artifacts!")
+    lines = timing_report.open().readlines()
+
+    def find_pattern_idx(lst, pat) -> Optional[int]:
+        maybe = [x for x in lst if pat in x]
+        try:
+            return lst.index(maybe[0])
+        except:
+            return None
+
+    max_freq_idx = find_pattern_idx(lines, "Max frequency for clock")
+    resources_idx = find_pattern_idx(lines, "Info: Device utilisation")
+    if not all([max_freq_idx, resources_idx]):
+        raise ValueError(f"Layout of {timing_report} file does not match predefined one!")
+    print(lines[max_freq_idx])
+    print("".join(lines[resources_idx:resources_idx+16])) # TODO probably more lines for different architectures
 
 
 def main():
@@ -60,15 +101,17 @@ def main():
     # needs to be called for bsp generation, as some objects attrs are set during 'elaborate()'
     # e.g. instantiating GPIO block needs platform.request calls (e.g. for LED), that's why it's done
     # in 'elaborate(self, platform).
-    def dummy_elaborate(e : Elaboratable, plat : Platform):
-        root : Module = e.elaborate(plat)
+    def dummy_elaborate(e : Elaboratable, platform : Platform):
+        e._MustUse__used = True
+        root : Module = e.elaborate(platform)
+        root._MustUse__used = True
         if isinstance(root, Instance):
             return
         for name in root._named_submodules:
             e = root._named_submodules[name]
-            dummy_elaborate(e, plat)
+            dummy_elaborate(e, platform)
         for e in root._anon_submodules:
-            dummy_elaborate(e, plat)
+            dummy_elaborate(e, platform)
 
     if args.build:
         proj_name = args.build
@@ -76,10 +119,10 @@ def main():
         elf_path = compile_sw_project(proj_name)
         build(elf_path=elf_path, do_program=args.program)
     elif args.gen_bsp:
-        cpu = get_board_cpu(elf_path=args.elf)
+        cpu = get_board_cpu()
+        platform = get_platform()
+        dummy_elaborate(cpu, platform)
         arbiter = cpu.arbiter
-        plat = ICEBreakerPlatform()
-        dummy_elaborate(arbiter, plat)
         assert isinstance(arbiter, AddressManager)
         owners, schemes = zip(*arbiter.get_mmio_devices_config())
         MemMapCodeGen.gen_bsp_sources(owners, schemes)
