@@ -3,7 +3,7 @@
 
 # mtkCPU
 
-mtkCPU is as simple and as clear as possible implementation of RiscV ISA in [nMigen](https://github.com/nmigen/nmigen). There is one main file [cpu.py](mtkcpu/cpu/cpu.py), that is including specific [units](./mtkcpu/units) (i.a. decoder, adder etc.)
+mtkCPU is as simple and as clear as possible implementation of RiscV ISA in [Amaranth HDL](https://github.com/amaranth-hdl/amaranth). There is one main file [cpu.py](mtkcpu/cpu/cpu.py), that is including specific [units](./mtkcpu/units) (i.a. decoder, adder etc.)
 
 
 ### Running tests
@@ -15,7 +15,7 @@ python3 mtkcpu/test_cpu.py
 
 ### Unit tests structure
 
-In general, all tests are done via `nmigen.back.pysim` backend. For best coverage and flexibility, you are able to **easily add your own tests, written in RiscV assembly**. For reference let's focus on simple test from `tests/reg_tests.py` file.
+In general, all tests are done via `amaranth.back.pysim` backend. For best coverage and flexibility, you are able to **easily add your own tests, written in RiscV assembly**. For reference let's focus on simple test from `tests/reg_tests.py` file.
 
 ```python
 REG_TESTS = [
@@ -85,13 +85,13 @@ For quick dive into `mtkCPU` most painless way is to first run existing test (or
 * `full_mem.gtkw` - More advanced memory interface.
 
 
-### About `nMigen`
+### About `Amaranth HDL` (previously `Amaranth HDL`)
 
-`nMigen` is Python framework for digital design, it can compile either to netlist understandable by [yosys](https://github.com/YosysHQ/yosys) or `Verilog` code (that you can place and route using vendor tools, i.a. `Vivado`)
+`Amaranth HDL` is a Python framework for digital design, it can compile either to netlist understandable by [yosys](https://github.com/YosysHQ/yosys) or `Verilog` code (that you can place and route using vendor tools, i.a. `Vivado`)
 
-### nMigen docs/tutorials
+### Amaranth HDL docs/tutorials
 
-* [Language guide](https://nmigen.info/nmigen/latest/lang.html)
+* [Language guide](https://amaranth-lang.org/docs/amaranth/latest/)
 * [Robert Baruch's introduction](https://github.com/RobertBaruch/nmigen-tutorial)
 * [LambdaConcept's Step by Step](http://blog.lambdaconcept.com/doku.php?id=nmigen:tutorial)
 * [Robert Baruch's refreshed RiscV playlist](https://www.youtube.com/playlist?list=PLEeZWGE3PwbZTypHq00G-yEX8TEI95lw4)

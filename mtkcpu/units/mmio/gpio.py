@@ -1,8 +1,8 @@
 from argparse import ArgumentError
-from nmigen import *
+from amaranth import *
 from typing import List, Callable
 
-from nmigen.build import Platform
+from amaranth.build import Platform
 
 from mtkcpu.units.loadstore import BusSlaveOwnerInterface
 from mtkcpu.units.mmio.bspgen import BspGeneratable

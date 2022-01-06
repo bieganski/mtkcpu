@@ -4,8 +4,8 @@ from enum import Enum
 from functools import reduce
 from operator import or_
 
-from nmigen import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
-from nmigen.hdl.rec import Layout
+from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
+from amaranth.hdl.rec import Layout
 
 from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.units.adder import AdderUnit, match_adder_unit

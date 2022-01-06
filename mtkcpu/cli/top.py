@@ -3,8 +3,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from nmigen.build.plat import Platform
-from nmigen.hdl.dsl import Module
+from amaranth.build.plat import Platform
+from amaranth.hdl.dsl import Module
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
@@ -40,7 +40,7 @@ def get_board_cpu(elf_path : Optional[Path] = None):
 
 def get_platform() -> Platform:
     from nmigen_boards.icebreaker import ICEBreakerPlatform
-    from nmigen.build.dsl import Resource, Pins, Attrs
+    from amaranth.build.dsl import Resource, Pins, Attrs
     
     platform = ICEBreakerPlatform()
 
@@ -94,10 +94,10 @@ def main():
     # parser.add_argument("--elf", type=Path, help="ELF to be used for build/sim")
     args = parser.parse_args()
 
-    from nmigen import Elaboratable, Instance
-    from nmigen.build.plat import Platform
+    from amaranth import Elaboratable, Instance
+    from amaranth.build.plat import Platform
     
-    # partially taken from nmigen/dsl.py (Module.elaborate method)
+    # partially taken from amaranth/dsl.py (Module.elaborate method)
     # needs to be called for bsp generation, as some objects attrs are set during 'elaborate()'
     # e.g. instantiating GPIO block needs platform.request calls (e.g. for LED), that's why it's done
     # in 'elaborate(self, platform).

@@ -2,8 +2,8 @@
 # https://lab.whitequark.org/notes/2016-10-18/implementing-an-uart-in-verilog-and-migen/
 
 from ctypes import ArgumentError
-from nmigen import *
-from nmigen.build import *
+from amaranth import *
+from amaranth.build import *
 from nmigen_boards.icebreaker import *
 
 

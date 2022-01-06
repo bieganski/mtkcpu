@@ -7,11 +7,11 @@ from typing import List, Optional, OrderedDict
 import pytest
 from pathlib import Path
 
-from nmigen.hdl.ast import Signal
-from nmigen.hdl.ir import Elaboratable, Fragment
-from nmigen.sim import Simulator
-from nmigen import Signal
-from nmigen.sim.core import Active, Passive
+from amaranth.hdl.ast import Signal
+from amaranth.hdl.ir import Elaboratable, Fragment
+from amaranth.sim import Simulator
+from amaranth import Signal
+from amaranth.sim.core import Active, Passive
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -104,7 +104,7 @@ def reg_test(
         reg_num is not None and expected_val is not None
     )
             
-    # Since nMigen's 'Memory' instance simulation in included,
+    # Since Amaranth HDL's 'Memory' instance simulation in included,
     # we don't need to use custom implementation (however some coverage drop
     # is present - 'Memory' class is assumed single-cycle-access, while
     # 'get_sim_memory_test' processing delay is random).
@@ -123,7 +123,7 @@ def reg_test(
         )
     )
 
-    # from nmigen.back import verilog
+    # from amaranth.back import verilog
     # s = verilog.convert(cpu)
     # open("cpu.v", "w").write(s)
 
@@ -425,7 +425,7 @@ def assert_mem_test(case: MemTestCase):
 # "jtag_fsm" - JTAG FSM
 def create_jtag_simulator(cpu):
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
-    # https://freenode.irclog.whitequark.org/nmigen/2020-07-26#27592720;
+    # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
     frag = Fragment.get(cpu, platform=None)
     jtag_fsm = frag.find_generated("debug", "jtag", "fsm")
     sim = Simulator(frag)

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Tuple
-from nmigen import Module, Signal
+from amaranth import Module, Signal
 
 @dataclass(frozen=True)
 class MMIORegion:

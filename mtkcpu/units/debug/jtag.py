@@ -1,6 +1,6 @@
-from nmigen import *
-from nmigen.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
-from nmigen.lib.cdc import FFSynchronizer
+from amaranth import *
+from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
+from amaranth.lib.cdc import FFSynchronizer
 
 from enum import IntEnum
 from typing import Dict, List, Tuple, AnyStr

@@ -1,4 +1,4 @@
-from nmigen import *
+from amaranth import *
 
 from mtkcpu.utils.common import EBRMemConfig
 from mtkcpu.units.loadstore import BusSlaveOwnerInterface, WishboneBusRecord

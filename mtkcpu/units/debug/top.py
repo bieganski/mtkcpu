@@ -1,6 +1,6 @@
 from typing import overload, Dict
-from nmigen.hdl.rec import Layout
-from nmigen import *
+from amaranth.hdl.rec import Layout
+from amaranth import *
 from enum import IntEnum
 
 from mtkcpu.units.debug.jtag import JTAGTap, JtagIR, JtagIRValue, DMISTAT, debug_module_get_width
@@ -208,7 +208,7 @@ assert all(map(lambda lst: 24 == reg_len(lst), command_regs.values()))
 
 
 def reg_make_rw(layout):
-    from nmigen.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
+    from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
     # assert all(len(x) == 2 for x in layout) or all(len(x) == 3 for x in layout)
 
     def f(x):

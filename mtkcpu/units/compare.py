@@ -1,4 +1,4 @@
-from nmigen import Elaboratable, Signal, Module
+from amaranth import Elaboratable, Signal, Module
 from mtkcpu.utils.isa import Funct3, InstrType
 from mtkcpu.utils.common import matcher
 

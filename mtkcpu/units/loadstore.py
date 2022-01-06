@@ -1,8 +1,8 @@
 from argparse import ArgumentError
 from dataclasses import dataclass
 from typing import Tuple, OrderedDict
-from nmigen import Cat, Signal, Elaboratable, Module, signed
-from nmigen.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
+from amaranth import Cat, Signal, Elaboratable, Module, signed
+from amaranth.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
 from mtkcpu.utils.common import matcher
 from mtkcpu.utils.isa import Funct3, InstrType
 from mtkcpu.utils.common import EBRMemConfig
@@ -180,7 +180,7 @@ class WishboneBusAddressDecoder(Elaboratable):
         return bus
 
 from typing import List, Tuple
-from nmigen.build import Platform
+from amaranth.build import Platform
 
 from mtkcpu.units.mmio.ebr import EBR_Wishbone
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
@@ -210,8 +210,8 @@ class MemoryArbiter(Elaboratable, AddressManager):
             return [led_r, led_g]
 
         from mtkcpu.units.mmio.uart import UartTX
-        from nmigen.hdl.rec import Layout
-        from nmigen import Const
+        from amaranth.hdl.rec import Layout
+        from amaranth import Const
 
         def uart_gen_serial_record(platform : Platform, m : Module):
             if platform:

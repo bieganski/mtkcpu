@@ -6,9 +6,9 @@ from subprocess import TimeoutExpired
 from time import time
 from typing import Optional
 from enum import Enum
-from nmigen.hdl.ast import Signal
-from nmigen.sim import Active, Settle, Tick, Passive
-from nmigen.hdl.ir import Elaboratable, Fragment
+from amaranth.hdl.ast import Signal
+from amaranth.sim import Active, Settle, Tick, Passive
+from amaranth.hdl.ir import Elaboratable, Fragment
 
 
 from mtkcpu.cpu.cpu import MtkCpu
@@ -18,7 +18,7 @@ from mtkcpu.units.debug.top import DMIReg, PROGBUF_MMIO_ADDR
 def find_fsm(top, *path):
     assert isinstance(top, Elaboratable)
     # ugly hack for retrieving jtag FSM state for 'traces=vcd_traces' variable
-    # https://freenode.irclog.whitequark.org/nmigen/2020-07-26#27592720;
+    # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
     frag = Fragment.get(top, platform=None)
     fsm = frag.find_generated(*path) 
     # returned fsm instance has got attributes "state" (for current state signal) and "encoding" for state names mapping 
@@ -115,7 +115,7 @@ def remote_jtag_send_response(conn, tdo):
     assert len(tdo) == 1
     conn.sendall(tdo)
 
-from nmigen import Signal
+from amaranth import Signal
 
 def get_state_name(fsm, num):
     states = fsm.encoding
