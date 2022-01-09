@@ -17,7 +17,7 @@ from mtkcpu.units.rvficon import RVFIController, rvfi_layout
 from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
 from mtkcpu.utils.common import matcher
-from mtkcpu.utils.isa import Funct3, InstrType, Funct7
+from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.top import DebugUnit
 

@@ -1,5 +1,5 @@
 from mtkcpu.utils.common import matcher
-from mtkcpu.utils.isa import InstrType
+from mtkcpu.cpu.isa import InstrType
 
 match_lui = matcher(
     [

@@ -4,7 +4,7 @@ from typing import Tuple, OrderedDict
 from amaranth import Cat, Signal, Elaboratable, Module, signed
 from amaranth.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
 from mtkcpu.utils.common import matcher
-from mtkcpu.utils.isa import Funct3, InstrType
+from mtkcpu.cpu.isa import Funct3, InstrType
 from mtkcpu.utils.common import EBRMemConfig
 
 
