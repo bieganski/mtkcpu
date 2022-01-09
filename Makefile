@@ -7,6 +7,9 @@ install:
 	bash ./install_toolchain.sh
 	poetry install
 
+update_local:
+	poetry run pip3 install --no-dependencies .
+
 bump_minor:
 	poetry run bump2version minor
 

@@ -9,11 +9,11 @@ PHDRS
 
 MEMORY
 {
-  ram  (wxai! r) : ORIGIN = 0x1000, LENGTH = 1K
+  ram  (wxai! r) : ORIGIN = {{ template_mem_start_addr }}, LENGTH = 1K
 }
 
 SECTIONS {
-	. = 0x1000;
+	. = {{ template_mem_start_addr }};
 	.init :
 	{
 		KEEP (*(SORT_NONE(.init)))

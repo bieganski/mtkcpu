@@ -253,8 +253,8 @@ class MemoryArbiter(Elaboratable, AddressManager):
                 MMIOAddressSpace(
                     ws=self.word_size,
                     basename="gpio",
-                    first_valid_addr_incl=0x8000_0000,
-                    last_valid_addr_excl=0x8000_1000,
+                    first_valid_addr_incl=0x9000_0000,
+                    last_valid_addr_excl=0x9000_1000,
                 )
             )
         ]

@@ -160,7 +160,7 @@ class MtkCpu(Elaboratable):
         instr = self.instr = Signal(32)
         funct3 = Signal(3)
         funct7 = Signal(7)
-        rd = Signal(5)
+        rd = self.rd = Signal(5)
         rs1 = Signal(5)
         rs2 = Signal(5)
         rs1val = Signal(32)

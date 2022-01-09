@@ -1,5 +1,3 @@
-import pytest
-
 from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import MemTestCase, MemTestSourceType, mem_test
@@ -17,31 +15,31 @@ BRANCH_TESTS = [
         timeout=10,
     ),
     MemTestCase(
-        # TODO that 'lui' assumes CODE_START_ADDR=0x1000, FIXME
         name="jump taken 'jalr'",
         source_type=MemTestSourceType.TEXT,
+        # takes advantage of fact, that for ppci compiler 'li' pseudoinstrution always
+        # consists of two assembly instructions: lui and addi 
         source=f"""
         .section code
-            lui  x2, 1
-            jalr x10, x2, {12}
+            li x2, {CODE_START_ADDR}
+            jalr x10, x2, {16}
             addi x5, x0, 10
             addi x5, x0, 20
         """,
         out_reg=5,
         out_val=20,
-        timeout=10,
+        timeout=30,
     ),
     MemTestCase(
-        # TODO that 'lui' assumes CODE_START_ADDR=0x1000, FIXME
         name="jump taken backward 'jalr'",
         source_type=MemTestSourceType.TEXT,
         source=f"""
         .section code
-            lui x2, 1
-            jalr x10, x2, {16}
+            li x2, {CODE_START_ADDR}
+            jalr x10, x2, {20}
             addi x5, x0, 10
             addi x5, x0, 20
-            jalr x10, x2, {12}
+            jalr x10, x2, {20 - 4}
         """,
         out_reg=5,
         out_val=20,
@@ -55,7 +53,7 @@ BRANCH_TESTS = [
         source_type=MemTestSourceType.RAW,
         source="""
             start:
-                jal x10, 0x0
+                jal x10, start
         """,
         out_reg=10,
         out_val=CODE_START_ADDR + 4,

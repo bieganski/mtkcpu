@@ -413,6 +413,17 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "riscv-model"
+version = "0.6.6"
+description = "RISC-V Model"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.extras]
+docs = ["sphinx", "python-docs-theme", "sphinx-argparse"]
+
+[[package]]
 name = "rope"
 version = "0.18.0"
 description = "a python refactoring library..."
@@ -482,7 +493,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "urllib3"
-version = "1.26.7"
+version = "1.26.8"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 category = "dev"
 optional = false
@@ -508,7 +519,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "899ecd8365e5e6ef4b928b4032f3544720a35b2610a052a57ae75596c72c8f46"
+content-hash = "3f675f1fdbb133e9443f58af8d8ccc1a15851193606ce0d60adea805c3c4da10"
 
 [metadata.files]
 amaranth = [
@@ -779,6 +790,10 @@ regex = [
     {file = "regex-2021.11.10-cp39-cp39-win_amd64.whl", hash = "sha256:83ee89483672b11f8952b158640d0c0ff02dc43d9cb1b70c1564b49abe92ce29"},
     {file = "regex-2021.11.10.tar.gz", hash = "sha256:f341ee2df0999bfdf7a95e448075effe0db212a59387de1a70690e4acb03d4c6"},
 ]
+riscv-model = [
+    {file = "riscv-model-0.6.6.tar.gz", hash = "sha256:dfff035b75ed36de33a99f95f1098697be308d4c7161a99407b82df22fd54d69"},
+    {file = "riscv_model-0.6.6-py3-none-any.whl", hash = "sha256:94fb3c93ac74fd3fa8c82a600a4c0030fdef020a8c81423aa40e4666687349b6"},
+]
 rope = [
     {file = "rope-0.18.0.tar.gz", hash = "sha256:786b5c38c530d4846aa68a42604f61b4e69a493390e3ca11b88df0fbfdc3ed04"},
 ]
@@ -828,8 +843,8 @@ typing-extensions = [
     {file = "typing_extensions-4.0.1.tar.gz", hash = "sha256:4ca091dea149f945ec56afb48dae714f21e8692ef22a395223bcd328961b6a0e"},
 ]
 urllib3 = [
-    {file = "urllib3-1.26.7-py2.py3-none-any.whl", hash = "sha256:c4fdf4019605b6e5423637e01bc9fe4daef873709a7973e195ceba0a62bbc844"},
-    {file = "urllib3-1.26.7.tar.gz", hash = "sha256:4987c65554f7a2dbf30c18fd48778ef124af6fab771a377103da0585e2336ece"},
+    {file = "urllib3-1.26.8-py2.py3-none-any.whl", hash = "sha256:000ca7f471a233c2251c6c7023ee85305721bfdf18621ebff4fd17a8653427ed"},
+    {file = "urllib3-1.26.8.tar.gz", hash = "sha256:0e7c33d9a63e7ddfcb86780aac87befc2fbddf46c58dbb487e0855f7ceec283c"},
 ]
 zipp = [
     {file = "zipp-3.7.0-py3-none-any.whl", hash = "sha256:b47250dd24f92b7dd6a0a8fc5244da14608f3ca90a5efcd37a3b1642fac9a375"},

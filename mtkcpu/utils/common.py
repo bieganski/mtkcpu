@@ -1,12 +1,19 @@
 from functools import reduce
-from itertools import starmap
+from itertools import starmap, count
+import logging
 from operator import or_
 from dataclasses import dataclass
 from typing import List, Optional
-from itertools import count
-from mtkcpu.asm.asm_dump import bytes_to_u32_arr, dump_instrs
+from subprocess import Popen, PIPE
+from pathlib import Path
+from shutil import which
+from tempfile import NamedTemporaryFile
 
-MEM_START_ADDR = 0x1000
+
+from mtkcpu.asm.asm_dump import bytes_to_u32_arr, dump_instrs
+from mtkcpu.global_config import Config
+
+MEM_START_ADDR = 0x8000_0000
 CODE_START_ADDR = MEM_START_ADDR
 
 
@@ -91,28 +98,24 @@ def read_elf(elf_path, verbose=False):
         mem.update(segment_mem)
     return mem
 
-def compile_source(source_raw, output_elf_fname):
-    from subprocess import Popen, PIPE
-    from pathlib import Path
-    import tempfile
-    from shutil import which
-    
+def compile_source(source_raw : str, output_elf : Path):
     COMPILER = "riscv-none-embed-gcc"
-    GIT_ROOT = Path(Popen(['git', 'rev-parse', '--show-toplevel'], stdout=PIPE).communicate()[0].rstrip().decode('utf-8'))
-    LINKER_SCRIPT = GIT_ROOT / "sw" / "common" / "linker.ld"
-
-    assert LINKER_SCRIPT.exists()
     assert which(COMPILER)
     
-    tmp_dir = tempfile.mkdtemp()
-    asm_filename = f"{tmp_dir}/tmp.S"
-
-    with open(asm_filename, 'w+') as asm_file:
-        asm_file.write(source_raw)
-
-    p = Popen([COMPILER, "-nostartfiles", f"-T{LINKER_SCRIPT}", asm_filename, "-o", output_elf_fname], stdout=PIPE)
+    with NamedTemporaryFile(suffix=".S", delete=False, mode="w+") as asm_file:
+        assert asm_file.write(source_raw)
+    with NamedTemporaryFile(suffix=".ld", delete=False) as ld_file:
+        Config.write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR)
+        
+    cmd = [COMPILER, "-march=rv32i", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
+    logging.critical(" ".join(cmd))
+    p = Popen(cmd, stdout=PIPE, stderr=PIPE)
     out, err = p.communicate()
     if p.returncode != 0:
         raise ValueError(f"Compilation error! source {source_raw}\ncouldn't get compiled! Error msg: \n{out}\n\n{err}")
+    else:
+        logging.info(f"OK, ELF file created! {output_elf}")
+        logging.info(out)
+        logging.info(err)
 
 

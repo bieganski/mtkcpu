@@ -80,6 +80,8 @@ def dump_instrs(u32_arr: List[int]):
     LOG([hex(instr) for instr in code], verbose=verbose)
     LOG(code, verbose=verbose)
     for i, instr in enumerate(code, 1):
+        from riscvmodel.code import decode
+        LOG(f"{hex(instr)}: {decode(instr)}", verbose=verbose)
         LOG(f"{i}: {format(instr, '032b')} ", verbose=verbose)
 
     LOG("====================================", verbose=verbose)

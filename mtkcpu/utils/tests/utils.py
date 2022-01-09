@@ -6,6 +6,7 @@ from itertools import count
 from typing import List, Optional, OrderedDict
 import pytest
 from pathlib import Path
+import subprocess
 
 from amaranth.hdl.ast import Signal
 from amaranth.hdl.ir import Elaboratable, Fragment
@@ -27,12 +28,12 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
 from mtkcpu.units.debug.top import DMIReg, DMICommand
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
+from mtkcpu.global_config import Config
 
 @unique
 class MemTestSourceType(str, Enum):
     TEXT = "text"
     RAW = "raw"
-    ELF = "elf"
 
 
 @dataclass
@@ -140,13 +141,19 @@ def get_code_mem(case: MemTestCase) -> MemoryContents:
         return MemoryContents(
             memory=dict(zip(count(CODE_START_ADDR, 4), code)),
         )
-    else:
+    elif case.source_type == MemTestSourceType.RAW:
         from mtkcpu.utils.common import read_elf, compile_source
         tmp_elf_path = "tmp.elf"
-        compile_source(case.source, tmp_elf_path)
+        source = f"""
+        .global start
+        {case.source}
+        """
+        compile_source(source, tmp_elf_path)
         return MemoryContents(
             memory=read_elf(tmp_elf_path, verbose=False)
         )
+    else:
+        assert False
 
 def gpio_tb():
     led1, led2 = Signal(), Signal()
@@ -275,12 +282,14 @@ def unit_testbench(case: ComponentTestbenchCase):
 
 # returns ELF path
 def compile_sw_project(proj_name : str) -> Path:
-    import subprocess
     proj_dir = Config.sw_dir / proj_name
+    Config.write_linker_script(proj_dir / ".." / "common" / "linker.ld", CODE_START_ADDR)
     if not proj_dir.exists():
         raise ValueError(f"Compilation failed: Directory {proj_dir} does not exists!")
     process = subprocess.Popen(f"make -B", cwd=proj_dir, shell=True)
     process.communicate()
+    if process.returncode:
+        raise ValueError(f"Compilation failed! {proj_name} (inside {proj_dir})")
     elf_path = proj_dir / "build" / f"{proj_name}.elf"
     if not elf_path.exists():
         raise ValueError(f"Error: Compilation returned 0 (ok), but elf {elf_path} doesnt exists!")
@@ -562,7 +571,7 @@ gdb_report_data_abort enable
     if with_ocd:
         run_openocd(delay=1)
     
-    cpu = MtkCpu(reg_init=[0x1000 + i for i in range(32)], with_debug=True)    
+    cpu = MtkCpu(reg_init=[0xabcd + i for i in range(32)], with_debug=True)    
     sim_gadgets = create_jtag_simulator(cpu)
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
 
