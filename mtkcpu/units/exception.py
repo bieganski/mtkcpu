@@ -82,7 +82,7 @@ class ExceptionUnit(Elaboratable):
             m.d.sync += [
                 # self.mstatus.r.mpie.eq(self.mstatus.r.mie),
                 # self.mstatus.r.mie.eq(0),
-                self.mepc.eq(self.m_pc)
+                self.mepc.eq(self.m_pc + 4)
             ]
             with m.If(~trap_pe.n):
                 m.d.sync += [

@@ -48,6 +48,12 @@ match_branch = matcher(
     ]
 )
 
+match_mret = matcher(
+    [
+        (InstrType.SYSTEM, Funct3.PRIV, Funct7.MRET),
+    ]
+)
+
 
 class ActiveUnitLayout(Layout):
     def __init__(self):
@@ -64,6 +70,7 @@ class ActiveUnitLayout(Layout):
                 ("jalr", 1),
                 ("branch", 1),
                 ("csr", 1),
+                ("mret", 1)
             ]
         )
 
@@ -300,12 +307,16 @@ class MtkCpu(Elaboratable):
             funct7.eq(instr[25:32]),
         ]
 
+        def fetch_with_new_pc(pc : Signal):
+            m.next = "FETCH"
+            m.d.sync += active_unit.eq(0)
+            m.d.sync += self.pc.eq(pc)
+
+
         def trap(cause: Cause):
             assert isinstance(cause, Cause)
             # generic part.
-            m.next = "FETCH"
-            m.d.sync += active_unit.eq(0)
-            m.d.sync += self.pc.eq(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+            fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
             # trap-specific part.
             m.d.comb += exception_unit.trap_cause_map[cause].eq(1)
 
@@ -391,6 +402,10 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.csr.eq(1)
                     ]
+                with m.Elif(match_mret(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.mret.eq(1)
+                    ]
                 with m.Elif(opcode == 0b0001111):
                     pass # fence
                 with m.Else():
@@ -432,7 +447,9 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(csr_unit.rd_val)
                     ]
-                    
+                with m.Elif(active_unit.mret):
+                    fetch_with_new_pc(exception_unit.mepc)
+
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
                         m.next = "WRITEBACK"

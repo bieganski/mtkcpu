@@ -88,7 +88,7 @@ CSR_TESTS = [
                 csrr x2, mepc
         """,
         out_reg=2,
-        out_val=CODE_START_ADDR + 3*4,
+        out_val=CODE_START_ADDR + 4*4,
         timeout=100,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -166,11 +166,28 @@ CSR_TESTS = [
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
     ),
+
+    MemTestCase(
+        name="mret continues program execution",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                .dword 0x0 // illegal instruction
+                addi x2, x0, 20
+            trap:
+                mret
+                addi x2, x0, 10
+        """,
+        out_reg=2,
+        out_val=20,
+        timeout=100,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
 ]
 
-
-# TODO:
-# * make sure that mcause etc. should not be cleared
 @mem_test(CSR_TESTS)
 def test_registers(_):
     pass
