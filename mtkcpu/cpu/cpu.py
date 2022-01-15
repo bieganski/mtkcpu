@@ -7,6 +7,8 @@ from operator import or_
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
 
+from mtkcpu.units.csr import CsrUnit, match_csr
+from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
@@ -20,15 +22,7 @@ from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.top import DebugUnit
-
-MEM_WORDS = 10
-
-
-class Error(Enum):
-    OK = 0
-    OP_CODE = 1
-    MISALIGNED_INSTR = 2
-    WRONG_INSTR = 3
+from mtkcpu.cpu.priv_isa import Cause
 
 
 match_jal = matcher(
@@ -69,6 +63,7 @@ class ActiveUnitLayout(Layout):
                 ("jal", 1),
                 ("jalr", 1),
                 ("branch", 1),
+                ("csr", 1),
             ]
         )
 
@@ -113,8 +108,6 @@ class MtkCpu(Elaboratable):
         self.mem_out_vld = Signal()
         self.mem_out_data = Signal(32)
 
-        self.err = Signal(Error, reset=Error.OK)
-
         self.DEBUG_CTR = Signal(32)
 
         self.halt = Signal()
@@ -122,8 +115,6 @@ class MtkCpu(Elaboratable):
         self.gprf_debug_addr = Signal(32)
         self.gprf_debug_data = Signal(32)
         self.gprf_debug_write_en = Signal()
-
-        self.TRAP_ADDR = 0xAAA0
 
     def elaborate(self, platform):
         self.m = m = Module()
@@ -155,6 +146,8 @@ class MtkCpu(Elaboratable):
             mem_port=arbiter.port(priority=0)
         )
         compare = m.submodules.compare = CompareUnit()
+        csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit()
+        exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(csr_unit=csr_unit)
 
         # Current decoding state signals.
         instr = self.instr = Signal(32)
@@ -167,8 +160,13 @@ class MtkCpu(Elaboratable):
         rs2val = Signal(32)
         rdval = Signal(32)  # calculated by unit, stored to register file
         imm = Signal(signed(12))
+        csr_idx = Signal(12)
         uimm = Signal(20)
         opcode = Signal(InstrType)
+        pc = self.pc = Signal(32, reset=CODE_START_ADDR)
+
+        # at most one active_unit at any time
+        active_unit = ActiveUnit()
 
         # Register file. Contains two read ports (for rs1, rs2) and one write port.
         regs = Memory(width=32, depth=32, init=self.reg_init)
@@ -177,6 +175,13 @@ class MtkCpu(Elaboratable):
         reg_write_port = (
             self.reg_write_port
         ) = m.submodules.reg_write_port = regs.write_port()
+
+
+        comb += [
+            exception_unit.m_instruction.eq(instr),
+            exception_unit.m_pc.eq(pc),
+            # TODO more
+        ]
 
 
         # DebugModule is able to read and write GPR values.
@@ -210,14 +215,10 @@ class MtkCpu(Elaboratable):
                 rs2val.eq(reg_read_port2.data),
             ]
 
-        pc = self.pc = Signal(32, reset=CODE_START_ADDR)
-
-        # at most one active_unit at any time
-        active_unit = ActiveUnit()
-
         comb += [
             # following is not true for all instrutions, but in specific cases will be overwritten later
             imm.eq(instr[20:32]),
+            csr_idx.eq(instr[20:32]),
             uimm.eq(instr[12:]),
         ]
 
@@ -262,7 +263,6 @@ class MtkCpu(Elaboratable):
                 adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
                 # adder.sub set somewhere below
             ]
-
         with m.Elif(active_unit.branch):
             comb += [
                 compare.funct3.eq(funct3),
@@ -270,6 +270,15 @@ class MtkCpu(Elaboratable):
                 adder.src1.eq(rs1val),
                 adder.src2.eq(rs2val),
                 # adder.sub set somewhere below
+            ]
+        with m.Elif(active_unit.csr):
+            comb += [
+                csr_unit.func3.eq(funct3),
+                csr_unit.csr_idx.eq(csr_idx),
+                csr_unit.rs1.eq(rs1),
+                csr_unit.rs1val.eq(rs1val),
+                csr_unit.rd.eq(rd),
+                csr_unit.en.eq(1),
             ]
 
         comb += [
@@ -291,17 +300,19 @@ class MtkCpu(Elaboratable):
             funct7.eq(instr[25:32]),
         ]
 
-        self.EBREAK = Signal()
-        self.FENCE = Signal()
-
-        sync += self.EBREAK.eq(0)
-        sync += self.FENCE.eq(0)
+        def trap(cause: Cause):
+            assert isinstance(cause, Cause)
+            # generic part.
+            m.next = "FETCH"
+            m.d.sync += active_unit.eq(0)
+            m.d.sync += self.pc.eq(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+            # trap-specific part.
+            m.d.comb += exception_unit.trap_cause_map[cause].eq(1)
 
         with m.FSM():
             with m.State("FETCH"):
                 with m.If(pc & 0b11):
-                    comb += self.err.eq(Error.MISALIGNED_INSTR)
-                    m.next = "FETCH"  # loop
+                    trap(Cause.FETCH_MISALIGNED)
                 with m.Else():
                     sync += [
                         ibus.en.eq(1),
@@ -323,11 +334,10 @@ class MtkCpu(Elaboratable):
                 with m.Else():
                     m.next = "WAIT_FETCH"
             with m.State("DECODE"):
+                m.next = "EXECUTE"
                 # here, we have registers already fetched into rs1val, rs2val.
                 with m.If(instr & 0b11 != 0b11):
-                    comb += self.err.eq(Error.OP_CODE)
-                    m.next = "DECODE"  # loop TODO
-
+                    trap(Cause.ILLEGAL_INSTRUCTION)
                 with m.If(match_logic_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.logic.eq(1),
@@ -377,19 +387,14 @@ class MtkCpu(Elaboratable):
                         active_unit.branch.eq(1),
                         adder.sub.eq(1),
                     ]
-                with m.Elif(opcode == 0b1110011):
-                    # EBREAK/ECALL
-                    sync += self.EBREAK.eq(1)
+                with m.Elif(match_csr(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.csr.eq(1)
+                    ]
                 with m.Elif(opcode == 0b0001111):
-                    # FENCE
-                    sync += self.FENCE.eq(1)
+                    pass # fence
                 with m.Else():
-                    # wrong instruction code:
-                    # set proper mcause and jump intro trap
-                    m.next = "FETCH"
-                    comb += self.err.eq(Error.WRONG_INSTR)
-                    sync += self.pc.eq(self.TRAP_ADDR)
-                m.next = "EXECUTE"
+                    trap(Cause.ILLEGAL_INSTRUCTION)
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
                     sync += [
@@ -413,9 +418,7 @@ class MtkCpu(Elaboratable):
                     ]
                 with m.Elif(active_unit.lui):
                     sync += [
-                        rdval.eq(
-                            (rs1val & 0x0000_0FFF) | Cat(Const(0, 12), uimm)
-                        ),
+                        rdval.eq(Cat(Const(0, 12), uimm)),
                     ]
                 with m.Elif(active_unit.auipc):
                     sync += [
@@ -425,11 +428,19 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(pc + 4),
                     ]
-                # with m.Elif(active_unit.branch):
-                #     pass
-
+                with m.Elif(active_unit.csr):
+                    sync += [
+                        rdval.eq(csr_unit.rd_val)
+                    ]
+                    
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
+                        m.next = "WRITEBACK"
+                        sync += active_unit.eq(0)
+                    with m.Else():
+                        m.next = "EXECUTE"
+                with m.Elif(active_unit.csr):
+                    with m.If(csr_unit.vld):
                         m.next = "WRITEBACK"
                         sync += active_unit.eq(0)
                     with m.Else():
@@ -441,7 +452,7 @@ class MtkCpu(Elaboratable):
 
                 jal_offset = Signal(signed(21))
                 comb += jal_offset.eq(
-                        Cat(
+                    Cat(
                         Const(0, 1),
                         instr[21:31],
                         instr[20],
@@ -497,6 +508,7 @@ class MtkCpu(Elaboratable):
                             match_auipc(opcode, funct3, funct7),
                             match_jal(opcode, funct3, funct7),
                             match_jalr(opcode, funct3, funct7),
+                            match_csr(opcode, funct3, funct7),
                         ],
                     )
                     & (rd != 0)
@@ -505,44 +517,5 @@ class MtkCpu(Elaboratable):
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
                 m.next = "FETCH"
-
-        # TODO
-        # That piece of code comes from minerva CPU, for now it's only copy-pasted.
-        # Let's make it work.
-        # if self.with_rvfi:
-        #     cpu.d.comb += [
-        #         rvficon.d_insn.eq(decoder.instruction),
-        #         rvficon.d_rs1_addr.eq(Mux(decoder.rs1_re, decoder.rs1, 0)),
-        #         rvficon.d_rs2_addr.eq(Mux(decoder.rs2_re, decoder.rs2, 0)),
-        #         rvficon.d_rs1_rdata.eq(Mux(decoder.rs1_re, d_src1, 0)),
-        #         rvficon.d_rs2_rdata.eq(Mux(decoder.rs2_re, d_src2, 0)),
-        #         rvficon.d_stall.eq(d.stall),
-        #         rvficon.x_mem_addr.eq(loadstore.x_addr[2:] << 2),
-        #         rvficon.x_mem_wmask.eq(
-        #             Mux(loadstore.x_store, loadstore.x_mask, 0)
-        #         ),
-        #         rvficon.x_mem_rmask.eq(
-        #             Mux(loadstore.x_load, loadstore.x_mask, 0)
-        #         ),
-        #         rvficon.x_mem_wdata.eq(loadstore.x_store_data),
-        #         rvficon.x_stall.eq(x.stall),
-        #         rvficon.m_mem_rdata.eq(loadstore.m_load_data),
-        #         rvficon.m_fetch_misaligned.eq(exception.m_fetch_misaligned),
-        #         rvficon.m_illegal_insn.eq(m.sink.illegal),
-        #         rvficon.m_load_misaligned.eq(exception.m_load_misaligned),
-        #         rvficon.m_store_misaligned.eq(exception.m_store_misaligned),
-        #         rvficon.m_exception.eq(exception.m_raise),
-        #         rvficon.m_mret.eq(m.sink.mret),
-        #         rvficon.m_branch_taken.eq(m.sink.branch_taken),
-        #         rvficon.m_branch_target.eq(m.sink.branch_target),
-        #         rvficon.m_pc_rdata.eq(m.sink.pc),
-        #         rvficon.m_stall.eq(m.stall),
-        #         rvficon.m_valid.eq(m.valid),
-        #         rvficon.w_rd_addr.eq(Mux(gprf_wp.en, gprf_wp.addr, 0)),
-        #         rvficon.w_rd_wdata.eq(Mux(gprf_wp.en, gprf_wp.data, 0)),
-        #         rvficon.mtvec_r_base.eq(exception.mtvec.r.base),
-        #         rvficon.mepc_r_value.eq(exception.mepc.r),
-        #         rvficon.rvfi.connect(self.rvfi),
-        #     ]
 
         return m

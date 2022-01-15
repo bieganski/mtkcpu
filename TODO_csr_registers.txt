@@ -1,0 +1,47 @@
+== THOSE CSRS ARE USED BY LINUX KERNEL
+
+
+
+CSR_CAUSE		interrupt or trap, zero na początku
+CSR_EPC			instr that was interrupted
+CSR_IE			(timer) interrupt enable
+CSR_IP			(timer) interrupt pending
+CSR_MHARTID 		tied to zero
+CSR_MISA		rv32i bits
+CSR_PMPADDR0
+CSR_PMPCFG0
+CSR_SATP		superv. addr. transl. prot - bare vs sv32, ppn (root page number <22 bits> * 4KB=page size)
+CSR_SCRATCH		do nothing
+CSR_STATUS		global xIE (TODO co to znaczy), mem protection between priv. levels
+
+CSR_TVAL		exception specific info # instead of mbadaddr
+CSR_TVEC		handler addr TODO
+
+
+s/m/u ret
+ecall
+wfi: 			wfi
+
+
+./include/asm/csr.h:# define CSR_CAUSE  CSR_MCAUSE
+./include/asm/csr.h:# define CSR_CAUSE  CSR_SCAUSE
+./include/asm/csr.h:# define CSR_EPC    CSR_MEPC
+./include/asm/csr.h:# define CSR_EPC    CSR_SEPC
+./include/asm/csr.h:# define CSR_IE             CSR_MIE
+./include/asm/csr.h:# define CSR_IE             CSR_SIE
+./include/asm/csr.h:# define CSR_IP             CSR_MIP
+./include/asm/csr.h:# define CSR_IP             CSR_SIP
+./include/asm/csr.h:#define CSR_MHARTID         0xf14
+./include/asm/csr.h:#define CSR_MISA            0x301
+./include/asm/csr.h:#define CSR_PMPADDR0                0x3b0
+./include/asm/csr.h:#define CSR_PMPCFG0         0x3a0
+./include/asm/csr.h:#define CSR_SATP            0x180
+./include/asm/csr.h:# define CSR_SCRATCH        CSR_MSCRATCH
+./include/asm/csr.h:# define CSR_SCRATCH        CSR_SSCRATCH
+./include/asm/csr.h:# define CSR_STATUS CSR_MSTATUS
+./include/asm/csr.h:# define CSR_STATUS CSR_SSTATUS
+./include/asm/csr.h:# define CSR_TVAL   CSR_MTVAL
+./include/asm/csr.h:# define CSR_TVAL   CSR_STVAL
+./include/asm/csr.h:# define CSR_TVEC   CSR_MTVEC
+./include/asm/csr.h:# define CSR_TVEC   CSR_STVEC
+

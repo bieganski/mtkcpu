@@ -17,6 +17,7 @@ from amaranth.sim.core import Active, Passive
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
+from mtkcpu.units.csr import CsrUnit
 from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig, read_elf
 from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.memory import MemoryContents
@@ -124,11 +125,32 @@ def reg_test(
         )
     )
 
+    csr_unit : CsrUnit = cpu.csr_unit
+    # frag = Fragment.get(cpu, platform=None)
+    # main_fsm = frag.find_generated("fsm")
+    e = cpu.exception_unit
+    sim_traces = [
+        # main_fsm.state,
+        e.m_instruction,
+        e.mtval.value,
+        csr_unit.mtvec.base,
+        csr_unit.mtvec.mode,
+        cpu.instr,
+        cpu.pc,
+        csr_unit.rs1,
+        csr_unit.csr_idx,
+        csr_unit.rd,
+        csr_unit.rd_val,
+        csr_unit.vld,
+        csr_unit.ONREAD,
+        csr_unit.ONWRITE,
+    ]
+
     # from amaranth.back import verilog
     # s = verilog.convert(cpu)
     # open("cpu.v", "w").write(s)
 
-    with sim.write_vcd("cpu.vcd"):
+    with sim.write_vcd("cpu.vcd", "cpu.gtkw", traces=sim_traces):
         sim.run()
 
     if expected_mem is not None:
@@ -464,8 +486,6 @@ def create_jtag_simulator(cpu):
     data0_r = cpu.debug.dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
-        cpu.EBREAK,
-        cpu.FENCE,
         cpu.debug.dmi_op,
         cpu.debug.dmi_address,
         cpu.debug.dmi_data,

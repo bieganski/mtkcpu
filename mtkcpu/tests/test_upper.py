@@ -17,14 +17,14 @@ UPPER_TESTS = [
         timeout=10,
     ),
     MemTestCase(
-        name="overwrite 'lui'",
+        name="overwrite lower bits 'lui'",
         source_type=MemTestSourceType.TEXT,
         source="""
         .section code
             lui x1, 0xfffff
         """,
         out_reg=1,
-        out_val=Bits(uint=0xFFFFF0AA, length=32).uint,
+        out_val=Bits(uint=0xFFFFF000, length=32).uint,
         reg_init=RegistryContents.empty(value=0xAA),
         timeout=10,
     ),

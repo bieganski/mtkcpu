@@ -2,12 +2,13 @@
 asm.o
 asm.S
 *.vcd
-xpack-riscv-none-embed-gcc-8.3.0-2.3
+xpack-riscv-none-embed-gcc-*
 *.swp
 __pycache__/
 **/__pycache__/
 dist/
-jtag.gtkw
+*.gtkw
 build/
 **/build
 **/tmp.elf
+sw/*/linker.ld

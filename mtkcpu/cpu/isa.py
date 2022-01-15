@@ -2,20 +2,27 @@ from enum import Enum, unique
 
 
 class Funct3(int, Enum):
-    ADD = SUB = ADDI = B = JALR = BEQ = 0b000
-    SLL = SLLI = H = BNE = 0b001
-    SLTU = 0b011
-    SLT = SLTI = W = 0b010
+    ADD = SUB = ADDI = B = JALR = BEQ = PRIV = 0b000
+    SLL = SLLI = H = BNE = CSRRW = 0b001
+    SLTU = CSRRC = 0b011
+    SLT = SLTI = W = CSRRS = 0b010
     XOR = BU = BLT = 0b100
-    SRL = SRLI = HU = BGE = 0b101
+    SRL = SRLI = HU = BGE = CSRRWI = 0b101
     SRA = SRAI = 0b101
-    OR = BLTU = 0b110
-    AND = BGEU = 0b111
+    OR = BLTU = CSRRSI = 0b110
+    AND = BGEU = CSRRCI = 0b111
 
 
 class Funct7(int, Enum):
     ADD = SRL = SLL = SRLI = SLLI = 0b0000000
     SUB = SRA = SRAI = 0b0100000
+
+
+class Funct12(int, Enum):
+    ECALL = 0b000000000000
+    EBREAK = 0b000000000001
+    WFI = 0b000100000101
+    MRET = 0b001100000010
 
 
 @unique
@@ -29,6 +36,7 @@ class InstrType(int, Enum):
     ALU = 0b0110011
     LOAD = 0b0000011
     STORE = 0b0100011
+    SYSTEM = 0b1110011 # TODO check two last bits
 
 
 @unique

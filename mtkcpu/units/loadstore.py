@@ -296,7 +296,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
             raise ValueError(f"Negative priority passed! {priority} < 0.")
         if priority in self.ports:
             raise ValueError(
-                "Conflicting priority passed to MemoryArbiter.port()"
+                f"Conflicting priority passed to MemoryArbiter.port(): {priority}"
             )
         port = self.ports[priority] = LoadStoreInterface()
         return port
