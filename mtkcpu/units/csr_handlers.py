@@ -8,8 +8,6 @@ from mtkcpu.cpu.priv_isa import *
 from mtkcpu.utils.common import CODE_START_ADDR
 
 class RegisterResetValue:
-    excluded_from_init = ["zero"]
-
     def __init__(self, layout) -> None:
         self.layout = layout
         self.sanity_check()
@@ -21,12 +19,12 @@ class RegisterResetValue:
         return sum([x[1] for x in self.layout])
 
     def set_reset(self, rec : Record):
-        defined_fields : Dict[str, int] = self.field_values()
+        fields : Dict[str, int] = self.field_values()
         for name, sig in rec.fields.items():
             if isinstance(sig, Signal):
-                reset_val = defined_fields.get(name, None)
+                reset_val = fields.get(name, None)
                 if reset_val is None:
-                    logging.info(f"set_reset: could not find signal with name '{name}' among {defined_fields.keys()}. Default value (0) will be used")
+                    logging.info(f"set_reset: could not find signal with name '{name}' among {fields.keys()}. Default value (0) will be used")
                 else:
                     logging.info(f"setting reset val {hex(reset_val)} to signal {name}")
                     sig.reset = reset_val
@@ -38,23 +36,22 @@ class RegisterResetValue:
     
     @property
     def value(self) -> int:
-        field_vals = self.field_values()
+        fields = self.field_values()
         res, off = 0, 0
         for name, width, *_ in self.layout:
-            if not any(x in name for x in self.excluded_from_init):
-                res |= field_vals[name] << off
+            res |= fields.get(name, 0) << off # zero initialize
             off += width
         return res
 
-    def sanity_check(self):
-        fields = self.field_values()
-        for name, *_ in self.layout:
-            if any(x in name for x in self.excluded_from_init):
-                continue # zero-initialized, don't bother
-            val = fields.get(name, None)
-            if val is None:
-                raise ValueError(f"RegisterReadValue: field '{name}' not initialized! Need {[x[0] for x in self.layout]}, got {fields}")
+    @property
+    def layout_field_names(self):
+        return [name for name, *_  in self.layout]
 
+    def sanity_check(self):
+        for name in self.field_values().keys():
+            if name not in self.layout_field_names:
+                raise ValueError(f"name {name} does not match known from layout {self.layout}")
+        
 class RegisterCSR():
     def __init__(self, csr_idx, layout, reset_value_t):
         self._reset_value : RegisterResetValue= reset_value_t(layout)
@@ -131,27 +128,21 @@ class MTVEC(RegisterCSR):
 class MTVAL(ReadOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
-            return {
-                "value": 0x0
-            }
+            return {}
     def __init__(self):
         super().__init__(CSRIndex.MTVAL, flat_layout, __class__.RegValueLocal)
 
 class MEPC(ReadOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
-            return {
-                "value": 0x0
-            }
+            return {}
     def __init__(self):
         super().__init__(CSRIndex.MEPC, flat_layout, __class__.RegValueLocal)
 
 class MSCRATCH(RegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
-            return {
-                "value": 0x0,
-            }
+            return {}
     def __init__(self):
         super().__init__(CSRIndex.MSCRATCH, flat_layout, __class__.RegValueLocal)
 
@@ -165,18 +156,13 @@ class MSCRATCH(RegisterCSR):
 class MHARTID(ReadOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
-            return {
-                "value": 0x0
-            }
+            return {}
     def __init__(self):
         super().__init__(CSRIndex.MHARTID, flat_layout, __class__.RegValueLocal)
 
 class MCAUSE(ReadOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
-            return {
-                "ecode": 0x0,
-                "interrupt" : 0x0,
-            }
+            return {}
     def __init__(self):
         super().__init__(CSRIndex.MCAUSE, mcause_layout, __class__.RegValueLocal)
