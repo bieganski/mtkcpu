@@ -54,7 +54,8 @@ class RegisterResetValue:
         
 class RegisterCSR():
     def __init__(self, csr_idx, layout, reset_value_t):
-        self._reset_value : RegisterResetValue= reset_value_t(layout)
+        self.name = self.__class__.__name__.lower()
+        self._reset_value : RegisterResetValue = reset_value_t(layout)
         bits = len(self._reset_value)
         assert bits == 32
         self.rec = Record(__class__.reg_make_rw(layout))
@@ -94,8 +95,13 @@ class RegisterCSR():
 
 
 class ReadOnlyRegisterCSR(RegisterCSR):
+    # user doesn't have way to change it's read value.
     def handle_write(self):
         self.handler_notify_comb()
+
+class WriteOnlyRegisterCSR(RegisterCSR):
+    # only user is able to affect it's read value.
+    pass
 
 class MISA(ReadOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
@@ -108,6 +114,7 @@ class MISA(ReadOnlyRegisterCSR):
         super().__init__(CSRIndex.MISA, misa_layout, __class__.RegValueLocal)
 
 
+# TODO make me WriteOnlyRegisterCSR
 class MTVEC(RegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
@@ -139,6 +146,7 @@ class MEPC(ReadOnlyRegisterCSR):
     def __init__(self):
         super().__init__(CSRIndex.MEPC, flat_layout, __class__.RegValueLocal)
 
+# TODO make it WriteOnlyRegisterCSR
 class MSCRATCH(RegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
@@ -166,3 +174,64 @@ class MCAUSE(ReadOnlyRegisterCSR):
             return {}
     def __init__(self):
         super().__init__(CSRIndex.MCAUSE, mcause_layout, __class__.RegValueLocal)
+
+class MTIME(ReadOnlyRegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRNonStandardIndex.MTIME, flat_layout, __class__.RegValueLocal)
+
+
+class MTIMECMP(WriteOnlyRegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRNonStandardIndex.MTIMECMP, flat_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        m = self.get_m()
+        # From https://forums.sifive.com/t/how-to-clear-interrupt-in-interrupt-handler/2781:
+        # The timer interrupt for example is cleared with writing a new value to the mtimecmp register (which must be higher than the current timer value).
+        m.d.sync += [
+            self.csr_unit.mip.mtip.eq(0)
+        ]
+        self.handler_notify_comb()
+
+
+class MSTATUS(RegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRIndex.MSTATUS, mstatus_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        m = self.get_m()
+        m.d.sync += [
+            self.rec.r.eq(self.rec.w) # TODO dangerous (doesn't implement WARL) - change it
+        ]
+        self.handler_notify_comb()
+
+class MIE(WriteOnlyRegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRIndex.MIE, mie_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        m = self.get_m()
+        # TODO
+        self.handler_notify_comb()
+
+# TODO
+# For now it's fully readonly - doesn't support software interrupts,
+# normally triggered via write to {m|s|u}sip field.
+class MIP(ReadOnlyRegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRIndex.MIP, mip_layout, __class__.RegValueLocal)

@@ -1,4 +1,4 @@
-from mtkcpu.cpu.priv_isa import Cause
+from mtkcpu.cpu.priv_isa import *
 from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
@@ -138,7 +138,7 @@ CSR_TESTS = [
                 csrr x2, mcause
         """,
         out_reg=2,
-        out_val=Cause.ILLEGAL_INSTRUCTION,
+        out_val=TrapCause.ILLEGAL_INSTRUCTION,
         timeout=100,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -161,7 +161,7 @@ CSR_TESTS = [
                 csrr x2, mcause
         """,
         out_reg=2,
-        out_val=Cause.FETCH_MISALIGNED,
+        out_val=TrapCause.FETCH_MISALIGNED,
         timeout=100,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -183,6 +183,32 @@ CSR_TESTS = [
         out_reg=2,
         out_val=20,
         timeout=100,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+    
+    MemTestCase(
+        name="timer interrupt",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrr x2, {int(CSRNonStandardIndex.MTIME)}
+                addi x2, x2, 128 # interupt in ~100 cycles
+                csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
+                li x5, {1 << get_layout_field_offset(mie_layout, 'mtie')}
+                csrw mie, x5
+                li x5, {1 << get_layout_field_offset(mstatus_layout, 'mie')}
+                csrw mstatus, x5
+            loop:
+                j loop
+            trap:
+                addi x15, x0, 123
+        """,
+        out_reg=15,
+        out_val=123,
+        timeout=2000,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
     ),

@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Union
 
 from amaranth import Signal, Elaboratable, Module
 
@@ -29,6 +29,11 @@ class CsrUnit(Elaboratable):
             MSCRATCH(),
             MHARTID(),
             MCAUSE(),
+            MTIME(),
+            MTIMECMP(),
+            MSTATUS(),
+            MIE(),
+            MIP(),
         }
         
         def sanity_check():
@@ -39,27 +44,64 @@ class CsrUnit(Elaboratable):
         sanity_check()
         return regs
 
-    def reg_by_addr(self, addr : CSRIndex) -> RegisterCSR:
+    def reg_by_addr(self, addr : Union[CSRIndex, CSRNonStandardIndex]) -> RegisterCSR:
         all = [x for x in self.csr_regs if x.csr_idx == addr]
         if not all:
-            raise ValueError(f"CSR with address {addr} not defined!")
+            raise ValueError(f"CSR with address {hex(addr)} not defined!")
         return all[0]
     
-    @property
-    def mtvec(self):
-        return self.reg_by_addr(CSRIndex.MTVEC).rec.r
+    # @property
+    # def mtvec(self):
+    #     return self.reg_by_addr(CSRIndex.MTVEC).rec.r
     
-    @property
-    def mtval(self):
-        return self.reg_by_addr(CSRIndex.MTVAL).rec.r
+    # @property
+    # def mtval(self):
+    #     return self.reg_by_addr(CSRIndex.MTVAL).rec.r
 
-    @property
-    def mepc(self):
-        return self.reg_by_addr(CSRIndex.MEPC).rec.r
+    # @property
+    # def mepc(self):
+    #     return self.reg_by_addr(CSRIndex.MEPC).rec.r
 
-    @property
-    def mcause(self):
-        return self.reg_by_addr(CSRIndex.MCAUSE).rec.r
+    # @property
+    # def mcause(self):
+    #     return self.reg_by_addr(CSRIndex.MCAUSE).rec.r
+    
+    # @property
+    # def mstatus(self):
+    #     return self.reg_by_addr(CSRIndex.MSTATUS).rec.r
+
+    # @property
+    # def mtime(self):
+    #     return self.reg_by_addr(CSRNonStandardIndex.MTIME).rec.r
+
+    # @property
+    # def mtimecmp(self):
+    #     # exception: mtimecp doesn't use rec.r at all, as written only from external source
+    #     return self.reg_by_addr(CSRNonStandardIndex.MTIMECMP).rec.w
+
+    # @property
+    # def mie(self):
+    #     # exception: mie doesn't use rec.r at all, as written only from external source
+    #     return self.reg_by_addr(CSRIndex.MIE).rec.w
+    
+    # @property
+    # def mip(self):
+    #     # TODO for now it's read only, in future it no longer will be
+    #     return self.reg_by_addr(CSRIndex.MIP).rec.r
+
+    def __getattr__(self, name):
+        for reg in self.csr_regs:
+            if reg.name == name:
+                if isinstance(reg, WriteOnlyRegisterCSR):
+                    return reg.rec.w
+                elif isinstance(reg, ReadOnlyRegisterCSR):
+                    return reg.rec.r
+                elif isinstance(reg, RegisterCSR):
+                    return reg.rec.r
+                else:
+                    assert False
+        raise ValueError(f"CSRUnit: Not found register named {name}")
+
 
 
     def __init__(self):
@@ -88,8 +130,9 @@ class CsrUnit(Elaboratable):
         m.d.comb += self.ONREAD.eq(1)
         with m.Switch(self.csr_idx):
             for reg in self.csr_regs:
+                register = reg.rec.w if isinstance(reg, WriteOnlyRegisterCSR) else reg.rec.r
                 with m.Case(reg.csr_idx):
-                    m.d.sync += self.rd_val.eq(reg.rec.r)
+                    m.d.sync += self.rd_val.eq(register)
 
     def on_write(self):
         m : Module = self.m
@@ -97,7 +140,9 @@ class CsrUnit(Elaboratable):
         with m.Switch(self.csr_idx):
             for reg in self.csr_regs:
                 with m.Case(reg.csr_idx):
-                    m.d.sync += reg.rec.w.eq(self.rs1val)  # VERY NOT TRUE XXX
+                    if isinstance(reg, ReadOnlyRegisterCSR):
+                        continue
+                    m.d.sync += reg.rec.w.eq(self.rs1val)  # VERY NOT TRUE FOR CSRR{S|C} with rs1 != x0
 
     def elaborate(self, platform):
         m = self.m = Module()

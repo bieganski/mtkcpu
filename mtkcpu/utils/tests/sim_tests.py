@@ -1,10 +1,11 @@
+from cmath import exp
 from dataclasses import dataclass
 from mtkcpu.units.debug.top import DebugCSR
 import socket
 from functools import reduce
 from subprocess import TimeoutExpired
 from time import time
-from typing import Optional
+from typing import Callable, Optional, Any
 from enum import Enum
 from amaranth.hdl.ast import Signal
 from amaranth.sim import Active, Settle, Tick, Passive
@@ -370,7 +371,7 @@ def get_sim_register_test(
     cpu: MtkCpu,
     timeout_cycles: int,
     reg_num: Optional[int],
-    expected_val: Optional[int],
+    expected_val: Any,
     default_timeout_extra: int = 25,
 ):
     check_reg_content = reg_num is not None
@@ -386,7 +387,12 @@ def get_sim_register_test(
                 addr = yield cpu.reg_write_port.addr
                 if addr == reg_num:
                     val = yield cpu.reg_write_port.data
-                    if check_reg_content and (val != expected_val):
+                    if isinstance(expected_val, Callable):
+                        cond = expected_val(val)
+                    else:
+                        # anything that implements '=='
+                        cond = val != expected_val
+                    if check_reg_content and cond:
                         # TODO that mechanism for now allows for only one write to observed register per test,
                         # extend it if neccessary.
                         print(

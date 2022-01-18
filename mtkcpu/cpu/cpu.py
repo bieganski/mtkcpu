@@ -3,6 +3,7 @@ from __future__ import with_statement
 from enum import Enum
 from functools import reduce
 from operator import or_
+from typing import Union
 
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
@@ -22,7 +23,7 @@ from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.top import DebugUnit
-from mtkcpu.cpu.priv_isa import Cause
+from mtkcpu.cpu.priv_isa import IrqCause, TrapCause
 
 
 match_jal = matcher(
@@ -115,10 +116,6 @@ class MtkCpu(Elaboratable):
         self.mem_out_vld = Signal()
         self.mem_out_data = Signal(32)
 
-        self.DEBUG_CTR = Signal(32)
-
-        self.halt = Signal()
-
         self.gprf_debug_addr = Signal(32)
         self.gprf_debug_data = Signal(32)
         self.gprf_debug_write_en = Signal()
@@ -141,8 +138,6 @@ class MtkCpu(Elaboratable):
         if self.with_debug:
             m.submodules.debug = self.debug = DebugUnit(self)
             self.debug_bus = arbiter.port(priority=1)
-
-        sync += self.DEBUG_CTR.eq(self.DEBUG_CTR + 1)
 
 
         # CPU units used.
@@ -183,6 +178,19 @@ class MtkCpu(Elaboratable):
             self.reg_write_port
         ) = m.submodules.reg_write_port = regs.write_port()
 
+        # Timer management.
+        mtime = self.mtime = Signal(32)
+        sync += mtime.eq(mtime + 1)
+        comb += csr_unit.mtime.eq(mtime)
+
+        self.halt = Signal()
+        with m.If(csr_unit.mstatus.mie & csr_unit.mie.mtie):
+            with m.If(mtime == csr_unit.mtimecmp):
+                # 'halt' signal needs to be cleared when CPU jumps to trap handler.
+                sync += [
+                    self.halt.eq(1),
+                ]
+
 
         comb += [
             exception_unit.m_instruction.eq(instr),
@@ -191,24 +199,26 @@ class MtkCpu(Elaboratable):
         ]
 
 
+        # TODO
         # DebugModule is able to read and write GPR values.
-        if self.with_debug:
-            comb += self.halt.eq(self.debug.HALT)
-        else:
-            comb += self.halt.eq(0)
+        # if self.with_debug:
+        #     comb += self.halt.eq(self.debug.HALT)
+        # else:
+        #     comb += self.halt.eq(0)
 
-        with m.If(self.halt):
-            comb += [
-                reg_read_port1.addr.eq(self.gprf_debug_addr),
-                reg_write_port.addr.eq(self.gprf_debug_addr),
-                reg_write_port.en.eq(self.gprf_debug_write_en)
-            ]
+        # with m.If(self.halt):
+        #     comb += [
+        #         reg_read_port1.addr.eq(self.gprf_debug_addr),
+        #         reg_write_port.addr.eq(self.gprf_debug_addr),
+        #         reg_write_port.en.eq(self.gprf_debug_write_en)
+        #     ]
 
-            with m.If(self.gprf_debug_write_en):
-                comb += reg_write_port.data.eq(self.gprf_debug_data)
-            with m.Else():
-                comb += self.gprf_debug_data.eq(reg_read_port1.data)
-
+        #     with m.If(self.gprf_debug_write_en):
+        #         comb += reg_write_port.data.eq(self.gprf_debug_data)
+        #     with m.Else():
+        #         comb += self.gprf_debug_data.eq(reg_read_port1.data)
+        with m.If(0):
+            pass
         with m.Else():
             comb += [
                 reg_read_port1.addr.eq(rs1),
@@ -313,28 +323,34 @@ class MtkCpu(Elaboratable):
             m.d.sync += self.pc.eq(pc)
 
 
-        def trap(cause: Cause):
-            assert isinstance(cause, Cause)
+        def trap(cause: Union[TrapCause, IrqCause], interrupt=False):
+            assert isinstance(cause, TrapCause) or isinstance(cause, IrqCause) 
             # generic part.
             fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
             # trap-specific part.
-            m.d.comb += exception_unit.trap_cause_map[cause].eq(1)
+            e = exception_unit
+            notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
+            m.d.comb += notifiers[cause].eq(1)
 
         with m.FSM():
             with m.State("FETCH"):
-                with m.If(pc & 0b11):
-                    trap(Cause.FETCH_MISALIGNED)
+                with m.If(self.halt):
+                    sync += self.halt.eq(0)
+                    trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                 with m.Else():
-                    sync += [
-                        ibus.en.eq(1),
-                        ibus.store.eq(0),
-                        ibus.addr.eq(pc),
-                        ibus.mask.eq(0b1111),
-                    ]
-                    with m.If(ibus.en & ~ibus.busy):
-                        m.next = "WAIT_FETCH"
+                    with m.If(pc & 0b11):
+                        trap(TrapCause.FETCH_MISALIGNED)
                     with m.Else():
-                        m.next = "FETCH"
+                        sync += [
+                            ibus.en.eq(1),
+                            ibus.store.eq(0),
+                            ibus.addr.eq(pc),
+                            ibus.mask.eq(0b1111),
+                        ]
+                        with m.If(ibus.en & ~ibus.busy):
+                            m.next = "WAIT_FETCH"
+                        with m.Else():
+                            m.next = "FETCH"
             with m.State("WAIT_FETCH"):
                 with m.If(ibus.ack):
                     sync += [
@@ -348,7 +364,7 @@ class MtkCpu(Elaboratable):
                 m.next = "EXECUTE"
                 # here, we have registers already fetched into rs1val, rs2val.
                 with m.If(instr & 0b11 != 0b11):
-                    trap(Cause.ILLEGAL_INSTRUCTION)
+                    trap(TrapCause.ILLEGAL_INSTRUCTION)
                 with m.If(match_logic_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.logic.eq(1),
@@ -409,7 +425,7 @@ class MtkCpu(Elaboratable):
                 with m.Elif(opcode == 0b0001111):
                     pass # fence
                 with m.Else():
-                    trap(Cause.ILLEGAL_INSTRUCTION)
+                    trap(TrapCause.ILLEGAL_INSTRUCTION)
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
                     sync += [

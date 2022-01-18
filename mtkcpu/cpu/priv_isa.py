@@ -5,6 +5,24 @@ from enum import IntEnum, unique
 
 from mtkcpu.cpu.csr import *
 
+
+# TODO move me to proper location
+from typing import List, Tuple
+def get_layout_field_offset(layout : List[Tuple[str, int]], field : str):
+    offset = 0
+    for name, width, *_ in layout:
+        if name != field:
+            offset += width
+        else:
+            return offset
+    raise ValueError(f"field {field} not found among layout {layout}!")
+
+@unique
+class CSRNonStandardIndex(IntEnum):
+    # RiscV privileged ISA defines CSR address range 0x7C0-0x7FF as 'Non-standard read/write'
+    MTIME = 0x7c0
+    MTIMECMP = 0x7c1
+
 @unique
 class CSRIndex(IntEnum):
     MVENDORID   = 0xF11
@@ -37,8 +55,8 @@ class CSRIndex(IntEnum):
     DCSR        = 0x7b0
     DPC         = 0x7b1
 
-
-class Cause(IntEnum):
+@unique
+class TrapCause(IntEnum):
     FETCH_MISALIGNED     = 0
     FETCH_ACCESS_FAULT   = 1
     ILLEGAL_INSTRUCTION  = 2
@@ -53,7 +71,9 @@ class Cause(IntEnum):
     FETCH_PAGE_FAULT     = 12
     LOAD_PAGE_FAULT      = 13
     STORE_PAGE_FAULT     = 15
-    # interrupts
+
+@unique
+class IrqCause(IntEnum):
     U_SOFTWARE_INTERRUPT = 0
     S_SOFTWARE_INTERRUPT = 1
     M_SOFTWARE_INTERRUPT = 3
