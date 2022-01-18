@@ -76,12 +76,6 @@ class ExceptionUnit(Elaboratable):
         trap_pe = m.submodules.trap_pe = PriorityEncoder(16)
         for k, v in self.trap_cause_map.items():
             m.d.comb += trap_pe.i[k].eq(v)
-
-        m.d.sync += [
-            self.mip.msip.eq(self.software_interrupt),
-            self.mip.mtip.eq(self.timer_interrupt),
-            self.mip.meip.eq(self.external_interrupt)
-        ]
         
         interrupt_pe = m.submodules.interrupt_pe = PriorityEncoder(16)
         m.d.comb += [
@@ -92,6 +86,11 @@ class ExceptionUnit(Elaboratable):
 
         m.d.comb += self.m_raise.eq(~trap_pe.n | ~interrupt_pe.n & self.mstatus.mie)
         with m.If(self.m_raise):
+            m.d.sync += [
+                self.mip.msip.eq(self.software_interrupt),
+                self.mip.mtip.eq(self.timer_interrupt),
+                self.mip.meip.eq(self.external_interrupt)
+            ]
             m.d.sync += [
                 # self.mstatus.r.mpie.eq(self.mstatus.r.mie),
                 # self.mstatus.r.mie.eq(0),

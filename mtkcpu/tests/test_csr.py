@@ -212,6 +212,57 @@ CSR_TESTS = [
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
     ),
+    MemTestCase(
+        name="mip.mtip asserted",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrr x2, {int(CSRNonStandardIndex.MTIME)}
+                addi x2, x2, 128 # interupt in ~100 cycles
+                csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
+                li x5, {1 << get_layout_field_offset(mie_layout, 'mtie')}
+                csrw mie, x5
+                li x5, {1 << get_layout_field_offset(mstatus_layout, 'mie')}
+                csrw mstatus, x5
+            loop:
+                j loop
+            trap:
+                csrr x15, mip
+        """,
+        out_reg=15,
+        out_val=1 << get_layout_field_offset(mip_layout, 'mtip'),
+        timeout=2000,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+    MemTestCase(
+        name="mip.mtip deasserted",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrr x2, {int(CSRNonStandardIndex.MTIME)}
+                addi x2, x2, 128 # interupt in ~100 cycles
+                csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
+                li x5, {1 << get_layout_field_offset(mie_layout, 'mtie')}
+                csrw mie, x5
+                li x5, {1 << get_layout_field_offset(mstatus_layout, 'mie')}
+                csrw mstatus, x5
+            loop:
+                j loop
+            trap:
+                csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2  // trigger mip.mtip clear
+                csrr x15, mip
+        """,
+        out_reg=15,
+        out_val=0,
+        timeout=2000,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
 ]
 
 @mem_test(CSR_TESTS)
