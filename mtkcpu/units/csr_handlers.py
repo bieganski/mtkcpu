@@ -139,12 +139,20 @@ class MTVAL(ReadOnlyRegisterCSR):
     def __init__(self):
         super().__init__(CSRIndex.MTVAL, flat_layout, __class__.RegValueLocal)
 
-class MEPC(ReadOnlyRegisterCSR):
+class MEPC(RegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
             return {}
     def __init__(self):
         super().__init__(CSRIndex.MEPC, flat_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        m = self.get_m()
+        m.d.sync += [
+            self.rec.r.eq(self.rec.w)
+        ]
+        self.handler_notify_comb()
+
 
 # TODO make it WriteOnlyRegisterCSR
 class MSCRATCH(RegisterCSR):

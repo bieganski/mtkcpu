@@ -1,3 +1,4 @@
+from asyncore import write
 from pathlib import Path
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.utils.common import EBRMemConfig, read_elf
@@ -25,7 +26,8 @@ from riscv_trace_csv import RiscvInstructionTraceEntry, RiscvInstructionTraceCsv
 """
 def riscv_dv_sim_process(cpu : MtkCpu, csv_output : Path = Path("test.csv")):
     def aux():
-        csv_writer = RiscvInstructionTraceCsv(csv_fd=csv_output.open("w"))
+        csv_output_fd = csv_output.open("w")
+        csv_writer = RiscvInstructionTraceCsv(csv_fd=csv_output_fd)
         csv_writer.start_new_trace()
         prev_instr = 0x0
 
@@ -40,10 +42,27 @@ def riscv_dv_sim_process(cpu : MtkCpu, csv_output : Path = Path("test.csv")):
             pc : int = yield cpu.pc
 
             if instr != prev_instr:
-                # new instruction - everything 
+                # new instruction - everything
+                opcode = yield cpu.opcode
+                funct3 = yield cpu.funct3
+                funct7 = yield cpu.funct7
+                rd = yield cpu.rd
+                from mtkcpu.cpu.cpu import match_jal, match_jalr, match_branch, match_csr, matcher
+                skipped = [
+                    match_jal,
+                    match_jalr,
+                    match_branch,
+                    match_csr,
+                ]
                 instr_disas = disassemble(instr)
                 logging.info(f"{hex(instr)} : {instr_disas}")
                 instr_str = str(instr_disas) if instr_disas else "unknown"
+                
+                # if any([f(opcode, funct3, funct7) for f in skipped]):
+                #     prev_instr = instr # force further tick yields
+                #     csv_output_fd.write(f"# {hex(instr)}: {instr_str}\n")
+                #     continue  # enough?
+                
                 entry = RiscvInstructionTraceEntry()
                 entry.pc = hex(pc)[2:]
                 entry.instr_str = instr_str
@@ -53,38 +72,42 @@ def riscv_dv_sim_process(cpu : MtkCpu, csv_output : Path = Path("test.csv")):
                 entry.mode = "3"  # 3 = machine mode
                 # entry.gpr value is unknown, need to calculate it
 
-                if instr == 0 or instr == 0x73:
-                    # wrong instr (TODO trap) or 'ecall' 
+                if instr == 0x73: # 'ecall' - Spike simulation finishes with ecall. By default we compare with Spike.
                     logging.critical(f"found {hex(instr)} : {instr_str} intruction: finishing simulation")
                     return
-                else:
-                    # compute entry.csv
-                    # TODO
-                    # it will break on all instructions that do not perform register write,
-                    # e.g. blt (without link)
-                    timeout_cyc = 20
-                    found = False
-                    for _ in range(timeout_cyc):
-                        en = yield cpu.reg_write_port.en
-                        if en:
-                            rd = yield cpu.reg_write_port.addr
-                            data = yield cpu.reg_write_port.data
-                            if instr_disas and getattr(instr_disas, "rd", None):
-                                if rd != instr_disas.rd:
-                                    raise ValueError(f"CPU logic error (instr {hex(instr)} : {instr_str}): destination register {rd} doesn't match expected {instr_disas.rd}")
+                
+                timeout_cyc = 50
+                found = False
+                
+                for _ in range(timeout_cyc):
+                    if (yield cpu.writeback):
+                        if not (yield cpu.should_write_rd):
+                            logging.info(f"detected instruction that doesn't write to rd. - {instr_str}")
                             found = True
-                            entry.gpr = [ f"{reg_name}:{hex(data)[2:]}" ]
+                            csv_output_fd.write(f"# {hex(instr)}: {instr_str}\n")
                             break
-                        yield
-                    if not found:
-                        raise ValueError("No register write observed!")
+                        en = yield cpu.reg_write_port.en
+                        assert en
+                        rd = yield cpu.reg_write_port.addr
+                        data = yield cpu.reg_write_port.data
+                        if instr_disas and getattr(instr_disas, "rd", None) is not None:
+                            if rd != instr_disas.rd:
+                                raise ValueError(f"{hex(instr)} reg {rd} != expected {instr_disas.rd}")
+                            else:
+                                found = True
+                                entry.gpr = [ f"{reg_name}:{hex(data)[2:]}" ]
+                                break
+                    yield
+
+                if not found:
+                    raise ValueError("No register write observed!")
                 csv_writer.write_trace_entry(entry)
             prev_instr = instr
             yield
     return aux
 
 RISCV_DV_START_ADDR = 0x8000_0000 # same as in riscv-dv/scripts/link.ld
-RISCV_DV_TEST_ELF = Path("/home/mateusz/github/riscv-dv/out_2022-01-07/asm_test/riscv_arithmetic_basic_test_0.o")
+RISCV_DV_TEST_ELF = Path("/home/mateusz/github/riscv-dv/out_2022-01-16/asm_test/riscv_arithmetic_basic_test_0.o")
 
 def test_riscv_dv():
     import sys

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import with_statement
+from asyncore import write
 from enum import Enum
 from functools import reduce
 from operator import or_
@@ -153,8 +154,8 @@ class MtkCpu(Elaboratable):
 
         # Current decoding state signals.
         instr = self.instr = Signal(32)
-        funct3 = Signal(3)
-        funct7 = Signal(7)
+        funct3 = self.funct3 = Signal(3)
+        funct7 = self.funct7 = Signal(7)
         rd = self.rd = Signal(5)
         rs1 = Signal(5)
         rs2 = Signal(5)
@@ -164,7 +165,7 @@ class MtkCpu(Elaboratable):
         imm = Signal(signed(12))
         csr_idx = Signal(12)
         uimm = Signal(20)
-        opcode = Signal(InstrType)
+        opcode = self.opcode = Signal(InstrType)
         pc = self.pc = Signal(32, reset=CODE_START_ADDR)
 
         # at most one active_unit at any time
@@ -528,7 +529,14 @@ class MtkCpu(Elaboratable):
                 sync += is_jalr_latch.eq(0)
 
                 # Here, rdval is already calculated. If neccessary, put it into register file.
-                should_write_rd = (
+                should_write_rd = self.should_write_rd = Signal()
+                writeback = self.writeback = Signal()
+                # for riscv-dv simulation:
+                # detect that instruction does not perform register write to avoid infinite loop
+                # by checking writeback & should_write_rd
+                # TODO it will break for trap-causing instructions.
+                comb += writeback.eq(1)
+                comb += should_write_rd.eq(
                     reduce(
                         or_,
                         [

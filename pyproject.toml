@@ -30,7 +30,7 @@ termcolor = "^1.1.0"
 beepy = "^1.0.7"
 amaranth = "0.3"
 amaranth-boards = { git = "https://github.com/amaranth-lang/amaranth-boards.git", branch = "main" }
-riscv-model = "0.6.6"
+riscv-model = { git = "https://github.com/bieganski/riscv-python-model", branch = "master" }
 Jinja2 = "^2.11.3"
 
 [tool.poetry.dev-dependencies]
