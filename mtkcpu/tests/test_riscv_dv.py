@@ -107,11 +107,22 @@ def riscv_dv_sim_process(cpu : MtkCpu, csv_output : Path = Path("test.csv")):
     return aux
 
 RISCV_DV_START_ADDR = 0x8000_0000 # same as in riscv-dv/scripts/link.ld
-RISCV_DV_TEST_ELF = Path("/home/mateusz/github/riscv-dv/out_2022-01-16/asm_test/riscv_arithmetic_basic_test_0.o")
+RISCV_DV_ASSETS_DIR = Path(__file__).absolute().parent / "riscv_dv_assets"
+RISCV_DV_ARITHMETIC_TEST_NAME = "riscv_arithmetic_basic_test"
+RISCV_DV_TEST_ELF = RISCV_DV_ASSETS_DIR / f"{RISCV_DV_ARITHMETIC_TEST_NAME}_0.o"
+RISCV_DV_TEST_SPIKE_CSV = RISCV_DV_ASSETS_DIR / f"{RISCV_DV_ARITHMETIC_TEST_NAME}.csv"
+
+def riscv_dv_sanity_check():
+    assert RISCV_DV_ASSETS_DIR.exists()
+    assert RISCV_DV_TEST_ELF.exists()
+    assert RISCV_DV_TEST_SPIKE_CSV.exists()
+    logging.info("OK, riscv-dv assets sanity check passed..")
+    
 
 def test_riscv_dv():
     import sys
     sys.setrecursionlimit(10**6) # otherwise amaranth/sim/_pyrtl.py:441: RecursionError
+    riscv_dv_sanity_check()
     max_code_size = RISCV_DV_TEST_ELF.stat().st_size
     program = read_elf(RISCV_DV_TEST_ELF)
     mem_cfg = EBRMemConfig.from_mem_dict(
