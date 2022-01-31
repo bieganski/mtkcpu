@@ -8,6 +8,7 @@ from amaranth.sim import Simulator
 
 from riscvmodel.code import decode, Instruction
 from typing import Optional
+import pytest
 
 def disassemble(instr : int) -> Optional[Instruction]:
     try:
@@ -110,6 +111,7 @@ def riscv_dv_sanity_check():
     logging.info("OK, riscv-dv assets sanity check passed..")
     
 
+@pytest.mark.skip
 def test_riscv_dv():
     import sys
     sys.setrecursionlimit(10**6) # otherwise amaranth/sim/_pyrtl.py:441: RecursionError
@@ -136,5 +138,3 @@ def test_riscv_dv():
     with sim.write_vcd("cpu.vcd"):
         sim.run()
     print("== Waveform dumped to cpu.vcd file")
-
-test_riscv_dv()
