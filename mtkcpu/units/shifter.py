@@ -10,20 +10,27 @@ class ShifterUnit(Elaboratable):
         self.shift = Signal(5, name="shifter_shift")  # 5 lowest imm bits
         self.res = Signal(32, name="shifter_res")
         self.funct3 = Signal(Funct3)
+        self.funct7 = Signal(Funct7)
 
     def elaborate(self, platform):
-        # TODO get rid of S{L/R/A}I (because they are the same as S{L/R/A})
+        assert Funct3.SLLI == Funct3.SLL
+        assert Funct3.SRL == Funct3.SRLI
+        assert Funct3.SRA == Funct3.SRAI
         m = Module()
         with m.Switch(self.funct3):
-            with m.Case(Funct3.SLL):  # | Funct3.SLLI
+            with m.Case(Funct3.SLL):
                 m.d.comb += self.res.eq(self.src1 << self.shift)
-            with m.Case(Funct3.SRL):  # | Funct3.SRLI
-                m.d.comb += self.res.eq(self.src1 >> self.shift)
-            with m.Case(Funct3.SRA):  # | Funct3.SRAI
-                m.d.comb += [
-                    self.src1signed.eq(self.src1),
-                    self.res.eq(self.src1signed >> self.shift),
-                ]
+            with m.Case(Funct3.SRL):
+                assert Funct3.SRL == Funct3.SRA
+                assert Funct7.SRL != Funct7.SRA
+
+                with m.If(self.funct7 == Funct7.SRL):
+                    m.d.comb += self.res.eq(self.src1 >> self.shift)
+                with m.Elif(self.funct7 == Funct7.SRA):
+                    m.d.comb += [
+                        self.src1signed.eq(self.src1),
+                        self.res.eq(self.src1signed >> self.shift),
+                    ]
         return m
 
 

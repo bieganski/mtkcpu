@@ -58,6 +58,21 @@ REGISTERS_TESTS = [
         reg_init=RegistryContents.fill(),
     ),
     MemTestCase(
+        name="take unsigned 5 bits 'srl'",
+        source_type=MemTestSourceType.TEXT,
+        source="""
+        .section code
+            li x9, 0xe0dd9d4c
+            li x12, 0x39ddc212
+            srl x27,x9,x12
+        """,
+        out_reg=27,
+        out_val=0x3837,
+        timeout=100,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+    MemTestCase(
         name="simple 'slli'",
         source_type=MemTestSourceType.TEXT,
         source="""

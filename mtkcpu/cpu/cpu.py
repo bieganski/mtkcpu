@@ -255,11 +255,12 @@ class MtkCpu(Elaboratable):
         with m.Elif(active_unit.shifter):
             comb += [
                 shifter.funct3.eq(funct3),
+                shifter.funct7.eq(funct7),
                 shifter.src1.eq(rs1val),
                 shifter.shift.eq(
                     Mux(
-                        opcode == InstrType.OP_IMM, imm[0:5], rs2val[0:5]
-                    )  # TODO check semantics
+                        opcode == InstrType.OP_IMM, imm[0:5].as_unsigned(), rs2val[0:5]
+                    )
                 ),
             ]
         with m.Elif(active_unit.mem_unit):

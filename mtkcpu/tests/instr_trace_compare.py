@@ -77,9 +77,9 @@ def compare_trace_csv(csv1, csv2, name1, name2, log):
             for (rd1, val1), (rd2, val2) in zip(regs1, regs2):
                 assert rd1 == rd2, f"{rd1} != {rd2}, {debug_msg}"
                 if val1 != val2:
-                    raise ValueError(f"{i}: Detect value mismatch: {hex(val1)} vs {hex(val2)}. {debug_msg} {gpr_state_1} {gpr_state_2}")
-                else:
-                    print(f"{i}: OK, value {hex(val1)} written to {rd1} in both cases!")
+                    raise ValueError(f"{i}: Detect value mismatch: {hex(val1)} vs {hex(val2)}. {debug_msg} {gpr_state_1} , {gpr_state_2}")
+                # else:
+                #     print(f"{i}: OK, value {hex(val1)} written to {rd1} in both cases!")
             
         print(f"OK, got {min(len(instr_trace_1), len(instr_trace_2))} matches!")
 
