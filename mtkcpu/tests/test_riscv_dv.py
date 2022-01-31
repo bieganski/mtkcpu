@@ -29,39 +29,28 @@ def riscv_dv_sim_process(cpu : MtkCpu, csv_output : Path = Path("test.csv")):
         csv_output_fd = csv_output.open("w")
         csv_writer = RiscvInstructionTraceCsv(csv_fd=csv_output_fd)
         csv_writer.start_new_trace()
-        prev_instr = 0x0
 
-        for _ in range(20): # warm up
-            instr = yield cpu.instr
-            if instr == 0x0:
-                yield
-            else:
-                break
+        total_num_processed = -1
+        prev_checkpoint = 0
+        compare_every = 1000
+        do_compare = lambda : total_num_processed - prev_checkpoint >= compare_every
         while True:
             instr : int = yield cpu.instr
             pc : int = yield cpu.pc
 
-            if instr != prev_instr:
-                # new instruction - everything
-                opcode = yield cpu.opcode
-                funct3 = yield cpu.funct3
-                funct7 = yield cpu.funct7
-                rd = yield cpu.rd
-                from mtkcpu.cpu.cpu import match_jal, match_jalr, match_branch, match_csr, matcher
-                skipped = [
-                    match_jal,
-                    match_jalr,
-                    match_branch,
-                    match_csr,
-                ]
+            if (yield cpu.fetch):
+                total_num_processed += 1
+                if do_compare():
+                    csv_output_fd.flush()
+                    logging.info(f"total: {total_num_processed}, previous checkpoint: {prev_checkpoint}. calling 'compare_trace_csv'...")
+                    prev_checkpoint = total_num_processed
+                    from instr_trace_compare import compare_trace_csv
+                    # order of passing mtkcpu and spike matters - we allow only first passed log to be shorter
+                    compare_trace_csv("test.csv", RISCV_DV_TEST_SPIKE_CSV, "mtkcpu", "spike", log=0)
+                
                 instr_disas = disassemble(instr)
                 logging.info(f"{hex(instr)} : {instr_disas}")
                 instr_str = str(instr_disas) if instr_disas else "unknown"
-                
-                # if any([f(opcode, funct3, funct7) for f in skipped]):
-                #     prev_instr = instr # force further tick yields
-                #     csv_output_fd.write(f"# {hex(instr)}: {instr_str}\n")
-                #     continue  # enough?
                 
                 entry = RiscvInstructionTraceEntry()
                 entry.pc = hex(pc)[2:]
@@ -96,13 +85,15 @@ def riscv_dv_sim_process(cpu : MtkCpu, csv_output : Path = Path("test.csv")):
                             else:
                                 found = True
                                 entry.gpr = [ f"{reg_name}:{hex(data)[2:]}" ]
+                                
+                                # depending on '-f' param passed to 'scripts/spike_log_to_trace_csv.py' inside riscv-dv repo,
+                                # we need either to print register-state-changing instructions only (like here),
+                                # or all instructions, then we would put the line below after the loop. 
+                                csv_writer.write_trace_entry(entry)
                                 break
                     yield
-
                 if not found:
                     raise ValueError("No register write observed!")
-                csv_writer.write_trace_entry(entry)
-            prev_instr = instr
             yield
     return aux
 
@@ -146,3 +137,4 @@ def test_riscv_dv():
         sim.run()
     print("== Waveform dumped to cpu.vcd file")
 
+test_riscv_dv()

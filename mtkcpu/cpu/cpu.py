@@ -333,6 +333,7 @@ class MtkCpu(Elaboratable):
             notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
             m.d.comb += notifiers[cause].eq(1)
 
+        self.fetch = Signal()
         with m.FSM():
             with m.State("FETCH"):
                 with m.If(self.halt):
@@ -362,6 +363,7 @@ class MtkCpu(Elaboratable):
                 with m.Else():
                     m.next = "WAIT_FETCH"
             with m.State("DECODE"):
+                comb += self.fetch.eq(1) # only for simulation, notify that 'instr' ready to use.
                 m.next = "EXECUTE"
                 # here, we have registers already fetched into rs1val, rs2val.
                 with m.If(instr & 0b11 != 0b11):

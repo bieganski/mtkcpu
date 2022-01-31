@@ -43,6 +43,9 @@ class RiscvInstructionTraceEntry(object):
         return ("pc[{}] {}: {} {}".format(
             self.pc, self.instr_str, " ".join(self.gpr), " ".join(self.csr)))
 
+    def __repr__(self) -> str:
+        return self.get_trace_string()
+
 
 class RiscvInstructionTraceCsv(object):
     """RISC-V instruction trace CSV class
@@ -62,7 +65,8 @@ class RiscvInstructionTraceCsv(object):
 
     def read_trace(self, trace):
         """Read instruction trace from CSV file"""
-        csv_reader = csv.DictReader(self.csv_fd)
+        # csv_reader = csv.DictReader(self.csv_fd)
+        csv_reader = csv.DictReader(filter(lambda row: row[0]!='#', self.csv_fd)) # https://stackoverflow.com/a/14158869
         for row in csv_reader:
             new_trace = RiscvInstructionTraceEntry()
             new_trace.gpr = row['gpr'].split(';')
