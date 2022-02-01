@@ -47,7 +47,6 @@ CSR_TESTS = [
                 addi x2, x0, 10
             trap:
                 addi x2, x0, 20
-            // TODO implement mret
         """,
         out_reg=2,
         out_val=20,

@@ -24,6 +24,13 @@ class CSRNonStandardIndex(IntEnum):
     MTIMECMP = 0x7c1
 
 @unique
+class PrivModeBits(IntEnum):
+    # Priv. ISA v1.10 - table 1.1.
+    USER = 0b00
+    SUPERVISOR = 0b01
+    MACHINE = 0b11
+
+@unique
 class CSRIndex(IntEnum):
     MVENDORID   = 0xF11
     MARCHID     = 0xF12

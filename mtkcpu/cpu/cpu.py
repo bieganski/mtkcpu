@@ -24,7 +24,7 @@ from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.top import DebugUnit
-from mtkcpu.cpu.priv_isa import IrqCause, TrapCause
+from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 
 
 match_jal = matcher(
@@ -149,8 +149,11 @@ class MtkCpu(Elaboratable):
             mem_port=arbiter.port(priority=0)
         )
         compare = m.submodules.compare = CompareUnit()
-        csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit()
-        exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(csr_unit=csr_unit)
+        
+        self.current_priv_mode = Signal(PrivModeBits, reset=PrivModeBits.MACHINE)
+        # TODO does '==' below produces the same synth result as .all()?
+        csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE)
+        exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(csr_unit=csr_unit, current_priv_mode=self.current_priv_mode)
 
         # Current decoding state signals.
         instr = self.instr = Signal(32)
@@ -467,9 +470,8 @@ class MtkCpu(Elaboratable):
                     sync += [
                         rdval.eq(csr_unit.rd_val)
                     ]
-                with m.Elif(active_unit.mret):
-                    fetch_with_new_pc(exception_unit.mepc)
 
+                # control flow mux - all traps need to be here, otherwise it will overwrite m.next statement.
                 with m.If(active_unit.mem_unit):
                     with m.If(mem_unit.ack):
                         m.next = "WRITEBACK"
@@ -477,11 +479,17 @@ class MtkCpu(Elaboratable):
                     with m.Else():
                         m.next = "EXECUTE"
                 with m.Elif(active_unit.csr):
-                    with m.If(csr_unit.vld):
-                        m.next = "WRITEBACK"
-                        sync += active_unit.eq(0)
+                    with m.If(csr_unit.illegal_insn):
+                        trap(TrapCause.ILLEGAL_INSTRUCTION)
                     with m.Else():
-                        m.next = "EXECUTE"
+                        with m.If(csr_unit.vld):
+                            m.next = "WRITEBACK"
+                            sync += active_unit.eq(0)
+                        with m.Else():
+                            m.next = "EXECUTE"
+                with m.Elif(active_unit.mret):
+                    comb += exception_unit.m_mret.eq(1)
+                    fetch_with_new_pc(exception_unit.mepc)
                 with m.Else():
                     # all units not specified by default take 1 cycle
                     m.next = "WRITEBACK"

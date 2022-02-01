@@ -1,5 +1,7 @@
 from cmath import exp
 from dataclasses import dataclass
+
+from wasmtime import Val
 from mtkcpu.units.debug.top import DebugCSR
 import socket
 from functools import reduce
@@ -388,7 +390,7 @@ def get_sim_register_test(
                 if addr == reg_num:
                     val = yield cpu.reg_write_port.data
                     if isinstance(expected_val, Callable):
-                        cond = expected_val(val)
+                        cond = not expected_val(val)
                     else:
                         # anything that implements '=='
                         cond = val != expected_val

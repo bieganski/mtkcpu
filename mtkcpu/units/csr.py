@@ -1,6 +1,7 @@
-from typing import Dict, List, Union
+from typing import Callable, Dict, List, Union
 
 from amaranth import Signal, Elaboratable, Module
+from grpc import Call
 
 from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType
@@ -49,46 +50,8 @@ class CsrUnit(Elaboratable):
         if not all:
             raise ValueError(f"CSR with address {hex(addr)} not defined!")
         return all[0]
-    
-    # @property
-    # def mtvec(self):
-    #     return self.reg_by_addr(CSRIndex.MTVEC).rec.r
-    
-    # @property
-    # def mtval(self):
-    #     return self.reg_by_addr(CSRIndex.MTVAL).rec.r
 
-    # @property
-    # def mepc(self):
-    #     return self.reg_by_addr(CSRIndex.MEPC).rec.r
-
-    # @property
-    # def mcause(self):
-    #     return self.reg_by_addr(CSRIndex.MCAUSE).rec.r
-    
-    # @property
-    # def mstatus(self):
-    #     return self.reg_by_addr(CSRIndex.MSTATUS).rec.r
-
-    # @property
-    # def mtime(self):
-    #     return self.reg_by_addr(CSRNonStandardIndex.MTIME).rec.r
-
-    # @property
-    # def mtimecmp(self):
-    #     # exception: mtimecp doesn't use rec.r at all, as written only from external source
-    #     return self.reg_by_addr(CSRNonStandardIndex.MTIMECMP).rec.w
-
-    # @property
-    # def mie(self):
-    #     # exception: mie doesn't use rec.r at all, as written only from external source
-    #     return self.reg_by_addr(CSRIndex.MIE).rec.w
-    
-    # @property
-    # def mip(self):
-    #     # TODO for now it's read only, in future it no longer will be
-    #     return self.reg_by_addr(CSRIndex.MIP).rec.r
-
+    # simplify direct access, e.g. csr_unit.mtvec
     def __getattr__(self, name):
         for reg in self.csr_regs:
             if reg.name == name:
@@ -103,8 +66,7 @@ class CsrUnit(Elaboratable):
         raise ValueError(f"CSRUnit: Not found register named {name}")
 
 
-
-    def __init__(self):
+    def __init__(self, in_machine_mode : Signal):
         # Input signals.
         self.csr_idx = Signal(CSRIndex)
         assert self.csr_idx.width == 12
@@ -113,6 +75,7 @@ class CsrUnit(Elaboratable):
         self.rs1val = Signal(32)
         self.func3 = Signal(Funct3)
         self.en = Signal()
+        self.in_machine_mode = in_machine_mode
 
         # Debug
         self.ONREAD = Signal()
@@ -121,6 +84,7 @@ class CsrUnit(Elaboratable):
         # Output signals.
         self.rd_val = Signal(32)
         self.vld = Signal()
+        self.illegal_insn = Signal()
 
         self.controller = ControllerInterface()
         self.csr_regs = self.enabled_csr_regs(self.controller)
@@ -157,13 +121,16 @@ class CsrUnit(Elaboratable):
         with m.FSM() as fsm:
             with m.State("IDLE"):
                 with m.If(self.en):
-                    sync += [
-                        rd_latch.eq(self.rd),
-                        rs1_latch.eq(self.rs1),
-                        func3_latch.eq(self.func3),
-                        csr_idx_latch.eq(self.csr_idx),
-                    ]
-                    m.next = "RW_GENERIC"
+                    with m.If(~self.in_machine_mode):
+                        m.d.comb += self.illegal_insn.eq(1)
+                    with m.Else():
+                        sync += [
+                            rd_latch.eq(self.rd),
+                            rs1_latch.eq(self.rs1),
+                            func3_latch.eq(self.func3),
+                            csr_idx_latch.eq(self.csr_idx),
+                        ]
+                        m.next = "RW_GENERIC"
             with m.State("RW_GENERIC"):
                 # read and write conditions are described in CSR docs.
                 with m.If(~(_is(func3_latch, [Funct3.CSRRW, Funct3.CSRRWI]) & (rd_latch == 0))):

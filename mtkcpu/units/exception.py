@@ -13,8 +13,7 @@ __all__ = ["ExceptionUnit"]
 from mtkcpu.units.csr import CsrUnit
 
 class ExceptionUnit(Elaboratable):
-    def __init__(self, csr_unit : CsrUnit):
-
+    def __init__(self, current_priv_mode: Signal, csr_unit : CsrUnit):
         self.mtvec = csr_unit.mtvec
         self.mtval = csr_unit.mtval
         self.mepc = csr_unit.mepc
@@ -27,24 +26,27 @@ class ExceptionUnit(Elaboratable):
         self.timer_interrupt = Signal()
         self.software_interrupt = Signal() # not supported for now
 
+        # TODO move those to 'elaborate' function
         self.m_fetch_misaligned = Signal()
         self.m_fetch_error = Signal()
-        self.m_fetch_badaddr = Signal(30)
+        self.m_illegal = Signal()
+        self.m_ebreak = Signal()
+        self.m_ecall = Signal()
         self.m_load_misaligned = Signal()
         self.m_load_error = Signal()
         self.m_store_misaligned = Signal()
         self.m_store_error = Signal()
-        self.m_loadstore_badaddr = Signal(30)
-        self.m_branch_target = Signal(32)
-        self.m_illegal = Signal()
-        self.m_ebreak = Signal()
-        self.m_ecall = Signal()
+        # self.m_fetch_badaddr = Signal(30)
+        # self.m_loadstore_badaddr = Signal(30)
+        # self.m_branch_target = Signal(32)
+
         self.m_pc = Signal(32)
         self.m_instruction = Signal(32)
-        self.m_result = Signal(32)
+        
         self.m_mret = Signal()
-
         self.m_raise = Signal()
+
+        self.current_priv_mode = current_priv_mode
 
         self.trap_cause_map = {
             TrapCause.FETCH_MISALIGNED : self.m_fetch_misaligned,
@@ -87,6 +89,10 @@ class ExceptionUnit(Elaboratable):
         m.d.comb += self.m_raise.eq(~trap_pe.n | ~interrupt_pe.n & self.mstatus.mie)
         with m.If(self.m_raise):
             m.d.sync += [
+                self.mstatus.mpp.eq(self.current_priv_mode),
+                self.current_priv_mode.eq(PrivModeBits.MACHINE), # will be changed when impl. either supervisor or mdeleg register.
+            ]
+            m.d.sync += [
                 self.mip.msip.eq(self.software_interrupt),
                 self.mip.mtip.eq(self.timer_interrupt),
                 self.mip.meip.eq(self.external_interrupt)
@@ -121,7 +127,10 @@ class ExceptionUnit(Elaboratable):
                     self.mcause.ecode.eq(interrupt_pe.o),
                     self.mcause.interrupt.eq(1)
                 ]
-        # with m.Elif(self.m_mret):
-        #     m.d.sync += self.mstatus.r.mie.eq(self.mstatus.r.mpie)
+        with m.Elif(self.m_mret):
+            m.d.sync += [
+                self.mstatus.mie.eq(self.mstatus.mpie),
+                self.current_priv_mode.eq(self.mstatus.mpp) # pop privilege mode
+            ]
 
         return m
