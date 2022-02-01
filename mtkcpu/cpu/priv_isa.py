@@ -62,6 +62,9 @@ class CSRIndex(IntEnum):
     DCSR        = 0x7b0
     DPC         = 0x7b1
 
+    # supervisor
+    SATP        = 0x180
+
 @unique
 class TrapCause(IntEnum):
     FETCH_MISALIGNED     = 0
@@ -209,4 +212,11 @@ tdata1_layout = [
     ("data",  27, CSRAccess.RW),
     ("dmode",  1, CSRAccess.RW),
     ("type",   4, CSRAccess.RW),
+]
+
+
+satp_layout = [
+    ("ppn", 22, CSRAccess.RW),
+    ("asid", 9, CSRAccess.RW),
+    ("mode", 1, CSRAccess.RW),
 ]

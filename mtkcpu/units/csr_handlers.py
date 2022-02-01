@@ -90,6 +90,16 @@ class RegisterCSR():
         m = self.get_m()
         m.d.comb += self.controller.handler_done.eq(1)
 
+    # because of WARL sometimes we cannot copy whole record
+    # TODO, should we overload it in ReadOnly/WriteOnly CSR registers to raise? Otherwise 'hasattr' will raise anyway.
+    def copy_specific_fields_only(self, fields : List[str]):
+        m = self.get_m()
+        for f in fields:
+            dst = getattr(self.rec.r, f)
+            src = getattr(self.rec.w, f)
+            m.d.sync += dst.eq(src)
+        m.d.comb += self.controller.handler_done.eq(1)
+
     def handle_write(self):
         raise NotImplementedError("RegisterCSR must implement 'handle_write(self)' method!")
 
@@ -243,3 +253,14 @@ class MIP(ReadOnlyRegisterCSR):
             return {}
     def __init__(self):
         super().__init__(CSRIndex.MIP, mip_layout, __class__.RegValueLocal)
+
+
+class SATP(RegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRIndex.SATP, satp_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        self.copy_specific_fields_only(["ppn", "mode"])

@@ -73,6 +73,22 @@ PRIV_TESTS = [
         reg_init=RegistryContents.fill(),
     ),
 
+    MemTestCase(
+        name="satp ASIC field implements WARL",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                li x5, {(0xa << 22) + 0xdead}
+                csrw satp, x5
+                csrr x3, satp
+        """,
+        out_reg=3,
+        out_val=0xdead,
+        timeout=150,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+
 ]
 
 @mem_test(PRIV_TESTS)

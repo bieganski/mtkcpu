@@ -35,6 +35,8 @@ class CsrUnit(Elaboratable):
             MSTATUS(),
             MIE(),
             MIP(),
+            
+            SATP(),
         }
         
         def sanity_check():
