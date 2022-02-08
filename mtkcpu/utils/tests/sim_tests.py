@@ -1,7 +1,6 @@
 from cmath import exp
 from dataclasses import dataclass
 
-from wasmtime import Val
 from mtkcpu.units.debug.top import DebugCSR
 import socket
 from functools import reduce
