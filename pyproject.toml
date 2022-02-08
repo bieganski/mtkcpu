@@ -20,7 +20,7 @@ testpaths = [
 [tool.poetry.dependencies]
 python = "^3.8"
 ppci = "^0.5.8"
-numpy = "^1.20.3"
+numpy = "^1.19.2"
 pytest = "^6.2.4"
 pytest-xdist = "^2.2.1"
 pyelftools = "^0.27"
