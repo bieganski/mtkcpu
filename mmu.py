@@ -59,7 +59,7 @@ def _page_walk(root_pt_phys_addr : int, req_virt_addr: VIRT_ADDR, i: int) -> int
 
 	if not pte.v:
 		raise ValueError("CORRESPONDING PAGE FAULT")
-	if pte.r and not pte.w:
+	if pte.w and not pte.r:
 		raise ValueError("CORRESPONDING PAGE FAULT")
 	
 	if pte.is_leaf():
@@ -104,8 +104,8 @@ def page_walk(req_addr : int) -> Optional[int]:
 	sv32_i = 1
 	
 	if satp.mode == 1:
-		# 22 bity, + 12
-		req_offset = req_addr & ((1 << 12) - 1) # 12 bitów, czy to jest ok? XXX
+		# 22 bits, + 12
+		req_offset = req_addr & ((1 << 12) - 1)
 		root_pt_phys_addr = satp.ppn << 12
 		phys_addr = _page_walk(root_pt_phys_addr, req_addr, i=sv32_i) + req_offset
 		return get_phys(phys_addr)

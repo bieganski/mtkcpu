@@ -1,12 +1,13 @@
 from argparse import ArgumentError
-from dataclasses import dataclass
+from enum import IntEnum, unique
 from typing import Tuple, OrderedDict
-from amaranth import Cat, Signal, Elaboratable, Module, signed
+from amaranth import Cat, Signal, Const, Elaboratable, Module, signed, Mux
 from amaranth.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
-from mtkcpu.utils.common import matcher
+from mtkcpu.cpu.priv_isa import PrivModeBits, pte_layout, virt_addr_layout
+from mtkcpu.units.csr import CsrUnit
+from mtkcpu.units.exception import ExceptionUnit
+from mtkcpu.utils.common import matcher, EBRMemConfig
 from mtkcpu.cpu.isa import Funct3, InstrType
-from mtkcpu.utils.common import EBRMemConfig
-
 
 MEM_WORDS = 10
 
@@ -190,7 +191,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
     def __init__(self):
         raise ArgumentError("lack of 'mem_config' param!")
 
-    def __init__(self, mem_config: EBRMemConfig, with_addr_translation: bool=False, csr_unit: Elaboratable=None):
+    def __init__(self, mem_config: EBRMemConfig, with_addr_translation: bool, csr_unit: CsrUnit, exception_unit : ExceptionUnit):
         self.ports = {}
         self.word_size = 4
         self.generic_bus = LoadStoreInterface(name="generic_bus")
@@ -198,6 +199,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
         self.mem_config = mem_config
         self.with_addr_translation = with_addr_translation
         self.csr_unit = csr_unit
+        self.exception_unit = exception_unit
         self.__gen_mmio_devices_config_once()
 
     def __gen_mmio_devices_config_once(self) -> None:
@@ -266,6 +268,8 @@ class MemoryArbiter(Elaboratable, AddressManager):
 
     def elaborate(self, platform):
         m = Module()
+        sync = m.d.sync
+        comb = m.d.comb
 
         cfg = self.mem_config
         bridge = m.submodules.bridge = GenericInterfaceToWishboneMasterBridge(generic_bus=self.generic_bus, wb_bus=self.wb_bus)
@@ -279,31 +283,144 @@ class MemoryArbiter(Elaboratable, AddressManager):
             setattr(m.submodules, addr_space.basename, mmio_module)
         
         addr_translation_en = Signal()
-        bus_free = Signal()
+        bus_free_to_latch = Signal(reset=1)
 
         if self.with_addr_translation:
-            m.d.comb += addr_translation_en.eq(self.csr_unit.satp.mode)
+            m.d.comb += addr_translation_en.eq(self.csr_unit.satp.mode & (self.exception_unit.current_priv_mode == PrivModeBits.USER))
         else:
             m.d.comb += addr_translation_en.eq(False)
+
+        with m.If(~addr_translation_en):
+            # when translation enabled, 'bus_free_to_latch' is low during page-walk.
+            # with no translation it's simpler - just look at the main bus.
+            m.d.comb += bus_free_to_latch.eq(~self.generic_bus.busy)
         
-        with m.If(addr_translation_en):
-            pass
-        with m.Else():
-            m.d.comb += bus_free.eq(~self.generic_bus.busy)
-        
-        with m.If(bus_free):
+        with m.If(bus_free_to_latch):
             # no transaction in-progress
             for i, p in enumerate(sorted_ports):
                 m.d.sync += pe.i[i].eq(p.en)
 
-        # TODO not used as Array doesn't support 'connect' method
-        # "winning" port idx is in 'pe.o'
-        # source = Array(sorted_ports)[pe.o]
+        
+        virtual_req_bus_latch = LoadStoreInterface()
+        phys_addr = Signal(32)
+        
+        # translation-unit controller signals. 
+        start_translation = Signal()
+        translation_ack = Signal()
+        gb = self.generic_bus
+
         with m.If(~pe.none):
+            # transaction request occured
             for i, priority in enumerate(sorted_ports):
                 with m.If(pe.o == i):
-                    m.d.comb += self.generic_bus.connect(sorted_ports[i])
+                    bus_owner_port = sorted_ports[i]
+                    with m.If(~addr_translation_en):
+                        # simple case, no need to calculate physical address
+                        comb += gb.connect(bus_owner_port)
+                    with m.Else():
+                        # page-walk performs multiple memory operations - will reconnect 'generic_bus' multiple times
+                        with m.FSM():
+                            first = Signal() # TODO get rid of that
+                            with m.State("TRANSLATE"):
+                                comb += [
+                                    start_translation.eq(1),
+                                    bus_free_to_latch.eq(0),
+                                ]
+                                sync += virtual_req_bus_latch.connect(bus_owner_port, exclude=[name for name, _, dir in generic_bus_layout if dir == DIR_FANOUT])
+                                with m.If(translation_ack): # wait for 'phys_addr' to be set by page-walk algorithm.
+                                    m.next = "REQ"
+                                sync += first.eq(1)
+                            with m.State("REQ"):
+                                comb += gb.connect(bus_owner_port, exclude=["addr"])
+                                comb += gb.addr.eq(phys_addr) # found by page-walk
+                                with m.If(first):
+                                    sync += first.eq(0)
+                                with m.Else():
+                                    # without 'first' signal '~gb.busy' would be high at the very beginning 
+                                    with m.If(~gb.busy):
+                                        comb += bus_free_to_latch.eq(1)
+                                        m.next = "TRANSLATE"
+        
+        req_is_write = Signal()
+        pte = Record(pte_layout)
+        vaddr = Record(virt_addr_layout)
+        comb += [
+            req_is_write.eq(virtual_req_bus_latch.store),
+            vaddr.eq(virtual_req_bus_latch.addr),
+        ]
 
+        @unique
+        class Issue(IntEnum):
+            OK = 0
+            PAGE_INVALID = 1
+            WRITABLE_NOT_READABLE = 2
+            LACK_PERMISSIONS = 3
+            FIRST_ACCESS_OR_MAKE_DIRTY = 4
+            MISALIGNED_SUPERPAGE = 5
+            LEAF_IS_NO_LEAF = 6
+
+        self.error_code = Signal(Issue)
+        def error(code: Issue):
+            m.d.sync += self.error_code.eq(code)
+
+        # Code below implements algorithm 4.3.2 in Risc-V Privileged specification, v1.10
+        sv32_i = Signal(reset=1)
+        root_ppn = Signal(22)
+        
+        with m.FSM():
+            with m.State("IDLE"):
+                with m.If(start_translation):
+                    sync += sv32_i.eq(1)
+                    sync += root_ppn.eq(self.csr_unit.satp.ppn)
+                    m.next = "TRANSLATE"
+            with m.State("TRANSLATE"):
+                vpn = Signal(10)
+                comb += vpn.eq(Mux(
+                    sv32_i,
+                    vaddr.vpn1,
+                    vaddr.vpn0,
+                ))
+                comb += [
+                    gb.en.eq(1),
+                    gb.addr.eq(Cat(Const(0, 2), vpn, root_ppn)),
+                    gb.store.eq(0),
+                    gb.mask.eq(0b1111), # TODO use -1
+                ]
+                with m.If(gb.ack):
+                    sync += pte.eq(gb.read_data)
+                    m.next = "PROCESS_PTE"
+            with m.State("PROCESS_PTE"):
+                with m.If(~pte.v):
+                    error(Issue.PAGE_INVALID)
+                with m.If(pte.w & ~pte.r):
+                    error(Issue.WRITABLE_NOT_READABLE)
+
+                is_leaf = lambda pte: ~(pte.r | pte.x)
+                with m.If(is_leaf(pte)):
+                    with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
+                        error(Issue.LACK_PERMISSIONS)
+                    with m.If(~pte.a | (req_is_write & ~pte.d)):
+                        error(Issue.FIRST_ACCESS_OR_MAKE_DIRTY)
+                    with m.If(sv32_i.bool() & pte.ppn0.bool()):
+                        error(Issue.MISALIGNED_SUPERPAGE)
+                    phys_addr = Signal(32)
+                    # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
+                    # below statement cuts lowest two bits of r-value.
+                    sync += phys_addr.eq(Cat(vaddr.page_offset, pte.ppn0, pte.ppn1))
+                with m.Else(): # not a leaf
+                    with m.If(sv32_i == 0):
+                        error(Issue.LEAF_IS_NO_LEAF)
+                    sync += root_ppn.eq(Cat(pte.ppn0, pte.ppn1)) # pte a is pointer to the next level
+                m.next = "NEXT"
+            with m.State("NEXT"):
+                # Note that we cannot check 'sv32_i == 0', becuase superpages can be present.
+                with m.If(is_leaf(pte)):
+                    sync += sv32_i.eq(1)
+                    comb += translation_ack.eq(1) # notify that 'phys_addr' signal is set
+                    m.next = "IDLE"
+                with m.Else():
+                    sync += sv32_i.eq(0)
+                    m.next = "TRANSLATE"
         return m
 
     def port(self, priority):

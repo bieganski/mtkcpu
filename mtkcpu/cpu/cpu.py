@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import with_statement
-from asyncore import write
-from enum import Enum
 from functools import reduce
 from operator import or_
-from typing import Union
 
+from typing import Union
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
 
@@ -17,12 +15,10 @@ from mtkcpu.units.compare import CompareUnit, match_compare_unit
 from mtkcpu.units.loadstore import (MemoryArbiter, MemoryUnit,
                                     match_load, match_loadstore_unit)
 from mtkcpu.units.logic import LogicUnit, match_logic_unit
-from mtkcpu.units.rvficon import RVFIController, rvfi_layout
 from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
 from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
-from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 
@@ -83,7 +79,7 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, mem_config, reg_init=[0 for _ in range(32)], with_rvfi=False, with_debug=True):
+    def __init__(self, mem_config, reg_init=[0 for _ in range(32)], with_debug=True):
 
         if len(reg_init) > 32:
             raise ValueError(
@@ -97,11 +93,6 @@ class MtkCpu(Elaboratable):
             reg_init[0] = 0
 
         self.mem_config = mem_config
-        # we need it in __init__ for bsp generation.
-        self.arbiter = MemoryArbiter(mem_config=self.mem_config)
-
-        self.with_rvfi = with_rvfi
-
         self.with_debug = with_debug
 
         # 0xDE for debugging (uninitialized data magic byte)
@@ -127,33 +118,37 @@ class MtkCpu(Elaboratable):
         comb = m.d.comb
         sync = m.d.sync
 
-        # Memory interface.
-        arbiter = m.submodules.arbiter = self.arbiter
-
-        ibus = arbiter.port(priority=2)
-
-        if self.with_rvfi:
-            rvficon = m.submodules.rvficon = RVFIController() # NOQA
-            self.rvfi = Record(rvfi_layout)
-
-        if self.with_debug:
-            m.submodules.debug = self.debug = DebugUnit(self)
-            self.debug_bus = arbiter.port(priority=1)
-
-
         # CPU units used.
         logic = m.submodules.logic = LogicUnit()
         adder = m.submodules.adder = AdderUnit()
         shifter = m.submodules.shifter = ShifterUnit()
-        mem_unit = m.submodules.mem_unit = MemoryUnit(
-            mem_port=arbiter.port(priority=0)
-        )
         compare = m.submodules.compare = CompareUnit()
         
         self.current_priv_mode = Signal(PrivModeBits, reset=PrivModeBits.MACHINE)
-        # TODO does '==' below produces the same synth result as .all()?
-        csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE)
-        exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(csr_unit=csr_unit, current_priv_mode=self.current_priv_mode)
+        
+        csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
+            # TODO does '==' below produces the same synth result as .all()?
+            in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE
+        )
+        exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(
+            csr_unit=csr_unit, 
+            current_priv_mode=self.current_priv_mode
+        )
+        arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter(
+            mem_config=self.mem_config, 
+            with_addr_translation=True, 
+            csr_unit=csr_unit, # SATP register
+            exception_unit=exception_unit, # current privilege mode
+        )
+        mem_unit = m.submodules.mem_unit = MemoryUnit(
+            mem_port=arbiter.port(priority=0)
+        )
+
+        ibus = arbiter.port(priority=2)
+
+        if self.with_debug:
+            m.submodules.debug = self.debug = DebugUnit(self)
+            self.debug_bus = arbiter.port(priority=1)
 
         # Current decoding state signals.
         instr = self.instr = Signal(32)
@@ -353,10 +348,12 @@ class MtkCpu(Elaboratable):
                             ibus.addr.eq(pc),
                             ibus.mask.eq(0b1111),
                         ]
-                        with m.If(ibus.en & ~ibus.busy):
-                            m.next = "WAIT_FETCH"
-                        with m.Else():
-                            m.next = "FETCH"
+                        m.next = "WAIT_FETCH"
+                        # TODO can i safely remove below?
+                        # with m.If(ibus.en & ~ibus.busy):
+                        #     m.next = "WAIT_FETCH"
+                        # with m.Else():
+                        #     m.next = "FETCH"
             with m.State("WAIT_FETCH"):
                 with m.If(ibus.ack):
                     sync += [

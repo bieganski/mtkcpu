@@ -232,5 +232,11 @@ pte_layout = [
     ("d", 1),
     ("rsw", 2),
     ("ppn0", 10),
-    ("ppn1", 10),
+    ("ppn1", 12),
+]
+
+virt_addr_layout = [
+    ("page_offset", 12),
+    ("vpn0", 10),
+    ("vpn1", 10),
 ]
