@@ -9,7 +9,7 @@ PHDRS
 
 MEMORY
 {
-  ram  (wxai! r) : ORIGIN = {{ template_mem_start_addr }}, LENGTH = 1K
+  ram  (wxai! r) : ORIGIN = {{ template_mem_start_addr }}, LENGTH = {{ template_mem_size_kb }}K
 }
 
 SECTIONS {

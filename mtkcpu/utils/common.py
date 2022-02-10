@@ -55,7 +55,7 @@ class EBRMemConfig():
             valid_range_fmt = f"[{hex(start_addr), hex(start_addr + num_bytes)}]"
             raise ValueError(f"Passed MemoryContents contains initialized memory on addresses "
                 f"that doesn't fit into range {valid_range_fmt}!"
-                f"(tried {mem_dict})"
+                f"(tried {mem_dict if len(mem_dict.memory) < 100 else f'<too big to print> (of length {len(mem_dict.memory)}' })"
             )
         from math import log2
         mem_map = [0] * num_words
@@ -98,14 +98,14 @@ def read_elf(elf_path, verbose=False):
         mem.update(segment_mem)
     return mem
 
-def compile_source(source_raw : str, output_elf : Path):
+def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
     COMPILER = "riscv-none-embed-gcc"
     assert which(COMPILER)
     
     with NamedTemporaryFile(suffix=".S", delete=False, mode="w+") as asm_file:
         assert asm_file.write(source_raw)
     with NamedTemporaryFile(suffix=".ld", delete=False) as ld_file:
-        Config.write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR)
+        Config.write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR, mem_size_kb=mem_size_kb)
         
     cmd = [COMPILER, "-march=rv32i", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
     logging.critical(" ".join(cmd))

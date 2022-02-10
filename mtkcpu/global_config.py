@@ -22,11 +22,14 @@ class Config:
         logging.info("Config sanity check passed!")
 
     @staticmethod
-    def write_linker_script(out_path : Path, mem_addr : int):
+    def write_linker_script(out_path : Path, mem_addr : int, mem_size_kb: int = 1):
         import jinja2
         __class__.sanity_check()
         logging.info(f"writing linker script: using {hex(mem_addr)} address..")
         linker_script_content = jinja2.Template(
-            __class__.linker_script_tpl_path.open("r").read()).render(template_mem_start_addr=hex(mem_addr)) 
+            __class__.linker_script_tpl_path.open("r").read()).render(
+                template_mem_start_addr=hex(mem_addr),
+                template_mem_size_kb=mem_size_kb
+            )
         out_path.open("w").write(linker_script_content)
         logging.info(f"OK, linker script written to {out_path} file!")

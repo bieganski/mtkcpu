@@ -220,3 +220,17 @@ satp_layout = [
     ("asid", 9, CSRAccess.RW),
     ("mode", 1, CSRAccess.RW),
 ]
+
+pte_layout = [
+    ("v", 1),
+    ("r", 1),
+    ("w", 1),
+    ("x", 1),
+    ("u", 1),
+    ("g", 1),
+    ("a", 1),
+    ("d", 1),
+    ("rsw", 2),
+    ("ppn0", 10),
+    ("ppn1", 10),
+]

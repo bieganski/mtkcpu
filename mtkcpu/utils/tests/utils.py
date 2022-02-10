@@ -54,6 +54,7 @@ class MemTestCase:
     timeout: Optional[int] = None
     mem_init: Optional[MemoryContents] = None
     reg_init: Optional[RegistryContents] = None
+    mem_size_kb: int = 1
 
 
 @dataclass(frozen=True)
@@ -163,7 +164,7 @@ def reg_test(
         MemoryContents(result_mem).assert_equality(expected_mem)
 
 
-def get_code_mem(case: MemTestCase) -> MemoryContents:
+def get_code_mem(case: MemTestCase, mem_size_kb: int) -> MemoryContents:
     if case.source_type == MemTestSourceType.TEXT:
         code = dump_asm(case.source, verbose=False)
         return MemoryContents(
@@ -176,7 +177,7 @@ def get_code_mem(case: MemTestCase) -> MemoryContents:
         .global start
         {case.source}
         """
-        compile_source(source, tmp_elf_path)
+        compile_source(source, tmp_elf_path, mem_size_kb=mem_size_kb)
         return MemoryContents(
             memory=read_elf(tmp_elf_path, verbose=False)
         )
@@ -428,8 +429,13 @@ def assert_mem_test(case: MemTestCase):
     name = case.name
     reg_init = case.reg_init or RegistryContents.empty()
     mem_init = case.mem_init or MemoryContents.empty()
+    
+    if case.mem_size_kb > 1:
+        # otherwise, it raises RecursionError
+        import sys
+        sys.setrecursionlimit(10**6)
 
-    program = get_code_mem(case)
+    program = get_code_mem(case, mem_size_kb=case.mem_size_kb)
     if case.mem_init:
         case.mem_init.shift_addresses(MEM_START_ADDR)
     program.patch(mem_init, can_overlap=False)
@@ -438,7 +444,7 @@ def assert_mem_test(case: MemTestCase):
 
     mem_cfg = EBRMemConfig.from_mem_dict(
         start_addr=MEM_START_ADDR,
-        num_bytes=1024,
+        num_bytes=1024 * case.mem_size_kb,
         simulate=True,
         mem_dict=program
     )

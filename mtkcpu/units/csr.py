@@ -1,7 +1,6 @@
 from typing import Callable, Dict, List, Union
 
 from amaranth import Signal, Elaboratable, Module
-from grpc import Call
 
 from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType

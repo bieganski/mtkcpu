@@ -33,16 +33,28 @@ class RegisterResetValue:
                 self.set_reset(sig)
             else:
                 assert False
-    
-    @property
-    def value(self) -> int:
-        fields = self.field_values()
+
+    @staticmethod
+    def calc_reset_value(fields: Dict[str, int], layout: List[Tuple[str, int]]) -> int:
         res, off = 0, 0
-        for name, width, *_ in self.layout:
-            res |= fields.get(name, 0) << off # zero initialize
+        for name, width, *_ in layout:
+            res |= (fields.get(name, 0) & ((1 << width) - 1)) << off
             off += width
         return res
 
+    @staticmethod
+    def value_to_fields(value: int, layout: List[Tuple[str, int]]) -> Dict[str, int]:
+        res = {}
+        aux_val = value
+        for name, width, *_ in layout:
+            res[name] = aux_val & ((1 << width) - 1)
+            aux_val >>= width
+        return res
+    
+    @property
+    def value(self) -> int:
+        return __class__.calc_reset_value(fields=self.field_values(), layout=self.layout)
+        
     @property
     def layout_field_names(self):
         return [name for name, *_  in self.layout]

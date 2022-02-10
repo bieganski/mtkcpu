@@ -190,12 +190,14 @@ class MemoryArbiter(Elaboratable, AddressManager):
     def __init__(self):
         raise ArgumentError("lack of 'mem_config' param!")
 
-    def __init__(self, mem_config: EBRMemConfig):
+    def __init__(self, mem_config: EBRMemConfig, with_addr_translation: bool=False, csr_unit: Elaboratable=None):
         self.ports = {}
         self.word_size = 4
         self.generic_bus = LoadStoreInterface(name="generic_bus")
         self.wb_bus = WishboneBusRecord()
         self.mem_config = mem_config
+        self.with_addr_translation = with_addr_translation
+        self.csr_unit = csr_unit
         self.__gen_mmio_devices_config_once()
 
     def __gen_mmio_devices_config_once(self) -> None:
@@ -276,7 +278,20 @@ class MemoryArbiter(Elaboratable, AddressManager):
         for mmio_module, addr_space in self.mmio_cfg:
             setattr(m.submodules, addr_space.basename, mmio_module)
         
-        with m.If(~self.generic_bus.busy):
+        addr_translation_en = Signal()
+        bus_free = Signal()
+
+        if self.with_addr_translation:
+            m.d.comb += addr_translation_en.eq(self.csr_unit.satp.mode)
+        else:
+            m.d.comb += addr_translation_en.eq(False)
+        
+        with m.If(addr_translation_en):
+            pass
+        with m.Else():
+            m.d.comb += bus_free.eq(~self.generic_bus.busy)
+        
+        with m.If(bus_free):
             # no transaction in-progress
             for i, p in enumerate(sorted_ports):
                 m.d.sync += pe.i[i].eq(p.en)
