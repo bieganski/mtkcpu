@@ -40,7 +40,7 @@ class MemTestSourceType(str, Enum):
 @dataclass
 class CpuTestbenchCase:
     name : str
-    elf_path: Path
+    sw_project: str
     try_compile: bool
 
 @dataclass(frozen=True)
@@ -252,7 +252,7 @@ def memory_arbiter_tb():
         mem_content_words = [v for k, v in sorted(mem.items())],
         simulate=True,
     )
-    m = MemoryArbiter(mem_cfg)
+    m = MemoryArbiter(mem_config=mem_cfg, with_addr_translation=False, csr_unit=None, exception_unit=None)
     p1 = m.port(priority=1)
     p2 = m.port(priority=2)
 
@@ -311,10 +311,11 @@ def unit_testbench(case: ComponentTestbenchCase):
 
 # returns ELF path
 def compile_sw_project(proj_name : str) -> Path:
-    proj_dir = Config.sw_dir / proj_name
-    Config.write_linker_script(proj_dir / ".." / "common" / "linker.ld", CODE_START_ADDR)
-    if not proj_dir.exists():
+    sw_dir = Path(__file__).parent.parent.parent / "sw"
+    proj_dir = sw_dir / proj_name
+    if not proj_dir.exists() or not proj_dir.is_dir():
         raise ValueError(f"Compilation failed: Directory {proj_dir} does not exists!")
+    Config.write_linker_script(sw_dir / "common" / "linker.ld", CODE_START_ADDR)
     process = subprocess.Popen(f"make -B", cwd=proj_dir, shell=True)
     process.communicate()
     if process.returncode:
@@ -325,12 +326,18 @@ def compile_sw_project(proj_name : str) -> Path:
     return elf_path
 
 def cpu_testbench_test(case : CpuTestbenchCase):
+    root_dir = Path(__file__).parent.parent.parent
     if case.try_compile:
-        proj_name = case.elf_path.parent.parent.name # hidden assumption - elf is named proj_dir.elf
+        proj_name = case.sw_project
         compile_sw_project(proj_name)
         print("Ok, compile successed!")
+        elf_path = root_dir / f"sw/{case.sw_project}/{case.sw_project}.elf"
+    else:
+        elf_path = root_dir / f"tests/tb_assets/{case.sw_project}.elf"
     
-    program = read_elf(case.elf_path)
+    assert elf_path.exists()
+    program = read_elf(elf_path)
+    
     mem_cfg = EBRMemConfig.from_mem_dict(
         start_addr=MEM_START_ADDR,
         num_bytes=1024,
@@ -360,38 +367,15 @@ def cpu_testbench_test(case : CpuTestbenchCase):
         e = last_instr.entry
         addr = e.st_value
         return addr
-    
-    last_instr_addr = get_last_instr_addr(case.elf_path)
 
     def gpio_fn(timeout=200_000):
         yield
-        prev_instr = None
-        prev_pc = None
         prev_led = None
         for _ in range(timeout):
-            instr = yield cpu.instr
-            pc = yield cpu.pc
-            a = yield cpu.reg_write_port.addr
-            v = yield cpu.reg_write_port.data
-            en = yield cpu.reg_write_port.en
             led = yield cpu.arbiter.gpio.signal_map[1]
-            addr = yield cpu.arbiter.generic_bus.addr
-            data = yield cpu.arbiter.generic_bus.write_data
             if led != prev_led:
-                print(f"LED {led}")
-            prev_led = led
-            if en:
-                if a == 1:
-                    print(f"state ~ x1 (ra): {hex(v)}")
-            if instr != prev_instr:
-                print("====== instr:", hex(instr))
-            if pc != prev_pc:
-                print("====== pc:", hex(pc))
-            prev_instr = instr
-            prev_pc = pc
-            if pc == last_instr_addr:
-                print(f"== OK, 'main' function finished (reached instr at address {hex(last_instr_addr)})! Finishing sim..")
-                break
+                print(f"Led changed state, finishing simulation!")
+                return
             yield
 
     def uart_tx_fn(timeout=50_000):
@@ -407,16 +391,16 @@ def cpu_testbench_test(case : CpuTestbenchCase):
                 prev_tx = tx
             if len(txs) > 10:
                 print("OK, UART tx data line is working! sim passed")
-                # return # XXX
+                return
             yield
 
-    elf_path_str = str(case.elf_path).lower()
-    if "gpio" in elf_path_str:
+    elf_path_str = str(elf_path).lower()
+    if "blink" in elf_path_str:
         f = gpio_fn
     elif "uart_tx" in elf_path_str:
         f = uart_tx_fn
     else:
-        assert False # TODO
+        assert False, elf_path_str
 
     sim.add_sync_process(f)
     

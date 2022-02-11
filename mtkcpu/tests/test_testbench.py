@@ -1,4 +1,3 @@
-from pathlib import Path
 from mtkcpu.utils.tests.utils import component_testbench, ComponentTestbenchCase, CpuTestbenchCase, cpu_testbench
 from mtkcpu.units.loadstore import MemoryArbiter
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
@@ -14,23 +13,26 @@ TESTBENCHES = [
     ),
 ]
 
+# TODO 'try_compile' doesn't work well - instead we keep already compiled ELFs 
+# inside tests/tb_assets directory. It's because mtkCPU installed via 'pip3 install' 
+# command doesn't include sw/ directory, thus cannot build it.
 CPU_TESTBENCHES = [
-    # CpuTestbenchCase(
-    #     name="GPIO LED C++",
-    #     elf_path=Path("sw/blink_led/build/blink_led.elf"),
-    #     try_compile=True
-    # ),
+    CpuTestbenchCase(
+        name="GPIO LED C++",
+        sw_project="blink_led",
+        try_compile=False
+    ),
     CpuTestbenchCase(
         name="UART C++",
-        elf_path=Path("sw/uart_tx/build/uart_tx.elf"),
-        try_compile=True
+        sw_project="uart_tx",
+        try_compile=False
     ),
 ]
 
-# @component_testbench(TESTBENCHES)
-# def test_tb(_):
-#     pass
+@component_testbench(TESTBENCHES)
+def test_tb(_):
+    pass
 
 @cpu_testbench(CPU_TESTBENCHES)
-def test_tb(_):
+def test_tb_cpu(_):
     pass

@@ -366,6 +366,9 @@ class MemoryArbiter(Elaboratable, AddressManager):
         # Code below implements algorithm 4.3.2 in Risc-V Privileged specification, v1.10
         sv32_i = Signal(reset=1)
         root_ppn = Signal(22)
+
+        if not self.with_addr_translation:
+            return m
         
         with m.FSM():
             with m.State("IDLE"):
