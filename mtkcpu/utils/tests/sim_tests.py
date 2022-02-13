@@ -397,8 +397,8 @@ def get_sim_register_test(
                         # TODO that mechanism for now allows for only one write to observed register per test,
                         # extend it if neccessary.
                         print(
-                            f"== ERROR: Expected data write to reg x{addr} of value {expected_val},"
-                            f" got value {val}.. \n== fail test: {name}\n"
+                            f"== ERROR: Expected data write to reg x{addr} of value {hex(expected_val)},"
+                            f" got value {hex(val)}.. \n== fail test: {name}\n"
                         )
                         print(
                             f"{format(expected_val, '32b')} vs {format(val, '32b')}"

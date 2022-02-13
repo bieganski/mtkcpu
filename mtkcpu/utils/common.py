@@ -53,9 +53,11 @@ class EBRMemConfig():
         d = dict([(k - start_addr, v) for k, v in mem_dict.memory.items()])
         if any([x < 0 for x in d.keys()]) or any([x >= num_bytes for x in d.keys()]):
             valid_range_fmt = f"[{hex(start_addr), hex(start_addr + num_bytes)}]"
+            non_matching = [x for x in d.keys() if x < start_addr or x >= start_addr + num_bytes][0]
             raise ValueError(f"Passed MemoryContents contains initialized memory on addresses "
                 f"that doesn't fit into range {valid_range_fmt}!"
-                f"(tried {mem_dict if len(mem_dict.memory) < 100 else f'<too big to print> (of length {len(mem_dict.memory)}' })"
+                f"(tried {mem_dict if len(mem_dict.memory) < 100 else f'<too big to print> (of length {len(mem_dict.memory)}'}."
+                f"E.g. {hex(non_matching)}={hex(d[non_matching])} not matches.)"
             )
         from math import log2
         mem_map = [0] * num_words

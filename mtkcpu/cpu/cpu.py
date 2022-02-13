@@ -9,7 +9,7 @@ from amaranth.hdl.rec import Layout
 
 from mtkcpu.units.csr import CsrUnit, match_csr
 from mtkcpu.units.exception import ExceptionUnit
-from mtkcpu.utils.common import CODE_START_ADDR
+from mtkcpu.utils.common import CODE_START_ADDR, EBRMemConfig
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
 from mtkcpu.units.loadstore import (MemoryArbiter, MemoryUnit,
@@ -21,7 +21,6 @@ from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
-
 
 match_jal = matcher(
     [
@@ -79,7 +78,7 @@ class ActiveUnit(Record):
 
 
 class MtkCpu(Elaboratable):
-    def __init__(self, mem_config, reg_init=[0 for _ in range(32)], with_debug=True):
+    def __init__(self, mem_config: EBRMemConfig, reg_init=[0 for _ in range(32)], with_debug=True):
 
         if len(reg_init) > 32:
             raise ValueError(

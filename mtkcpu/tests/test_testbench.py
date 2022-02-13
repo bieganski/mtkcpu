@@ -1,3 +1,4 @@
+import pytest
 from mtkcpu.utils.tests.utils import component_testbench, ComponentTestbenchCase, CpuTestbenchCase, cpu_testbench
 from mtkcpu.units.loadstore import MemoryArbiter
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
@@ -28,6 +29,13 @@ CPU_TESTBENCHES = [
         try_compile=False
     ),
 ]
+
+
+@pytest.mark.skip
+def test_virtual_mem():
+    # from mtkcpu.utils.tests.vm_tb import basic_vm_test # XXX
+    from vm_tb import basic_vm_test
+    basic_vm_test()
 
 @component_testbench(TESTBENCHES)
 def test_tb(_):

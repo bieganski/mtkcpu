@@ -56,6 +56,7 @@ class MemTestCase:
     mem_init: Optional[MemoryContents] = None
     reg_init: Optional[RegistryContents] = None
     mem_size_kb: int = 1
+    shift_mem_content: bool = True # 0x1000 becomes 0x8000_1000 if mem. start address is 0x8000_0000
 
 
 @dataclass(frozen=True)
@@ -133,11 +134,12 @@ def reg_test(
     e = cpu.exception_unit
     sim_traces = [
         # main_fsm.state,
-        e.m_instruction,
+        # e.m_instruction,
         # e.mtval.value,
         # csr_unit.mtvec.base,
         # csr_unit.mtvec.mode,
         # *csr_unit.mepc.fields.values(),
+        *csr_unit.mcause.fields.values(),
         *csr_unit.satp.fields.values(),
         # *csr_unit.mie.fields.values(),
         # *csr_unit.mstatus.fields.values(),
@@ -145,19 +147,30 @@ def reg_test(
         # *csr_unit.mtimecmp.fields.values(),
         cpu.instr,
         cpu.pc,
-        csr_unit.rs1,
-        csr_unit.csr_idx,
-        csr_unit.rd,
-        csr_unit.rd_val,
-        csr_unit.vld,
-        csr_unit.ONREAD,
-        csr_unit.ONWRITE,
+        # csr_unit.rs1,
+        # csr_unit.csr_idx,
+        # csr_unit.rd,
+        # csr_unit.rd_val,
+        # csr_unit.vld,
+        # csr_unit.ONREAD,
+        # csr_unit.ONWRITE,
         cpu.arbiter.pe.i,
         cpu.arbiter.pe.o,
         cpu.arbiter.pe.none,
         cpu.arbiter.bus_free_to_latch,
 
         cpu.arbiter.error_code,
+        cpu.arbiter.addr_translation_en,
+        cpu.arbiter.translation_ack,
+        cpu.arbiter.start_translation,
+        cpu.arbiter.phys_addr,
+        cpu.arbiter.root_ppn,
+
+        *cpu.arbiter.pte.fields.values(),
+
+        cpu.arbiter.generic_bus.addr,
+        cpu.arbiter.generic_bus.read_data,
+        cpu.arbiter.vpn,
     ]
 
     # from amaranth.back import verilog
@@ -333,6 +346,9 @@ def compile_sw_project(proj_name : str) -> Path:
         raise ValueError(f"Error: Compilation returned 0 (ok), but elf {elf_path} doesnt exists!")
     return elf_path
 
+def virtual_mem_translation_test():
+    pass
+
 def cpu_testbench_test(case : CpuTestbenchCase):
     root_dir = Path(__file__).parent.parent.parent
     if case.try_compile:
@@ -428,7 +444,7 @@ def assert_mem_test(case: MemTestCase):
         sys.setrecursionlimit(10**6)
 
     program = get_code_mem(case, mem_size_kb=case.mem_size_kb)
-    if case.mem_init:
+    if case.mem_init and case.shift_mem_content:
         case.mem_init.shift_addresses(MEM_START_ADDR)
     program.patch(mem_init, can_overlap=False)
     if program.size == 0:

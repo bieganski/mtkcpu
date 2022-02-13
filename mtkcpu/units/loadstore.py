@@ -293,7 +293,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
         for mmio_module, addr_space in self.mmio_cfg:
             setattr(m.submodules, addr_space.basename, mmio_module)
         
-        addr_translation_en = Signal()
+        addr_translation_en = self.addr_translation_en = Signal()
         bus_free_to_latch = self.bus_free_to_latch = Signal(reset=1)
 
         if self.with_addr_translation:
@@ -313,11 +313,11 @@ class MemoryArbiter(Elaboratable, AddressManager):
 
         
         virtual_req_bus_latch = LoadStoreInterface()
-        phys_addr = Signal(32)
+        phys_addr = self.phys_addr = Signal(32)
         
         # translation-unit controller signals. 
-        start_translation = Signal()
-        translation_ack = Signal()
+        start_translation = self.start_translation = Signal()
+        translation_ack = self.translation_ack = Signal()
         gb = self.generic_bus
 
         with m.If(self.decoder.no_match & self.wb_bus.cyc):
@@ -340,7 +340,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     with m.Else():
                         # page-walk performs multiple memory operations - will reconnect 'generic_bus' multiple times
                         with m.FSM():
-                            first = Signal() # TODO get rid of that
+                            first = self.first = Signal() # TODO get rid of that
                             with m.State("TRANSLATE"):
                                 comb += [
                                     start_translation.eq(1),
@@ -362,7 +362,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                                         m.next = "TRANSLATE"
         
         req_is_write = Signal()
-        pte = Record(pte_layout)
+        pte = self.pte = Record(pte_layout)
         vaddr = Record(virt_addr_layout)
         comb += [
             req_is_write.eq(virtual_req_bus_latch.store),
@@ -375,7 +375,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
             PAGE_INVALID = 1
             WRITABLE_NOT_READABLE = 2
             LACK_PERMISSIONS = 3
-            FIRST_ACCESS_OR_MAKE_DIRTY = 4
+            FIRST_ACCESS = 4
             MISALIGNED_SUPERPAGE = 5
             LEAF_IS_NO_LEAF = 6
 
@@ -385,7 +385,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
 
         # Code below implements algorithm 4.3.2 in Risc-V Privileged specification, v1.10
         sv32_i = Signal(reset=1)
-        root_ppn = Signal(22)
+        root_ppn = self.root_ppn = Signal(22)
 
         if not self.with_addr_translation:
             return m
@@ -397,7 +397,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     sync += root_ppn.eq(self.csr_unit.satp.ppn)
                     m.next = "TRANSLATE"
             with m.State("TRANSLATE"):
-                vpn = Signal(10)
+                vpn = self.vpn = Signal(10)
                 comb += vpn.eq(Mux(
                     sv32_i,
                     vaddr.vpn1,
@@ -418,15 +418,14 @@ class MemoryArbiter(Elaboratable, AddressManager):
                 with m.If(pte.w & ~pte.r):
                     error(Issue.WRITABLE_NOT_READABLE)
 
-                is_leaf = lambda pte: ~(pte.r | pte.x)
+                is_leaf = lambda pte: pte.r | pte.x
                 with m.If(is_leaf(pte)):
                     with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
                         error(Issue.LACK_PERMISSIONS)
                     with m.If(~pte.a | (req_is_write & ~pte.d)):
-                        error(Issue.FIRST_ACCESS_OR_MAKE_DIRTY)
+                        error(Issue.FIRST_ACCESS)
                     with m.If(sv32_i.bool() & pte.ppn0.bool()):
                         error(Issue.MISALIGNED_SUPERPAGE)
-                    phys_addr = Signal(32)
                     # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
                     # below statement cuts lowest two bits of r-value.
                     sync += phys_addr.eq(Cat(vaddr.page_offset, pte.ppn0, pte.ppn1))
