@@ -26,6 +26,7 @@ wb_bus_layout = [
 generic_bus_layout = [
     ("en", 1, DIR_FANIN),
     ("store", 1, DIR_FANIN),
+    ("is_fetch", 1, DIR_FANIN),
     ("addr", 32, DIR_FANIN),
     ("mask", 4, DIR_FANIN),
     ("write_data", 32, DIR_FANIN),
@@ -81,7 +82,6 @@ class WishboneSlave(Elaboratable):
     def elaborate(self, platform):
         m = Module()
         comb = m.d.comb
-        sync = m.d.sync
 
         with m.FSM():
             with m.State("WB_SLV_TRY_HANDLE"):
@@ -147,17 +147,27 @@ class WishboneBusAddressDecoder(Elaboratable):
         self.bus = wb_bus
         self.word_size = word_size
 
+        # notifies that no MMIO device matches given address
+        self.no_match = Signal()
+
     def elaborate(self, platform):
         m = Module()
+
+        matches = Signal(len(self.ports))
+        m.d.comb += self.no_match.eq(~matches.any())
         
-        for addr_scheme, slv_bus in self.ports.items():
+        for i, (addr_scheme, slv_bus) in enumerate(self.ports.items()):
             num_words = addr_scheme.num_words
             start_addr = addr_scheme.first_valid_addr_incl
             max_legal_addr = start_addr + self.word_size * (num_words - 1)
             req_addr = self.bus.adr
             with m.If((req_addr >= start_addr) & (req_addr <= max_legal_addr)):
-                m.d.comb += slv_bus.connect(self.bus, exclude=["adr"])
-                m.d.comb += slv_bus.adr.eq(req_addr - start_addr)
+                m.d.comb += [
+                    slv_bus.connect(self.bus, exclude=["adr"]),
+                    slv_bus.adr.eq(req_addr - start_addr),
+                    matches[i].eq(1),
+                ]
+                
         return m
     
     def check_addres_scheme(self, addr_scheme : MMIOAddressSpace) -> None:
@@ -272,8 +282,9 @@ class MemoryArbiter(Elaboratable, AddressManager):
         comb = m.d.comb
 
         cfg = self.mem_config
-        bridge = m.submodules.bridge = GenericInterfaceToWishboneMasterBridge(generic_bus=self.generic_bus, wb_bus=self.wb_bus)
-        self.decoder = m.submodules.decoder = WishboneBusAddressDecoder(wb_bus=bridge.wb_bus, word_size=cfg.word_size)
+        # TODO XXX self.no_match on decoder
+        m.submodules.bridge = GenericInterfaceToWishboneMasterBridge(generic_bus=self.generic_bus, wb_bus=self.wb_bus)
+        self.decoder = m.submodules.decoder = WishboneBusAddressDecoder(wb_bus=self.wb_bus, word_size=cfg.word_size)
         self.initialize_mmio_devices(self.decoder, m)
         pe = m.submodules.pe = self.pe = PriorityEncoder(width=len(self.ports))
         sorted_ports = [port for priority, port in sorted(self.ports.items())]
@@ -283,7 +294,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
             setattr(m.submodules, addr_space.basename, mmio_module)
         
         addr_translation_en = Signal()
-        bus_free_to_latch = Signal(reset=1)
+        bus_free_to_latch = self.bus_free_to_latch = Signal(reset=1)
 
         if self.with_addr_translation:
             m.d.comb += addr_translation_en.eq(self.csr_unit.satp.mode & (self.exception_unit.current_priv_mode == PrivModeBits.USER))
@@ -308,6 +319,15 @@ class MemoryArbiter(Elaboratable, AddressManager):
         start_translation = Signal()
         translation_ack = Signal()
         gb = self.generic_bus
+
+        with m.If(self.decoder.no_match & self.wb_bus.cyc):
+            m.d.comb += self.exception_unit.badaddr.eq(gb.addr)
+            with m.If(gb.store):
+                m.d.comb += self.exception_unit.m_store_error.eq(1)
+            with m.Elif(gb.is_fetch):
+                m.d.comb += self.exception_unit.m_fetch_error.eq(1)
+            with m.Else():
+                m.d.comb += self.exception_unit.m_load_error.eq(1)
 
         with m.If(~pe.none):
             # transaction request occured
@@ -504,39 +524,25 @@ class GenericInterfaceToWishboneMasterBridge(Elaboratable):
     def elaborate(self, platform):
         m = Module()
         comb = m.d.comb
-        sync = m.d.sync
         gb = self.generic_bus
         wb = self.wb_bus
 
         # XXX for now we don't use strobe signal (cyc only)
-        with m.FSM():
-            with m.State("IDLE"):
-                sync += [
-                    wb.adr.eq(gb.addr),
-                    wb.dat_w.eq(gb.write_data),
-                    wb.sel.eq(gb.mask),
-                    wb.we.eq(gb.store),
-                ]
-                with m.If(gb.en):
-                    sync += [
-                        wb.cyc.eq(1),
-                        gb.busy.eq(1),
-                    ]
-                    m.next = "WAIT_MEM"
-            with m.State("WAIT_MEM"):
-                with m.If(wb.ack):
-                    sync += [
-                        wb.cyc.eq(0),
-                        gb.ack.eq(1),
-                        gb.read_data.eq(wb.dat_r),
-                    ]
-                    m.next = "PARK"
-            with m.State("PARK"):
-                sync += [
-                    gb.busy.eq(0),
-                    gb.ack.eq(0) # don't assert it for too long
-                ]
-                m.next = "IDLE"
+        comb += [
+            wb.adr.eq(gb.addr),
+            wb.dat_w.eq(gb.write_data),
+            wb.sel.eq(gb.mask),
+            wb.we.eq(gb.store),
+            
+            wb.cyc.eq(gb.en),
+            gb.busy.eq(gb.en), # ... not sure whether it's a good idea
+        ]
+        with m.If(wb.ack):
+            comb += [
+                wb.cyc.eq(0),
+                gb.ack.eq(1),
+                gb.read_data.eq(wb.dat_r),
+            ]
         return m
 
 
@@ -642,26 +648,18 @@ class MemoryUnit(Elaboratable):
                 with m.Case(Funct3.BU):
                     comb += (write_data.eq(byte),)
 
-        with m.FSM():
-            with m.State("IDLE"):
-                with m.If(self.en):
-                    sync += [
-                        loadstore.en.eq(1),
-                        loadstore.store.eq(store),
-                        loadstore.addr.eq(addr),
-                        loadstore.mask.eq(sel.mask),
-                        loadstore.write_data.eq(write_data),
-                    ]
-                    m.next = "WAIT"
-                with m.Else():
-                    m.next = "IDLE"
-            with m.State("WAIT"):
-                with m.If(loadstore.ack):
-                    comb += [
-                        self.ack.eq(1),
-                        self.res.eq(load_res),
-                    ]
-                    sync += loadstore.en.eq(0)
-                    m.next = "IDLE"
-
+        
+        with m.If(self.en):
+            comb += [
+                loadstore.en.eq(1),
+                loadstore.store.eq(store),
+                loadstore.addr.eq(addr),
+                loadstore.mask.eq(sel.mask),
+                loadstore.write_data.eq(write_data),
+            ]
+        with m.If(loadstore.ack):
+            comb += [
+                self.ack.eq(1),
+                self.res.eq(load_res),
+            ]
         return m

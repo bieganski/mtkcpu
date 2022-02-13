@@ -27,17 +27,19 @@ class ExceptionUnit(Elaboratable):
         self.software_interrupt = Signal() # not supported for now
 
         # TODO move those to 'elaborate' function
-        self.m_fetch_misaligned = Signal()
-        self.m_fetch_error = Signal()
         self.m_illegal = Signal()
         self.m_ebreak = Signal()
         self.m_ecall = Signal()
+        
+        # those are set by memory system.
+        self.m_fetch_misaligned = Signal()
         self.m_load_misaligned = Signal()
-        self.m_load_error = Signal()
         self.m_store_misaligned = Signal()
+        self.m_fetch_error = Signal()
+        self.m_load_error = Signal()
         self.m_store_error = Signal()
-        # self.m_fetch_badaddr = Signal(30)
-        # self.m_loadstore_badaddr = Signal(30)
+        self.badaddr = Signal(32)
+        
         # self.m_branch_target = Signal(32)
 
         self.m_pc = Signal(32)
@@ -110,16 +112,16 @@ class ExceptionUnit(Elaboratable):
                 with m.Switch(trap_pe.o):
                     # with m.Case(Cause.FETCH_MISALIGNED):
                     #     m.d.sync += self.mtval.eq(self.m_branch_target)
-                    # with m.Case(Cause.FETCH_ACCESS_FAULT):
-                    #     m.d.sync += self.mtval.eq(self.m_fetch_badaddr << 2)
+                    with m.Case(TrapCause.FETCH_ACCESS_FAULT):
+                        m.d.sync += self.mtval.eq(self.badaddr)
                     with m.Case(TrapCause.ILLEGAL_INSTRUCTION):
                         m.d.sync += self.mtval.eq(self.m_instruction)
                     # with m.Case(Cause.BREAKPOINT):
                     #     m.d.sync += self.mtval.eq(self.m_pc)
                     # with m.Case(Cause.LOAD_MISALIGNED, Cause.STORE_MISALIGNED):
                     #     m.d.sync += self.mtval.eq(self.m_result)
-                    # with m.Case(Cause.LOAD_ACCESS_FAULT, Cause.STORE_ACCESS_FAULT):
-                    #     m.d.sync += self.mtval.eq(self.m_loadstore_badaddr << 2)
+                    with m.Case(TrapCause.LOAD_ACCESS_FAULT, TrapCause.STORE_ACCESS_FAULT):
+                        m.d.sync += self.mtval.eq(self.badaddr)
                     # with m.Case():
                     #     m.d.sync += self.mtval.r.eq(0) # XXX
             with m.Else():

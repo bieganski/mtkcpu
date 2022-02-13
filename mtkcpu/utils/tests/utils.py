@@ -18,6 +18,7 @@ from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
 from mtkcpu.units.csr import CsrUnit
+from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig, read_elf
 from mtkcpu.utils.decorators import parametrized, rename
 from mtkcpu.utils.tests.memory import MemoryContents
@@ -151,6 +152,12 @@ def reg_test(
         csr_unit.vld,
         csr_unit.ONREAD,
         csr_unit.ONWRITE,
+        cpu.arbiter.pe.i,
+        cpu.arbiter.pe.o,
+        cpu.arbiter.pe.none,
+        cpu.arbiter.bus_free_to_latch,
+
+        cpu.arbiter.error_code,
     ]
 
     # from amaranth.back import verilog
@@ -252,7 +259,8 @@ def memory_arbiter_tb():
         mem_content_words = [v for k, v in sorted(mem.items())],
         simulate=True,
     )
-    m = MemoryArbiter(mem_config=mem_cfg, with_addr_translation=False, csr_unit=None, exception_unit=None)
+    csr_unit = CsrUnit(in_machine_mode=Signal(reset=1))
+    m = MemoryArbiter(mem_config=mem_cfg, with_addr_translation=False, csr_unit=csr_unit, exception_unit=ExceptionUnit(Signal(2, reset=0b11), csr_unit))
     p1 = m.port(priority=1)
     p2 = m.port(priority=2)
 

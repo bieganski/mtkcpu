@@ -3,7 +3,7 @@ from __future__ import with_statement
 from functools import reduce
 from operator import or_
 
-from typing import Union
+from typing import Union, Optional
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
 
@@ -323,16 +323,18 @@ class MtkCpu(Elaboratable):
             m.d.sync += self.pc.eq(pc)
 
 
-        def trap(cause: Union[TrapCause, IrqCause], interrupt=False):
-            assert isinstance(cause, TrapCause) or isinstance(cause, IrqCause) 
-            # generic part.
+        def trap(cause: Optional[Union[TrapCause, IrqCause]], interrupt=False):
             fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
-            # trap-specific part.
+            if cause is None:
+                return
+            assert isinstance(cause, TrapCause) or isinstance(cause, IrqCause) 
             e = exception_unit
             notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
             m.d.comb += notifiers[cause].eq(1)
 
         self.fetch = Signal()
+        interconnect_error = Signal()
+        comb += interconnect_error.eq(exception_unit.m_store_error | exception_unit.m_fetch_error | exception_unit.m_load_error)
         with m.FSM():
             with m.State("FETCH"):
                 with m.If(self.halt):
@@ -342,27 +344,20 @@ class MtkCpu(Elaboratable):
                     with m.If(pc & 0b11):
                         trap(TrapCause.FETCH_MISALIGNED)
                     with m.Else():
-                        sync += [
+                        comb += [
                             ibus.en.eq(1),
                             ibus.store.eq(0),
                             ibus.addr.eq(pc),
                             ibus.mask.eq(0b1111),
+                            ibus.is_fetch.eq(1),
                         ]
-                        m.next = "WAIT_FETCH"
-                        # TODO can i safely remove below?
-                        # with m.If(ibus.en & ~ibus.busy):
-                        #     m.next = "WAIT_FETCH"
-                        # with m.Else():
-                        #     m.next = "FETCH"
-            with m.State("WAIT_FETCH"):
-                with m.If(ibus.ack):
-                    sync += [
-                        instr.eq(ibus.read_data),
-                        ibus.en.eq(0),
-                    ]
-                    m.next = "DECODE"
-                with m.Else():
-                    m.next = "WAIT_FETCH"
+                    with m.If(interconnect_error):
+                        trap(cause=None)
+                    with m.If(ibus.ack):
+                        sync += [
+                            instr.eq(ibus.read_data),
+                        ]
+                        m.next = "DECODE"
             with m.State("DECODE"):
                 comb += self.fetch.eq(1) # only for simulation, notify that 'instr' ready to use.
                 m.next = "EXECUTE"
@@ -475,6 +470,11 @@ class MtkCpu(Elaboratable):
                         sync += active_unit.eq(0)
                     with m.Else():
                         m.next = "EXECUTE"
+                    with m.If(interconnect_error):
+                        # NOTE: 
+                        # the order of that 'If' is important.
+                        # In case of error overwrite m.next above.
+                        trap(cause=None)
                 with m.Elif(active_unit.csr):
                     with m.If(csr_unit.illegal_insn):
                         trap(TrapCause.ILLEGAL_INSTRUCTION)

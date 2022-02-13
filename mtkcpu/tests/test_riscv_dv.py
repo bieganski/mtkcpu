@@ -1,4 +1,3 @@
-from asyncore import write
 from pathlib import Path
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.utils.common import EBRMemConfig, read_elf
