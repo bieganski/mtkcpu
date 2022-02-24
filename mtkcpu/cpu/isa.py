@@ -16,7 +16,8 @@ class Funct3(int, Enum):
 class Funct7(int, Enum):
     ADD = SRL = SLL = SRLI = SLLI = 0b0000000
     SUB = SRA = SRAI = 0b0100000
-    MRET = 0b011000
+    MRET = 0b0011000
+    SFENCE_VMA = 0b0001001
 
 
 class Funct12(int, Enum):

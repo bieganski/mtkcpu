@@ -81,6 +81,8 @@ class CsrUnit(Elaboratable):
         # Debug
         self.ONREAD = Signal()
         self.ONWRITE = Signal()
+        self.ONSET = Signal()
+        self.ONCLEAR = Signal()
         
         # Output signals.
         self.rd_val = Signal(32)
@@ -90,25 +92,6 @@ class CsrUnit(Elaboratable):
         self.controller = ControllerInterface()
         self.csr_regs = self.enabled_csr_regs(self.controller)
     
-    def on_read(self):
-        m : Module = self.m
-        m.d.comb += self.ONREAD.eq(1)
-        with m.Switch(self.csr_idx):
-            for reg in self.csr_regs:
-                register = reg.rec.w if isinstance(reg, WriteOnlyRegisterCSR) else reg.rec.r
-                with m.Case(reg.csr_idx):
-                    m.d.sync += self.rd_val.eq(register)
-
-    def on_write(self):
-        m : Module = self.m
-        m.d.comb += self.ONWRITE.eq(1)
-        with m.Switch(self.csr_idx):
-            for reg in self.csr_regs:
-                with m.Case(reg.csr_idx):
-                    if isinstance(reg, ReadOnlyRegisterCSR):
-                        continue
-                    m.d.sync += reg.rec.w.eq(self.rs1val)  # VERY NOT TRUE FOR CSRR{S|C} with rs1 != x0
-
     def elaborate(self, platform):
         m = self.m = Module()
         sync = m.d.sync
@@ -131,29 +114,62 @@ class CsrUnit(Elaboratable):
                             func3_latch.eq(self.func3),
                             csr_idx_latch.eq(self.csr_idx),
                         ]
-                        m.next = "RW_GENERIC"
-            with m.State("RW_GENERIC"):
-                # read and write conditions are described in CSR docs.
-                with m.If(~(_is(func3_latch, [Funct3.CSRRW, Funct3.CSRRWI]) & (rd_latch == 0))):
-                    self.on_read()
-                with m.If(~(_is(func3_latch, [Funct3.CSRRS, Funct3.CSRRSI, Funct3.CSRRC, Funct3.CSRRCI]) & (rs1_latch == 0))):
-                    self.on_write()
-                    m.next = "WRITE"
-                with m.Else():
-                    m.next = "FINISH"
-            with m.State("WRITE"):
+                        m.next = "REG_GENERIC"
+            with m.State("REG_GENERIC"):
+                # all CSRxx insructions do read.
+                # NOTE from doc:
+                # If rd=x0, then the instruction shall not read the CSR and shall not 
+                # cause any of the side effects that might occur on a CSR read.
+                # however, we don't support read side-effects, so we can save one mux here.
                 with m.Switch(csr_idx_latch):
                     for reg in self.csr_regs:
                         with m.Case(reg.csr_idx):
-                            reg.handle_write()
-                with m.If(self.controller.handler_done):
-                    m.next = "FINISH"
+                            register = reg.rec.w if isinstance(reg, WriteOnlyRegisterCSR) else reg.rec.r
+                            m.d.sync += self.rd_val.eq(register)
+
+                with m.Switch(csr_idx_latch):
+                    for reg in self.csr_regs:
+                        with m.Case(reg.csr_idx):
+                            if isinstance(reg, ReadOnlyRegisterCSR):
+                                continue
+                            src = reg.rec.w if isinstance(reg, WriteOnlyRegisterCSR) else reg.rec.r
+                            dst = reg.rec.w # always exists
+                            # TODO it needs to use rec.r
+                            with m.If(_is(func3_latch, [Funct3.CSRRS, Funct3.CSRRSI])):
+                                m.d.sync += dst.eq(src | self.rs1val)
+                            with m.Elif(_is(func3_latch, [Funct3.CSRRC, Funct3.CSRRCI])):
+                                m.d.sync += dst.eq(src & ~self.rs1val)
+                            with m.Elif(_is(func3_latch, [Funct3.CSRRW, Funct3.CSRRWI])):
+                                m.d.sync += dst.eq(self.rs1val)
+                m.next = "REG_SPECIFIC"
+            with m.State("REG_SPECIFIC"):
+                with m.Switch(csr_idx_latch):
+                    for reg in self.csr_regs:
+                        with m.Case(reg.csr_idx):
+                            # NOTE from doc:
+                            # For both CSRRS and CSRRC, if rs1=x0, then the instruction will not write 
+                            # to the CSR at all, and so shall not cause any of the side effects 
+                            # that might otherwise occur on a CSR write,
+                            need_wait = Signal()
+                            with m.If(need_wait):
+                                with m.If(self.controller.handler_done):
+                                    m.next = "FINISH"
+                            with m.Else():
+                                # covers all non-waiting paths.
+                                m.next = "FINISH"
+                            
+                            with m.If(_is(func3_latch, [Funct3.CSRRS, Funct3.CSRRC])):
+                                with m.If(rs1_latch != 0):
+                                    reg.handle_write()
+                                    comb += need_wait.eq(1)
+                            with m.Else():
+                                reg.handle_write()
+                                comb += need_wait.eq(1)
             with m.State("FINISH"):
                 m.next = "IDLE"
                 comb += [
                     self.vld.eq(1)
                 ]
-
 
         return m
 

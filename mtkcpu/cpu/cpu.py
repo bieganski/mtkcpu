@@ -51,6 +51,12 @@ match_mret = matcher(
     ]
 )
 
+match_sfence_vma = matcher(
+    [
+        (InstrType.SYSTEM, Funct3.PRIV, Funct7.SFENCE_VMA),
+    ]
+)
+
 
 class ActiveUnitLayout(Layout):
     def __init__(self):
@@ -420,6 +426,8 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.mret.eq(1)
                     ]
+                with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
+                    pass # sfence.vma
                 with m.Elif(opcode == 0b0001111):
                     pass # fence
                 with m.Else():

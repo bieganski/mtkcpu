@@ -6,8 +6,45 @@ from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
 
 from mtkcpu.units.csr_handlers import MISA
 
-# some registers (e.g. mcause) are tested in test_execption.py file.
+# some registers (e.g. mcause) are tested in test_exception.py file.
 CSR_TESTS = [
+
+    MemTestCase(
+        name="basic csrrc",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                li x1, 0b1010
+                li x2, 0b0011
+                csrw mscratch, x1
+                csrc mscratch, x2 
+                csrr x10, mscratch
+        """,
+        out_reg=10,
+        out_val=0b1000,
+        timeout=50,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+
+    MemTestCase(
+        name="basic csrrs",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                li x1, 0b1010
+                li x2, 0b0011
+                csrw mscratch, x1
+                csrs mscratch, x2 
+                csrr x3, mscratch
+        """,
+        out_reg=3,
+        out_val=0b1011,
+        timeout=20,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+
     MemTestCase(
         name="read 'misa' CPU architecture with supported extensions",
         source_type=MemTestSourceType.RAW,

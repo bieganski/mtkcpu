@@ -135,9 +135,7 @@ class MISA(ReadOnlyRegisterCSR):
     def __init__(self):
         super().__init__(CSRIndex.MISA, misa_layout, __class__.RegValueLocal)
 
-
-# TODO make me WriteOnlyRegisterCSR
-class MTVEC(RegisterCSR):
+class MTVEC(WriteOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
             return {
@@ -148,10 +146,6 @@ class MTVEC(RegisterCSR):
         super().__init__(CSRIndex.MTVEC, mtvec_layout, __class__.RegValueLocal)
 
     def handle_write(self):
-        m = self.get_m()
-        m.d.sync += [
-            self.rec.r.base.eq(self.csr_unit.rs1val >> 2)
-        ]
         self.handler_notify_comb()
 
 class MTVAL(ReadOnlyRegisterCSR):
@@ -176,8 +170,7 @@ class MEPC(RegisterCSR):
         self.handler_notify_comb()
 
 
-# TODO make it WriteOnlyRegisterCSR
-class MSCRATCH(RegisterCSR):
+class MSCRATCH(WriteOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):
             return {}
@@ -185,10 +178,6 @@ class MSCRATCH(RegisterCSR):
         super().__init__(CSRIndex.MSCRATCH, flat_layout, __class__.RegValueLocal)
 
     def handle_write(self):
-        m = self.get_m()
-        m.d.sync += [
-            self.rec.r.value.eq(self.csr_unit.rs1val)
-        ]
         self.handler_notify_comb()
 
 class MHARTID(ReadOnlyRegisterCSR):
