@@ -192,14 +192,19 @@ def get_code_mem(case: MemTestCase, mem_size_kb: int) -> MemoryContents:
         )
     elif case.source_type == MemTestSourceType.RAW:
         from mtkcpu.utils.common import read_elf, compile_source
-        tmp_elf_path = "tmp.elf"
-        source = f"""
-        .global start
-        {case.source}
-        """
-        compile_source(source, tmp_elf_path, mem_size_kb=mem_size_kb)
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            suffix=".elf",
+            dir=Path(__file__).parent
+        ) as tmp_elf:
+            source = f"""
+            .global start
+            {case.source}
+            """
+            compile_source(source, tmp_elf.name, mem_size_kb=mem_size_kb)
+            elf_content = read_elf(tmp_elf.name, verbose=False)
         return MemoryContents(
-            memory=read_elf(tmp_elf_path, verbose=False)
+            memory=elf_content
         )
     else:
         assert False
