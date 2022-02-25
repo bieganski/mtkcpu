@@ -9,13 +9,6 @@ WORKDIR /toolchain
 # Normal update
 RUN apt-get update -y
 
-# Install gcc
-#RUN echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
-#RUN echo "deb http://ftp.us.debian.org/debian testing main contrib non-free" > /etc/apt/sources.list.d/testing.list
-#RUN printf "Package: *\nPin: release a=testing\nPin-Priority: 100" > /etc/apt/preferences.d/testing
-#RUN apt-get update -y
-#RUN apt-get install -t testing gcc g++ -y -o APT::Immediate-Configure=0
-
 # Install nodejs
 RUN apt-get install -y nodejs npm
 
