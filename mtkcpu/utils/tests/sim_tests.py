@@ -237,8 +237,8 @@ def get_sim_jtag_controller(
                 if (i % 1000 == 0):
                     print(f"i = {i}")
                     if i == 12000:
-                        from beepy import beep
-                        beep()
+                        # Removed WIP
+                        pass
                     if i == 17000:
                         from subprocess import Popen, DEVNULL
                         gdb = Popen("riscv-none-embed-gdb -x gdb_cmd", shell=True, stdout=DEVNULL, stderr=DEVNULL)

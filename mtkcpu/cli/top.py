@@ -2,6 +2,7 @@
 import logging
 from pathlib import Path
 from typing import Optional
+import os
 
 from amaranth.build.plat import Platform
 from amaranth.hdl.dsl import Module
@@ -84,6 +85,38 @@ def build(elf_path : Path, do_program=True):
     print("".join(lines[resources_idx:resources_idx+16])) # TODO probably more lines for different architectures
 
 
+
+from amaranth import Elaboratable, Instance
+from amaranth.build.plat import Platform
+    
+# partially taken from amaranth/dsl.py (Module.elaborate method)
+# needs to be called for bsp generation, as some objects attrs are set during 'elaborate()'
+# e.g. instantiating GPIO block needs platform.request calls (e.g. for LED), that's why it's done
+# in 'elaborate(self, platform).
+def dummy_elaborate(e : Elaboratable, platform : Platform):
+    e._MustUse__used = True
+    root : Module = e.elaborate(platform)
+    root._MustUse__used = True
+    if isinstance(root, Instance):
+        return
+    for name in root._named_submodules:
+        e = root._named_submodules[name]
+        dummy_elaborate(e, platform)
+    for e in root._anon_submodules:
+        dummy_elaborate(e, platform)
+
+def generate_bsp():
+    sw_bsp_path = os.path.join(os.path.dirname(__file__), "..", "..", "sw", "bsp")
+    print(f"sw_bsp_path = {sw_bsp_path}")
+    Path(sw_bsp_path).mkdir(parents=True, exist_ok=True)
+    cpu = get_board_cpu()
+    platform = get_platform()
+    dummy_elaborate(cpu, platform)
+    arbiter = cpu.arbiter
+    assert isinstance(arbiter, AddressManager)
+    owners, schemes = zip(*arbiter.get_mmio_devices_config())
+    MemMapCodeGen.gen_bsp_sources(owners, schemes)
+
 def main():
     from argparse import ArgumentParser
     parser = ArgumentParser()
@@ -94,24 +127,6 @@ def main():
     # parser.add_argument("--elf", type=Path, help="ELF to be used for build/sim")
     args = parser.parse_args()
 
-    from amaranth import Elaboratable, Instance
-    from amaranth.build.plat import Platform
-    
-    # partially taken from amaranth/dsl.py (Module.elaborate method)
-    # needs to be called for bsp generation, as some objects attrs are set during 'elaborate()'
-    # e.g. instantiating GPIO block needs platform.request calls (e.g. for LED), that's why it's done
-    # in 'elaborate(self, platform).
-    def dummy_elaborate(e : Elaboratable, platform : Platform):
-        e._MustUse__used = True
-        root : Module = e.elaborate(platform)
-        root._MustUse__used = True
-        if isinstance(root, Instance):
-            return
-        for name in root._named_submodules:
-            e = root._named_submodules[name]
-            dummy_elaborate(e, platform)
-        for e in root._anon_submodules:
-            dummy_elaborate(e, platform)
 
     if args.build:
         proj_name = args.build
@@ -119,13 +134,7 @@ def main():
         elf_path = compile_sw_project(proj_name)
         build(elf_path=elf_path, do_program=args.program)
     elif args.gen_bsp:
-        cpu = get_board_cpu()
-        platform = get_platform()
-        dummy_elaborate(cpu, platform)
-        arbiter = cpu.arbiter
-        assert isinstance(arbiter, AddressManager)
-        owners, schemes = zip(*arbiter.get_mmio_devices_config())
-        MemMapCodeGen.gen_bsp_sources(owners, schemes)
+        generate_bsp()
     elif args.sim:
         from mtkcpu.utils.tests.utils import CpuTestbenchCase, cpu_testbench_test
         proj_name = args.sim
