@@ -6,7 +6,6 @@ class Config:
     git_root = Path(Popen(['git', 'rev-parse', '--show-toplevel'], stdout=PIPE).communicate()[0].rstrip().decode('utf-8'))
     sw_dir = Path(git_root / "sw")
     bsp_dir = Path(sw_dir / "bsp")
-    linker_script_tpl_path = Path(sw_dir / "common" / "linker.ld.jinja2")
     after_main_sym_name = "mainDone"
 
     @staticmethod
@@ -20,16 +19,3 @@ class Config:
                     else:
                         raise ValueError(f"Config sanity check failed: {x} does not exists!")
         logging.info("Config sanity check passed!")
-
-    @staticmethod
-    def write_linker_script(out_path : Path, mem_addr : int, mem_size_kb: int = 1):
-        import jinja2
-        __class__.sanity_check()
-        logging.info(f"writing linker script: using {hex(mem_addr)} address..")
-        linker_script_content = jinja2.Template(
-            __class__.linker_script_tpl_path.open("r").read()).render(
-                template_mem_start_addr=hex(mem_addr),
-                template_mem_size_kb=mem_size_kb
-            )
-        out_path.open("w").write(linker_script_content)
-        logging.info(f"OK, linker script written to {out_path} file!")

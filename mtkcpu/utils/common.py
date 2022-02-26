@@ -9,9 +9,7 @@ from pathlib import Path
 from shutil import which
 from tempfile import NamedTemporaryFile
 
-
 from mtkcpu.asm.asm_dump import bytes_to_u32_arr, dump_instrs
-from mtkcpu.global_config import Config
 
 MEM_START_ADDR = 0x8000_0000
 CODE_START_ADDR = MEM_START_ADDR
@@ -100,6 +98,7 @@ def read_elf(elf_path, verbose=False):
         mem.update(segment_mem)
     return mem
 
+# TODO pass additional param
 def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
     COMPILER = "riscv-none-embed-gcc"
     assert which(COMPILER)
@@ -107,7 +106,8 @@ def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
     with NamedTemporaryFile(suffix=".S", delete=False, mode="w+") as asm_file:
         assert asm_file.write(source_raw)
     with NamedTemporaryFile(suffix=".ld", delete=False) as ld_file:
-        Config.write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR, mem_size_kb=mem_size_kb)
+        from mtkcpu.utils.linker import write_linker_script
+        write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR, mem_size_kb=mem_size_kb)
         
     cmd = [COMPILER, "-march=rv32i", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
     logging.critical(" ".join(cmd))
