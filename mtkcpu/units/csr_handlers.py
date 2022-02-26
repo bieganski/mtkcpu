@@ -24,9 +24,9 @@ class RegisterResetValue:
             if isinstance(sig, Signal):
                 reset_val = fields.get(name, None)
                 if reset_val is None:
-                    logging.info(f"set_reset: could not find signal with name '{name}' among {fields.keys()}. Default value (0) will be used")
+                    logging.debug(f"set_reset: could not find signal with name '{name}' among {fields.keys()}. Default value (0) will be used")
                 else:
-                    logging.info(f"setting reset val {hex(reset_val)} to signal {name}")
+                    logging.debug(f"setting reset val {hex(reset_val)} to signal {name}")
                     sig.reset = reset_val
             elif isinstance(sig, Record):
                 assert False

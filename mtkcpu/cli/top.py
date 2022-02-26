@@ -120,21 +120,29 @@ def generate_bsp():
 def main():
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument("--build", type=str, help="Name of project inside sw/ to compile into hw. and run on a board.")
+    parser.add_argument("--build_design_with_elf", type=str, help="Path to an .elf file to be embedded into bitstream")
     parser.add_argument("--program", action="store_true")
     parser.add_argument("--gen_bsp", action="store_true")
+    parser.add_argument("--gen_linker_script", action="store_true")
     parser.add_argument("--sim", type=str, help="Name of project inside sw/ to compile and sim.")
     # parser.add_argument("--elf", type=Path, help="ELF to be used for build/sim")
     args = parser.parse_args()
 
 
-    if args.build:
-        proj_name = args.build
-        from mtkcpu.utils.tests.utils import compile_sw_project
-        elf_path = compile_sw_project(proj_name)
+    if args.build_design_with_elf:
+        elf_path = args.build_design_with_elf
         build(elf_path=elf_path, do_program=args.program)
     elif args.gen_bsp:
         generate_bsp()
+    elif args.gen_linker_script:
+        from mtkcpu.utils.linker import write_linker_script
+        from mtkcpu.global_config import Config
+        out_path = Config.sw_dir / "common" / "linker.ld"
+        from mtkcpu.utils.common import CODE_START_ADDR
+        mem_addr = CODE_START_ADDR
+        mem_size_kb = 1 # TODO pass as a command line param
+        logging.info(f"writing linker script to {out_path}, addr: {hex(mem_addr)} of size {mem_size_kb} kb..")
+        write_linker_script(out_path, mem_addr, mem_size_kb)
     elif args.sim:
         from mtkcpu.utils.tests.utils import CpuTestbenchCase, cpu_testbench_test
         proj_name = args.sim

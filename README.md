@@ -6,88 +6,43 @@
 mtkCPU is as simple and as clear as possible implementation of RiscV ISA in [Amaranth HDL](https://github.com/amaranth-hdl/amaranth). There is one main file [cpu.py](mtkcpu/cpu/cpu.py), that is including specific [units](./mtkcpu/units) (i.a. decoder, adder etc.)
 
 
-### Running tests
+### Features
+* implements basic ISA `rv32i`
+* `Machine` mode and `User` mode
+* traps and interrupts
+* CSR registers support
+* optional Virtual Memory System - allows for memory translation in `User` mode
+* Debug Module - can connect openOCD and GDB, compatible with [Risc-V Debug Spec](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf)
+* bsp (board specific files) generation - based on RTL code it generates proper `.h` and `.cc` files
+
+### Supported hardware
+The design was tested on [`ice40`](https://www.latticesemi.com/iCE40) FPGA on the [`iCEBreaker`](https://1bitsquared.com/products/icebreaker) board.
+
+
+### Quick Start
+See [Quick Start Page](doc/run.md) and find out how simple it is to deploy fully functional `mtkCPU` with one command!
+We provide one-liner that generates a bitstream with Block RAM memory initialized with a specified .elf's content!
+
+
+### Test coverage
+* pure-assembly unit tests (more than 80 tests present, each instruction covered)
+* single-block testbenches
+* co-simulation with `openOCD` and `GDB` testing Debug Module
+* randomized tests (arithmetic and MMU) using [riscv-dv](https://github.com/google/riscv-dv) framework from Google
+
+
+### Running simulation tests
 
 ```sh
-pip3 install -r requirements.txt
-python3 mtkcpu/test_cpu.py
+pip3 install .
+pytest -x -n4 mtkcpu/tests/
 ```
 
-### Unit tests structure
+For more information about how tests work, please refer to [that file](./doc/tests.md).
 
-In general, all tests are done via `amaranth.back.pysim` backend. For best coverage and flexibility, you are able to **easily add your own tests, written in RiscV assembly**. For reference let's focus on simple test from `tests/reg_tests.py` file.
+### About `Amaranth HDL` (previously `nMigen`)
 
-```python
-REG_TESTS = [
-   ...
-{  # 3 - 2 = 1
-        "name": "simple 'sub'",
-        "source": 
-        """
-        .section code
-            sub x10, x3, x2
-        """,
-        "out_reg": 10,
-        "out_val": 1,
-        "timeout": 5,
-        "mem_init": {},
-        "reg_init": [i for i in range(32)]
-},
-]
-```
-
-Example above represents entire test. Simulator executes code passed as `source` key. Before test, CPU registers are initialized with `reg_init` values (`assert len(reg_init) <= 32; x_i == reg_init[i] # or 0 if i >= len(reg_init)`). During simulation, it captures all writes to register file, and in case of write to `out_reg` it compares written value to `out_val`, throwing error in case of mismatch.
-
-Simulation also contains latency-randomized memory interconnect (simplified Wishbone protocol), thus you are able to tests operations like `load` or `store` (as coveraged in `tests/mem_tests.py`).
-For memory testing, put dict of `address, value (4 byte)` at `mem_init` key, and dict of constraints (of same form), that will be checked **after** simulation ends (after `timeout` cycles).
-
-
-`NOTE` - unit test of that form possibilities are limited by compilator of `source` key used. For that we use `ppci`, which doesn't work well with branching/jumping instructions. For that reason, we decided to coverage branching with stable RiscV compiler `riscv-none-embed-gcc`. It's usage is straightforward: put your code as same way as you did in `source` key, but now in `source_raw` key. Whole content will be copied to temporary `.S` file and compiled to ELF format, then run same way that you would run simulation of whole ELF (like [here](#elf-tests)) 
-
-### ELF tests
-
-`mtkCPU` offers you with easy and seamless way of testing **your precompiled ELF file**. Just run
-
-```sh
-python3 mtkcpu/test_cpu.py --elf <ELF filepath>
-```
-
-To compile your code into RiscV assembly you can use `gcc` (install it via `install_toolchain.sh` script).
-```sh
-cd elf
-./compile.sh example.S # it will generate example.elf using elf/linker.ld linker script.
-```
-
-However, for now we don't provide way of result verification (it may be something like `main` exit code). To check for 
-specific register write or memory content, you can use mechanism of defining test case with 'elf' key.
-Here is example from `tests/playground.py` (runnable via `python3 test_cpu.py --playground` command)
-```python
-{
-        "name": "YOUR PLAYGROUND TEST 2 (elf)",
-        "elf": "tests/example.elf",
-        "out_reg": 1,
-        "out_val": 222,
-        "timeout": 10,
-},
-```
-
-Keep in mind, that CPU got hardcoded it's code address (with first instruction fetched). It's defined in `/mtkcpu/common.py` file at `START_ADDR` variable. You may want to use specially prepared linker script (or reuse example one, `/elf/linker.ld`, or change `common.py` file to adjust it for your precompiled ELF). 
-
-`TODO` - for now we lack way of result verification, it may be something like `main` exit code. 
-
-
-### Getting familiar
-
-For quick dive into `mtkCPU` most painless way is to first run existing test (or add your own!) and look at important signals, reflecting control flow. For that purpose, I have prepared some `.gtkw` files, that opened in `gtkwave` util immediately will show you interesting signals. 
-
-* `basic.gtkw` - First steps, good for beginners, without unit logic.
-* `mem.gtkw` - For memory interface (however without memory arbiter).
-* `full_mem.gtkw` - More advanced memory interface.
-
-
-### About `Amaranth HDL` (previously `Amaranth HDL`)
-
-`Amaranth HDL` is a Python framework for digital design, it can compile either to netlist understandable by [yosys](https://github.com/YosysHQ/yosys) or `Verilog` code (that you can place and route using vendor tools, i.a. `Vivado`)
+`Amaranth HDL` is a Python framework for digital design, it can compile either to netlist understandable by [yosys](https://github.com/YosysHQ/yosys) or `Verilog` code (that you can place and route using vendor tools, e.g. `Vivado`)
 
 ### Amaranth HDL docs/tutorials
 
