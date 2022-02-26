@@ -341,7 +341,8 @@ def compile_sw_project(proj_name : str) -> Path:
     proj_dir = sw_dir / proj_name
     if not proj_dir.exists() or not proj_dir.is_dir():
         raise ValueError(f"Compilation failed: Directory {proj_dir} does not exists!")
-    Config.write_linker_script(sw_dir / "common" / "linker.ld", CODE_START_ADDR)
+    from mtkcpu.utils.linker import write_linker_script
+    write_linker_script(sw_dir / "common" / "linker.ld", CODE_START_ADDR)
     process = subprocess.Popen(f"make -B", cwd=proj_dir, shell=True)
     process.communicate()
     if process.returncode:
