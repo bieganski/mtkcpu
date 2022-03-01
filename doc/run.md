@@ -89,6 +89,6 @@ Info:            SB_RGBA_DRV:     0/    1     0%
 Info:         ICESTORM_SPRAM:     0/    4     0%
 ```
 
-If you run the command above with additional `--program` param, it will try to program your board.
+If you run the command above with additional `--program` param, it will program your board after build succeeded.
 
-And this is it, your board should be blinking happily!
+And this is it, your board is blinking happily!
