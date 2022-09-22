@@ -230,13 +230,13 @@ class MemoryArbiter(Elaboratable, AddressManager):
         def uart_gen_serial_record(platform : Platform, m : Module):
             if platform:
                 serial = platform.request("uart")
-                debug = platform.request("debug")
-                m.d.comb += [
-                    debug.eq(Cat(
-                        serial.tx,
-                        Const(0, 1), # GND
-                    ))
-                ]
+                # debug = platform.request("debug")
+                # m.d.comb += [
+                #     debug.eq(Cat(
+                #         serial.tx,
+                #         Const(0, 1), # GND
+                #     ))
+                # ]
             else:
                 serial = Record(Layout([("tx", 1)]), name="UART_SERIAL")
             self.serial = serial # TODO this is obfuscated, but we need those signals for simulation testbench

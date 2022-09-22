@@ -18,7 +18,7 @@ testpaths = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.7"
 ppci = "^0.5.8"
 numpy = "^1.19.2"
 pytest = "^6.2.4"
