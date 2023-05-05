@@ -7,6 +7,7 @@ from typing import List, Optional, OrderedDict
 import pytest
 from pathlib import Path
 import subprocess
+from tempfile import NamedTemporaryFile
 
 from amaranth.hdl.ast import Signal
 from amaranth.hdl.ir import Elaboratable, Fragment
@@ -57,12 +58,6 @@ class MemTestCase:
     reg_init: Optional[RegistryContents] = None
     mem_size_kb: int = 1
     shift_mem_content: bool = True # 0x1000 becomes 0x8000_1000 if mem. start address is 0x8000_0000
-
-
-@dataclass(frozen=True)
-class JtagTestCase:
-    with_ocd : bool
-    with_checkpoints : bool
 
 @dataclass(frozen=True)
 class ComponentTestbenchCase:
@@ -569,10 +564,24 @@ def create_jtag_simulator(cpu):
 # Make sure that 'OCD_CWD' points to directory with VexRiscv's fork of openOCD:
 # https://github.com/SpinalHDL/openocd_riscv
 # Compile it according to instructions in README in repository above.
-def run_openocd(delay=1):
-    from pathlib import Path
+def run_openocd(
+    openocd_executable: Path, 
+    delay_execution_num_seconds: int,
+    stdout: Optional[Path] = None,
+    stderr: Optional[Path] = Path("/dev/null"),
+    ):
+    """
+    Runs subprocess with 'openocd_executable' invocation, after delay of 
+    'delay_execution_num_seconds' seconds.
+    
+    TODO The openocd config used is hardcoded.
+    """
 
-    OCD_CFG = """
+    if not openocd_executable.exists():
+        raise ValueError(f"Please make sure that path: {openocd_executable} is existing executable!")
+    
+
+    ocd_commands = """
 interface remote_bitbang
 remote_bitbang_host localhost
 remote_bitbang_port 9824
@@ -588,41 +597,43 @@ gdb_report_data_abort enable
 # init
 # halt
 """
-    OCD_CWD = Path("/home/mateusz/github/openocd_riscv")
-    OCD_CMD = "sleep %s && ./src/openocd -f %s"
-    OCD_OUTPUT_REDIRECT_PATH = OCD_CWD / "OUT.txt"
 
-    output = OCD_OUTPUT_REDIRECT_PATH.open(mode='w')
-
-    print(f"=== OCD Output redirected to {OCD_OUTPUT_REDIRECT_PATH} file")
-
-    from subprocess import Popen, DEVNULL
-    from tempfile import NamedTemporaryFile
     with NamedTemporaryFile(mode='w', delete=False) as f:
         ocd_cfg_fname = f.name
-        f.write(OCD_CFG)
-    OCD_CMD = OCD_CMD % (delay, ocd_cfg_fname)
-    if not OCD_CWD.exists() or not OCD_CWD.is_dir():
-        raise ValueError(f"Please make sure that path: {OCD_CWD} is existing directory with src/openocd executable!")
-    process = Popen(OCD_CMD, cwd=OCD_CWD, shell=True, stderr=DEVNULL, stdout=output)
+        f.write(ocd_commands)
+
+    ocd_invocation = f"sleep {delay_execution_num_seconds} && {openocd_executable} -f {ocd_cfg_fname}"
+
+    stdout = stdout.open("w") if stdout else stdout
+    stderr = stderr.open("w") if stderr else stderr
+
+    process = subprocess.Popen(ocd_invocation, shell=True, stderr=stderr, stdout=stdout)
 
 
-# def assert_jtag_test(
-#     name: str,
-#     timeout_cycles: Optional[int],
-#     with_ocd=False,
-#     with_checkpoints=False,
-# ):
+def assert_jtag_test(
+    timeout_cycles: Optional[int],
+    openocd_executable: Path,
+    with_checkpoints=False,
+):
 
-    if with_ocd:
-        run_openocd(delay=1)
+    run_openocd(
+        stdout=Path("openocd.stdout"), 
+        stderr=None,
+
+        delay_execution_num_seconds=1,
+        openocd_executable=openocd_executable
+    )
     
-    cpu = MtkCpu(reg_init=[0xabcd + i for i in range(32)], with_debug=True)    
+    cpu = MtkCpu(
+        reg_init=[0xabcd + i for i in range(32)],
+        mem_config=EBRMemConfig(mem_size_words=1000, mem_addr=0x8000, mem_content_words=None, simulate=False),
+        with_debug=True,
+    )
     sim_gadgets = create_jtag_simulator(cpu)
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
 
     processes = [
-        get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
+        # get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=jtag_fsm),
     ]
 
@@ -634,18 +645,6 @@ gdb_report_data_abort enable
 
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
         sim.run()
-
-
-# def test_jtag(test_case: JtagTestCase):
-#     assert_jtag_test(
-#         name="JTAG test (with openocd and gdb)",
-#         timeout_cycles=1000, # TODO timeout not used
-#         with_ocd=test_case.with_ocd,
-#         with_checkpoints=test_case.with_checkpoints
-#     )
-
-# TODO
-# unify all functions below, we don't need it enumerated
 
 @parametrized
 def component_testbench(f, cases: List[ComponentTestbenchCase]):

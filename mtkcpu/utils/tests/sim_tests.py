@@ -164,34 +164,36 @@ FINISH_SIM_OK = False
 def get_ocd_checkpoint_checker(
     cpu: MtkCpu,
 ):
-    global FINISH_SIM_OK
-    yield Passive()
+    def aux():
+        global FINISH_SIM_OK
+        yield Passive()
 
-    clk = 0
-    checkpoints = CHECKPOINTS(cpu)
-    finished = [False for _ in checkpoints]
+        clk = 0
+        checkpoints = CHECKPOINTS(cpu)
+        finished = [False for _ in checkpoints]
 
-    while True:
-        for i, c in enumerate(checkpoints):
-            if finished[i]:
-                continue
-            if clk == c.deadline:
-                raise ValueError(f"checkpoint failed: event {c} not holded!")
-            ok = True
-            for sig, expected in c.signals:
-                actual = yield sig
-                if actual != expected:
-                    ok = False
-                    break
-            if ok:
-                print(f"OK, checkpoint {c} matched...")
-                finished[i] = True
+        while True:
+            for i, c in enumerate(checkpoints):
+                if finished[i]:
+                    continue
+                if clk == c.deadline:
+                    raise ValueError(f"checkpoint failed: event {c} not holded!")
+                ok = True
+                for sig, expected in c.signals:
+                    actual = yield sig
+                    if actual != expected:
+                        ok = False
+                        break
+                if ok:
+                    print(f"OK, checkpoint {c} matched...")
+                    finished[i] = True
 
-        if (clk != 0 and clk % 1000 == 0):
-            if all(finished):
-                FINISH_SIM_OK = True
-        clk += 1
-        yield
+            if (clk != 0 and clk % 1000 == 0):
+                if all(finished):
+                    FINISH_SIM_OK = True
+            clk += 1
+            yield
+    return aux
 
 
 def get_sim_jtag_controller(

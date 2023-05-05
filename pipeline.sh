@@ -1,13 +1,14 @@
 #!/bin/bash
 
-
 set -eux
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 
 pkill -f gtkwave || true
 
 # waits for OCD..
-./run_jtag_test.sh & 
+./$SCRIPT_DIR/run_jtag_test.sh & 
 pid=$!
 pushd /home/mateusz/github/openocd_riscv > /dev/null
 
