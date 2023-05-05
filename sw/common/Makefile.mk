@@ -15,7 +15,7 @@ ARCH_FLAGS := -march=$(MARCH) -mabi=ilp32 -DUSE_GP
 
 GIT_ROOT := $(shell git rev-parse --show-toplevel)
 
-LINKER_SCRIPT := $(GIT_ROOT)/sw/common/linker.ld
+LINKER_SCRIPT ?= $(GIT_ROOT)/sw/common/linker.ld
 
 LDFLAGS += $(ARCH_FLAGS)
 LDFLAGS += -T$(LINKER_SCRIPT)

@@ -559,6 +559,31 @@ def create_jtag_simulator(cpu):
     }
 
 
+def run_gdb(
+    gdb_executable: Path,
+    elf_file: Path,
+    stdout: Optional[Path] = None,
+    stderr: Optional[Path] = Path("/dev/null"),
+):
+
+    gdb_cmd = f"""
+set arch riscv:rv32
+target extended-remote localhost:3333
+set mem inaccessible-by-default off
+set remotetimeout 10
+file {elf_file.absolute()}
+load
+run    
+"""
+
+    stdout = stdout.open("w") if stdout else stdout
+    stderr = stderr.open("w") if stderr else stderr
+
+    with NamedTemporaryFile(dir=".", delete=False) as f:
+        f.write(gdb_cmd.encode("ascii"))
+        f.flush()
+
+    process = subprocess.Popen(f"{gdb_executable} -x {f.name}", shell=True, stdout=stdout, stderr=stderr)
 
 
 # Make sure that 'OCD_CWD' points to directory with VexRiscv's fork of openOCD:
@@ -609,31 +634,73 @@ gdb_report_data_abort enable
 
     process = subprocess.Popen(ocd_invocation, shell=True, stderr=stderr, stdout=stdout)
 
+def get_git_root() -> Path:
+    """
+    WARNING: not to be used inside package!
+    """
+    import subprocess
+    process = subprocess.Popen("git rev-parse --show-toplevel", shell=True, stdout=subprocess.PIPE)
+    stdout, _ = process.communicate()
+    return Path(stdout.decode("ascii").strip())
+
+
+def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
+    "returns .elf path, previously asserting that it exists."
+    from mtkcpu.utils.linker import write_linker_script
+    from tempfile import NamedTemporaryFile
+
+    linker_script = Path(NamedTemporaryFile(delete=False, suffix=".ld").name).absolute()
+
+    write_linker_script(
+        out_path=linker_script,
+        mem_addr=cpu.mem_config.mem_addr,
+        mem_size_kb=cpu.mem_config.arena_kb_ceiled,
+    )
+
+    process = subprocess.Popen(f"make -B LINKER_SCRIPT={linker_script}", cwd=sw_project_path, shell=True)
+    process.communicate()
+    
+    elf_path = sw_project_path / "build" / f"{sw_project_path.name}.elf"
+    assert elf_path.exists()
+    
+    return elf_path
 
 def assert_jtag_test(
     timeout_cycles: Optional[int],
     openocd_executable: Path,
     with_checkpoints=False,
 ):
-
-    run_openocd(
-        stdout=Path("openocd.stdout"), 
-        stderr=None,
-
-        delay_execution_num_seconds=1,
-        openocd_executable=openocd_executable
-    )
-    
     cpu = MtkCpu(
         reg_init=[0xabcd + i for i in range(32)],
         mem_config=EBRMemConfig(mem_size_words=1000, mem_addr=0x8000, mem_content_words=None, simulate=False),
         with_debug=True,
     )
+
+    sw_project_path = get_git_root() / "sw" / "blink_led"
+    elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
+
+    run_gdb(
+        gdb_executable="riscv-none-embed-gdb",
+        elf_file=elf_path,
+
+        stdout=None, # Path("gdb.stdout"),
+        stderr=None,
+    )
+
+    run_openocd(
+        stdout=Path("openocd.stdout"),
+        stderr=Path("openocd.stderr"),
+
+        delay_execution_num_seconds=1,
+        openocd_executable=openocd_executable
+    )
+    
+    
     sim_gadgets = create_jtag_simulator(cpu)
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
 
     processes = [
-        # get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
+        get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=jtag_fsm),
     ]
 

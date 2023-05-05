@@ -237,19 +237,13 @@ def get_sim_jtag_controller(
                 yield i
                 i += 1
                 if (i % 1000 == 0):
-                    print(f"i = {i}")
-                    if i == 12000:
-                        # Removed WIP
-                        pass
-                    if i == 17000:
-                        from subprocess import Popen, DEVNULL
-                        gdb = Popen("riscv-none-embed-gdb -x gdb_cmd", shell=True, stdout=DEVNULL, stderr=DEVNULL)
-                        # gdb.communicate()
-                    if FINISH_SIM_OK:
-                        return # checkpoint checker catched all configurations
-                    if i == 120000:
-                        # TODO exit gracefully
-                        exit(1) # finish manual test or catch bug if automated test
+                    print(f"i = {i}")                    
+                if FINISH_SIM_OK:
+                    print("XXX finishing sim")
+                    return # checkpoint checker catched all configurations
+                if i == 120000:
+                    # TODO exit gracefully
+                    exit(1) # finish manual test or catch bug if automated test
         timeout = None
         iter = inf() if not timeout else range(timeout)
         SETUP_CYCLES = 10
@@ -277,9 +271,9 @@ def get_sim_jtag_controller(
 
                     # print("RESET! TODO")
             elif isinstance(cmd, JTAGInput):
-                if i < 100:
-                    state_num = yield jtag_fsm_state
-                    # print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {jtag_get_state(state_num)}")
+                # if i < 100000:
+                #     state_num = yield jtag_fsm_state
+                #     print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {state_num}")
                 yield cpu_tck.eq(cmd.tck)
                 yield cpu_tms.eq(cmd.tms)
                 # dummy = 1 - dummy
@@ -321,22 +315,24 @@ def get_sim_memory_test(
 
         arbiter = cpu.arbiter
 
+        bus = arbiter.wb_bus
+
         while True:  # infinite loop is ok, I'm passive.
             import numpy.random as random
 
             rdy = random.choice((0, 1), p=[1 - p, p])
 
             if state == MemState.FREE:
-                ack = yield arbiter.bus.ack
+                ack = yield bus.ack
                 if ack:
-                    yield arbiter.bus.ack.eq(0)
+                    yield bus.ack.eq(0)
                     yield
                     continue
-                cyc = yield arbiter.bus.cyc
-                we = yield arbiter.bus.we
+                cyc = yield bus.cyc
+                we = yield bus.we
                 write = cyc and we
                 read = cyc and not we
-                mem_addr = yield arbiter.bus.adr
+                mem_addr = yield bus.adr
                 if read and write:
                     raise ValueError(
                         "ERROR (TODO handle): simultaneous 'read' and 'write' detected."
@@ -345,14 +341,14 @@ def get_sim_memory_test(
                     state = MemState.BUSY_READ
                 elif write:
                     state = MemState.BUSY_WRITE
-                    data = yield arbiter.bus.dat_w
-                # if mem_addr >= PROGBUF_MMIO_ADDR and mem_addr < PROGBUF_MMIO_ADDR + 0x20:
-                #     print(f"=== PROGBUF: putting {data} in {mem_addr}")
+                    data = yield bus.dat_w
+                if mem_addr >= PROGBUF_MMIO_ADDR and mem_addr < PROGBUF_MMIO_ADDR + 0x20:
+                    print(f"=== PROGBUF: putting {data} in {mem_addr}")
             else:
                 # request processing
                 if rdy:  # random indicated transaction done in current cycle
-                    yield arbiter.bus.ack.eq(1)
-                    sel = yield arbiter.bus.sel
+                    yield bus.ack.eq(1)
+                    sel = yield bus.sel
                     mask = get_sel_bus_mask(sel)
                     read_val = mem_dict.get_default(mem_addr)
                     if state == MemState.BUSY_WRITE:
@@ -361,7 +357,7 @@ def get_sim_memory_test(
                         )
                     elif state == MemState.BUSY_READ:
                         read_val &= mask
-                        yield arbiter.bus.dat_r.eq(read_val)
+                        yield bus.dat_r.eq(read_val)
                         # print(f"==== fetched {read_val} (from {mem_dict})...")
                     state = MemState.FREE
             yield
