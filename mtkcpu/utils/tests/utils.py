@@ -33,6 +33,8 @@ from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 from mtkcpu.global_config import Config
 
+import logging
+
 @unique
 class MemTestSourceType(str, Enum):
     TEXT = "text"
@@ -564,7 +566,7 @@ def run_gdb(
     gdb_executable: Path,
     elf_file: Path,
     stdout: Optional[Path] = None,
-    stderr: Optional[Path] = Path("/dev/null"),
+    stderr: Optional[Path] = None,
 ):
 
     gdb_cmd = f"""
@@ -590,12 +592,12 @@ run
 # Make sure that 'OCD_CWD' points to directory with VexRiscv's fork of openOCD:
 # https://github.com/SpinalHDL/openocd_riscv
 # Compile it according to instructions in README in repository above.
+from typing import Generator
+
 def run_openocd(
     openocd_executable: Path, 
     delay_execution_num_seconds: int,
-    stdout: Optional[Path] = None,
-    stderr: Optional[Path] = Path("/dev/null"),
-    ):
+    ) -> Generator[str, None, None]:
     """
     Runs subprocess with 'openocd_executable' invocation, after delay of 
     'delay_execution_num_seconds' seconds.
@@ -630,10 +632,10 @@ gdb_report_data_abort enable
 
     ocd_invocation = f"sleep {delay_execution_num_seconds} && {openocd_executable} -f {ocd_cfg_fname}"
 
-    stdout = stdout.open("w") if stdout else stdout
-    stderr = stderr.open("w") if stderr else stderr
+    popen = subprocess.Popen(ocd_invocation, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
-    process = subprocess.Popen(ocd_invocation, shell=True, stderr=stderr, stdout=stdout)
+    for line in iter(popen.stderr.readline, ""):
+        yield line
 
 def get_git_root() -> Path:
     """
@@ -678,6 +680,8 @@ def assert_jtag_test(
         with_debug=True,
     )
 
+    with_checkpoints = False # XXX
+
     sw_project_path = get_git_root() / "sw" / "blink_led"
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
 
@@ -689,14 +693,26 @@ def assert_jtag_test(
     #     stderr=None,
     # )
 
-    run_openocd(
-        stdout=None, # Path("openocd.stdout"),
-        stderr=None, # Path("openocd.stderr"),
-
+    lines = run_openocd(
         delay_execution_num_seconds=1,
         openocd_executable=openocd_executable
     )
+
+    def run_gdb_when_ocd_ready():
+        for line in lines:
+            if "Examined RISC-V core" in line:
+                logging.info("Detected that openOCD successfully finished mtkcpu examination! Running GDB..")
+                run_gdb(
+                    gdb_executable=gdb_executable,
+                    elf_file=elf_path,
+                )
+
+    from multiprocessing import Process
+    gdb_process = Process(target=run_gdb_when_ocd_ready)
+    gdb_process.start()
+    # XXX gdb_process.join()
     
+
     
     sim_gadgets = create_jtag_simulator(cpu)
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
