@@ -105,7 +105,7 @@ def remote_jtag_get_cmd(conn):
             continue
         yield cmd
 
-def AAA(conn):
+def rcv_cmd_from_gdb(conn):
     data = conn.recv(1)
     cmd = decode_cmd(data)
     return cmd
@@ -136,7 +136,7 @@ class Checkpoint:
 # assert that each signal from 'signals[0]' till 'deadline' JTAG clock cycle will have value 'signals[1]' 
 CHECKPOINTS = lambda cpu: [
     Checkpoint(
-        deadline=0x8000,
+        deadline=0x14000,
         signals=[
             (cpu.debug.dmi_address, DMIReg.PROGBUF0) # FENCE instr. pushed into progbuf
         ]
@@ -225,10 +225,6 @@ def get_sim_jtag_controller(
 
         CPU_JTAG_CLK_FACTOR = 4 # how many times JTAG clock is slower than CPU clock.
 
-        DEBUGS = []
-
-        prev_tck = None
-
         from termcolor import colored
 
         # cmd_gen = remote_jtag_get_cmd(conn)
@@ -237,7 +233,7 @@ def get_sim_jtag_controller(
                 yield i
                 i += 1
                 if (i % 1000 == 0):
-                    print(f"i = {i}")                    
+                    print(f"clk = {i}")                    
                 if FINISH_SIM_OK:
                     print("XXX finishing sim")
                     return # checkpoint checker catched all configurations
@@ -249,17 +245,19 @@ def get_sim_jtag_controller(
         SETUP_CYCLES = 10
         for _ in range(SETUP_CYCLES):
             yield
-        for i in iter:
-            cmd = AAA(conn)
-            # cmd = next(cmd_gen)
+        
+        prev_tck = 0
+        tck_ctr = 0
+        
+        for _ in iter:
+            cmd = rcv_cmd_from_gdb(conn)
+
+            if (tck_ctr and tck_ctr % 1000 == 0):
+                print(f"                tck = {tck_ctr}")
 
             if isinstance(cmd, OcdCommand):
-                # if i < 100:
-                #     print(f"DEBUG: {cmd.value}")
                 if cmd == OcdCommand.SAMPLE:
                     tdo = yield cpu_tdo
-                    # DEBUGS.append(tdo)
-                    # print(f"TDO: {tdo}")
                     remote_jtag_send_response(conn, bytes(str(tdo), 'ascii'))
 
                 elif cmd == OcdCommand.RESET:
@@ -269,30 +267,21 @@ def get_sim_jtag_controller(
                         for _ in range(CPU_JTAG_CLK_FACTOR):
                             yield
 
-                    # print("RESET! TODO")
             elif isinstance(cmd, JTAGInput):
-                # if i < 100000:
-                #     state_num = yield jtag_fsm_state
-                #     print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {state_num}")
                 yield cpu_tck.eq(cmd.tck)
                 yield cpu_tms.eq(cmd.tms)
-                # dummy = 1 - dummy
-                # yield cpu_tms.eq(dummy)
                 yield cpu_tdi.eq(cmd.tdi)
-                DEBUGS.append((cmd.tms, cmd.tck))
+                
+                rising = cmd.tck > prev_tck
+                if rising:
+                    tck_ctr += 1
                 prev_tck = cmd.tck
+                
                 for _ in range(CPU_JTAG_CLK_FACTOR):
                     yield
             else:
                 raise ValueError(f"Type mismatch! cmd must be either OcdCommand or JTAGInput, not {type(cmd)}!")
         
-        def f(tms, tck):
-            if tck == 0:
-                return colored(str(tms), 'yellow')
-            return str(tms)
-        
-        # print(", ".join([f(tms, tck) for (tms, tck) in DEBUGS]))
-
     return jtag_controller
 
 

@@ -22,10 +22,11 @@ class JtagIR(IntEnum):
 
 # Default value for read-only IR
 class JtagIRValue(IntEnum):
-    # Spike's openocd config 'exptected-id', see github.com/riscv-isa-sim/README.md
+    # Pretend to be Spike for now.
+    # TODO - when core is stable enough, change it to some unique value.
     IDCODE      = 0x10e31913
-    DM_VERSION  = 0x1 # 0x1 == 0.13 Debug Spec
-    DM_ABITS    = 7 # TODO does it have to be 7?
+    DM_VERSION  = 0x1 # 0x1 stands for '0.13 Debug Spec'
+    DM_ABITS    = 7 # RVDS 0.13.2, chapter 3.1: "The DMI uses between 7 and 32 address bits."
 
 class DMISTAT(IntEnum):
     NO_ERR                              = 0
@@ -127,6 +128,12 @@ class JTAGTap(Elaboratable):
             rising_tck.eq((~prev_tck) & tck),
             falling_tck.eq(prev_tck & (~tck)),
         ]
+
+
+        self.tck_ctr = Signal(32)
+
+        with m.If(rising_tck):
+            sync += self.tck_ctr.eq(self.tck_ctr + 1)
 
         self.ir = Signal(JtagIR)
         assert self.ir.width == 5 # Spike

@@ -307,22 +307,29 @@ class HandlerDMCONTROL(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        with m.If(self.reg_dmcontrol.w.dmactive):
+        write_value = self.reg_dmcontrol.w
+
+        with m.If(write_value.dmactive):
             sync += self.reg_dmcontrol.r.dmactive.eq(1)
 
-            with m.If(self.reg_dmcontrol.w.haltreq):
+            with m.If(write_value.haltreq):
                 sync += self.debug_unit.HALT.eq(1)
                 sync += self.reg_dmstatus.r.allhalted.eq(1)
                 sync += self.reg_dmstatus.r.anyhalted.eq(1)
             
-            with m.If(self.reg_dmcontrol.w.resumereq):
-                # with m.If(self.reg_dmcontrol.w.step): # TODO step does not exist yet.
+            with m.If(write_value.resumereq):
+                # with m.If(write_value.step): # TODO step does not exist yet.
                 #     pass # TODO auto-halt after single instruction
                 sync += self.debug_unit.HALT.eq(0)
                 sync += self.reg_dmstatus.r.allresumeack.eq(1)
                 sync += self.reg_dmstatus.r.anyresumeack.eq(1)
                 sync += self.reg_dmstatus.r.allhalted.eq(0)
                 sync += self.reg_dmstatus.r.anyhalted.eq(0)
+            
+            # Only hart 0 exists.
+            sync += self.reg_dmstatus.r.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
+        with m.Else():
+            pass # TODO - reset the DM!
         
         comb += self.controller.command_finished.eq(1)
 

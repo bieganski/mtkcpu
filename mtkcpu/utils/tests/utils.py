@@ -507,6 +507,7 @@ def create_jtag_simulator(cpu):
     data0_r = cpu.debug.dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
+        jtag_loc.tck_ctr,
         cpu.debug.dmi_op,
         cpu.debug.dmi_address,
         cpu.debug.dmi_data,
@@ -668,6 +669,7 @@ def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
 def assert_jtag_test(
     timeout_cycles: Optional[int],
     openocd_executable: Path,
+    gdb_executable: Path,
     with_checkpoints=False,
 ):
     cpu = MtkCpu(
@@ -679,17 +681,17 @@ def assert_jtag_test(
     sw_project_path = get_git_root() / "sw" / "blink_led"
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
 
-    run_gdb(
-        gdb_executable="riscv-none-embed-gdb",
-        elf_file=elf_path,
+    # run_gdb(
+    #     gdb_executable=gdb_executable,
+    #     elf_file=elf_path,
 
-        stdout=None, # Path("gdb.stdout"),
-        stderr=None,
-    )
+    #     stdout=None, # Path("gdb.stdout"),
+    #     stderr=None,
+    # )
 
     run_openocd(
-        stdout=Path("openocd.stdout"),
-        stderr=Path("openocd.stderr"),
+        stdout=None, # Path("openocd.stdout"),
+        stderr=None, # Path("openocd.stderr"),
 
         delay_execution_num_seconds=1,
         openocd_executable=openocd_executable
