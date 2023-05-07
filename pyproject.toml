@@ -32,6 +32,7 @@ amaranth-boards = { git = "https://github.com/amaranth-lang/amaranth-boards.git"
 riscv-model = { git = "https://github.com/bieganski/riscv-python-model", branch = "master" }
 Jinja2 = "^2.11.3"
 MarkupSafe = "2.0.1"
+colorlog = "^6.7.0"
 
 [tool.poetry.dev-dependencies]
 black = "^20.8b1"

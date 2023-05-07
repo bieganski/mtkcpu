@@ -526,6 +526,8 @@ def create_jtag_simulator(cpu):
 
         jtag_loc.BAR,
         *data0_r,
+        *data0_w,
+        jtag_loc.BAR,
 
         # *dmcontrol_r,
         # jtag_loc.BAR,
@@ -537,7 +539,6 @@ def create_jtag_simulator(cpu):
         # jtag_loc.BAR,
         # *dmstatus_r,
         # *hartinfo_w,
-        jtag_loc.BAR,
         *abstracts_w,
         jtag_loc.BAR,
         *abstracts_r,
@@ -700,6 +701,11 @@ def assert_jtag_test(
 
     def run_gdb_when_ocd_ready():
         for line in lines:
+            # from openocd/src/target/riscv/riscv-013.c:
+            #
+            #  /* Some regression suites rely on seeing 'Examined RISC-V core' to know
+            # * when they can connect with gdb/telnet.
+            # * We will need to update those suites if we want to change that text. */
             if "Examined RISC-V core" in line:
                 logging.info("Detected that openOCD successfully finished mtkcpu examination! Running GDB..")
                 run_gdb(
@@ -711,6 +717,34 @@ def assert_jtag_test(
     gdb_process = Process(target=run_gdb_when_ocd_ready)
     gdb_process.start()
     # XXX gdb_process.join()
+
+    from mtkcpu.units.debug.top import DMIOp, DMIReg
+    from mtkcpu.utils.misc import get_color_logging_object
+
+    def dmi_watchdog(cpu: MtkCpu):
+        """
+        This process provides various asserts, regarding to what we may expect from 
+        mtkcpu implementation. It may be particulary useful when bumping gdb version or switching
+        to different debugger, foe smoother integration.
+        """
+        def aux():
+            logging = get_color_logging_object()
+
+            yield Passive()
+            while True:
+                op = yield cpu.debug.dmi_op
+                addr = yield cpu.debug.dmi_address
+                data = yield cpu.debug.dmi_data
+                if op != DMIOp.NOP:
+                    try:
+                        addr = DMIReg(addr)
+                    except:
+                        raise ValueError(f"dmi_op={op}, but tried to access unknown DMI register {addr}!")
+                if op == DMIOp.READ and addr == DMIReg.COMMAND:
+                    raise ValueError("weak assert: 'command' register is expected to only be written! (it's not required by implementation though)")
+                logging.info("siema!")
+                yield
+        return aux
     
 
     
@@ -718,6 +752,7 @@ def assert_jtag_test(
     sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
 
     processes = [
+        dmi_watchdog(cpu=cpu),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=jtag_fsm),
     ]
