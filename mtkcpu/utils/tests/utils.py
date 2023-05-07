@@ -28,12 +28,14 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_controller,
                                           get_ocd_checkpoint_checker)
-from mtkcpu.units.debug.top import DMIReg, DMICommand
+from mtkcpu.units.debug.types import DMICommand
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
-from mtkcpu.global_config import Config
 
-import logging
+from mtkcpu.units.debug.types import DMIOp, DMIReg, DMI_reg_kinds
+from mtkcpu.utils.misc import get_color_logging_object
+
+logging = get_color_logging_object()
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -477,7 +479,7 @@ def assert_mem_test(case: MemTestCase):
 # "frag" - Fragment object
 # "vcd_traces" - List of JTAG/DM signals to be traced
 # "jtag_fsm" - JTAG FSM
-def create_jtag_simulator(cpu):
+def create_jtag_simulator(cpu: MtkCpu):
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
     # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
     frag = Fragment.get(cpu, platform=None)
@@ -490,23 +492,25 @@ def create_jtag_simulator(cpu):
 
     jtag_loc = cpu.debug.jtag
 
-    dmcontrol_r = cpu.debug.dmi_regs[DMIReg.DMCONTROL].r.fields.values()
-    dmcontrol_w = cpu.debug.dmi_regs[DMIReg.DMCONTROL].w.fields.values()
+    dmi_regs = cpu.debug.dmi_regs
 
-    hartinfo_r = cpu.debug.dmi_regs[DMIReg.HARTINFO].r.fields.values()
-    hartinfo_w = cpu.debug.dmi_regs[DMIReg.HARTINFO].w.fields.values()
+    dmcontrol_r = dmi_regs[DMIReg.DMCONTROL].r.fields.values()
+    dmcontrol_w = dmi_regs[DMIReg.DMCONTROL].w.fields.values()
 
-    abstracts_r = cpu.debug.dmi_regs[DMIReg.ABSTRACTCS].r.fields.values()
-    abstracts_w = cpu.debug.dmi_regs[DMIReg.ABSTRACTCS].w.fields.values()
+    hartinfo_r = dmi_regs[DMIReg.HARTINFO].r.fields.values()
+    hartinfo_w = dmi_regs[DMIReg.HARTINFO].w.fields.values()
 
-    dmstatus_r = cpu.debug.dmi_regs[DMIReg.DMSTATUS].r.fields.values()
-    dmstatus_w = cpu.debug.dmi_regs[DMIReg.DMSTATUS].w.fields.values()
+    abstracts_r = dmi_regs[DMIReg.ABSTRACTCS].r.fields.values()
+    abstracts_w = dmi_regs[DMIReg.ABSTRACTCS].w.fields.values()
 
-    command_w = cpu.debug.dmi_regs[DMIReg.COMMAND].w.fields.values()
-    command_r = cpu.debug.dmi_regs[DMIReg.COMMAND].r.fields.values()
+    dmstatus_r = dmi_regs[DMIReg.DMSTATUS].r.fields.values()
+    dmstatus_w = dmi_regs[DMIReg.DMSTATUS].w.fields.values()
 
-    data0_w = cpu.debug.dmi_regs[DMIReg.DATA0].w.fields.values()
-    data0_r = cpu.debug.dmi_regs[DMIReg.DATA0].r.fields.values()
+    command_w = dmi_regs[DMIReg.COMMAND].w.fields.values()
+    command_r = dmi_regs[DMIReg.COMMAND].r.fields.values()
+
+    data0_w = dmi_regs[DMIReg.DATA0].w.fields.values()
+    data0_r = dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
         jtag_loc.tck_ctr,
@@ -718,9 +722,6 @@ def assert_jtag_test(
     gdb_process.start()
     # XXX gdb_process.join()
 
-    from mtkcpu.units.debug.top import DMIOp, DMIReg, dmi_regs
-    from mtkcpu.utils.misc import get_color_logging_object
-
     def dmi_watchdog(cpu: MtkCpu):
         """
         This process provides various asserts, regarding to what we may expect from 
@@ -728,8 +729,6 @@ def assert_jtag_test(
         to different debugger, foe smoother integration.
         """
         def aux():
-            logging = get_color_logging_object()
-
             yield Passive()
             while True:
                 op = yield cpu.debug.dmi_op
@@ -744,14 +743,14 @@ def assert_jtag_test(
                 if op == DMIOp.READ and addr == DMIReg.COMMAND:
                     raise ValueError("weak assert: 'command' register is expected to only be written! (it's not required by implementation though)")
                 
-                if addr == DMIReg.ABSTRACTCS:
-                    raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
+                # if addr == DMIReg.ABSTRACTCS:
+                #     raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
 
-                # XXX tu jestem
-                # types.py
-                # sprawdzenie transfer/readwrite on command reg
-                
-                
+                if addr == DMIReg.COMMAND:
+                    from mtkcpu.units.debug.types import COMMAND_Layout, AccessRegisterLayout
+                    cmdtype = COMMAND_Layout.from_int(data).cmdtype
+                    raise ValueError(f"cmd == {str(cmdtype)}")
+                    pass
                 yield
         return aux
     
