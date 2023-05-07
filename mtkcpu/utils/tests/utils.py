@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
-from typing import List, Optional, OrderedDict
+from typing import Dict, List, Optional, OrderedDict
 import pytest
 from pathlib import Path
 import subprocess
@@ -496,8 +496,8 @@ def create_jtag_simulator(cpu):
     hartinfo_r = cpu.debug.dmi_regs[DMIReg.HARTINFO].r.fields.values()
     hartinfo_w = cpu.debug.dmi_regs[DMIReg.HARTINFO].w.fields.values()
 
-    abstracts_r = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].r.fields.values()
-    abstracts_w = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].w.fields.values()
+    abstracts_r = cpu.debug.dmi_regs[DMIReg.ABSTRACTCS].r.fields.values()
+    abstracts_w = cpu.debug.dmi_regs[DMIReg.ABSTRACTCS].w.fields.values()
 
     dmstatus_r = cpu.debug.dmi_regs[DMIReg.DMSTATUS].r.fields.values()
     dmstatus_w = cpu.debug.dmi_regs[DMIReg.DMSTATUS].w.fields.values()
@@ -718,7 +718,7 @@ def assert_jtag_test(
     gdb_process.start()
     # XXX gdb_process.join()
 
-    from mtkcpu.units.debug.top import DMIOp, DMIReg
+    from mtkcpu.units.debug.top import DMIOp, DMIReg, dmi_regs
     from mtkcpu.utils.misc import get_color_logging_object
 
     def dmi_watchdog(cpu: MtkCpu):
@@ -735,6 +735,7 @@ def assert_jtag_test(
                 op = yield cpu.debug.dmi_op
                 addr = yield cpu.debug.dmi_address
                 data = yield cpu.debug.dmi_data
+                
                 if op != DMIOp.NOP:
                     try:
                         addr = DMIReg(addr)
@@ -742,7 +743,15 @@ def assert_jtag_test(
                         raise ValueError(f"dmi_op={op}, but tried to access unknown DMI register {addr}!")
                 if op == DMIOp.READ and addr == DMIReg.COMMAND:
                     raise ValueError("weak assert: 'command' register is expected to only be written! (it's not required by implementation though)")
-                logging.info("siema!")
+                
+                if addr == DMIReg.ABSTRACTCS:
+                    raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
+
+                # XXX tu jestem
+                # types.py
+                # sprawdzenie transfer/readwrite on command reg
+                
+                
                 yield
         return aux
     
@@ -793,13 +802,3 @@ def cpu_testbench(f, cases: List[CpuTestbenchCase]):
         cpu_testbench_test(test_case)
         f(test_case)
     return aux
-
-# @parametrized
-# def jtag_test(f, cases: List[JtagTestCase]):
-#     @pytest.mark.parametrize("test_case", cases)
-#     @rename(f.__name__)
-#     def aux(test_case):
-#         test_jtag(test_case)
-#         f(test_case)
-
-#     return aux

@@ -187,8 +187,6 @@ class JTAGTap(Elaboratable):
                         with m.Case(ir):
                             with m.If(rising_tck):
                                 sync += self.dr.eq(Cat(self.dr[1:len(record.r)], tdi))
-                # below is not enough, as it may effect in garbage 
-                # sync += self.dr.eq(Cat(self.dr[1:], tdi))
                 with m.If(rising_tck & tms):
                     m.next = "EXIT1-DR"
 

@@ -22,7 +22,7 @@ class DMIReg(IntEnum):
     DMSTATUS = 0x11
     DMCONTROL = 0x10
     HARTINFO = 0x12
-    ABSTRACTS = 0x16
+    ABSTRACTCS = 0x16
     COMMAND = 0x17
     SBCS = 0x38
     DATA0 = 0x4
@@ -51,7 +51,7 @@ dmi_regs = {
         ("anyhalted",         1),
         ("allhalted",         1),
         ("anyrunning",        1),
-        ("allrunning",        1), # 1_or_0 if in debug mode
+        ("allrunning",        1),
         ("anyunavail",        1),
         ("allunavail",        1),
         ("anynonexistent",    1),
@@ -67,8 +67,8 @@ dmi_regs = {
     DMIReg.DMCONTROL: [
         ("dmactive", 1),
         ("ndmreset", 1),
-        ("clrresethaltreXq", 1),
-        ("setresethaltreXq", 1),
+        ("clrresethaltreq", 1),
+        ("setresethaltreq", 1),
         ("_zero1",  2),
         ("hartselhi", 10),
         ("hartsello", 10),
@@ -87,7 +87,7 @@ dmi_regs = {
         ("nscratch", 4),
         ("_zero2", 8),
     ],
-    DMIReg.ABSTRACTS: [
+    DMIReg.ABSTRACTCS: [
         ("datacount", 4),
         ("_zero1", 4),
         ("cmderr", 3),
@@ -116,16 +116,54 @@ dmi_regs = {
 class DMICommand(IntEnum):
     AccessRegister = 0x0
 
+from dataclasses import dataclass
+from typing import Annotated, Sequence, Tuple, List
+
+@dataclass
+class NamedOrderedLayout:
+    """
+    Generic class to be overloaded, not instantiated directly.
+
+    All fields must be type annotated as Annotated[int, x], where x is <num_bytes> that the field occupies.
+    Fields are encoded/decoded in an order that they were defined.
+    'Annotated' type allows for adding any metadata to types, as described here: https://stackoverflow.com/a/67146944.
+    """
+
+    @classmethod
+    def _fetch_fields_ordered(cls) -> Sequence[Tuple[str, int]]:
+        fields_ordered = cls.__dataclass_fields__
+        for field_name, field in fields_ordered.items():
+            if not hasattr(field.type, "__metadata__"):
+                raise ValueError(f"For proper struct.pack invocation, size of each field must be known! Please use Annotated type with proper metadata for field '{field_name}'")
+            num_bytes = field.type.__metadata__[0]
+            yield field_name, num_bytes
+    
+    @classmethod
+    def from_int(cls, value: int) -> "NamedOrderedLayout":
+        args = []
+        for _, size in cls._fetch_fields_ordered():
+            args.append(value & (2 ** size - 1))
+            value = value >> size
+        return cls(*args)
+    
+    @classmethod
+    def to_layout(cls) -> List[Tuple[str, int]]:
+        return list(cls._fetch_fields_ordered())
+
+@dataclass
+class AccessRegisterLayout(NamedOrderedLayout):
+    regno : Annotated[int, 16]
+    write : Annotated[int, 1]
+    transfer : Annotated[int, 1]
+    postexec : Annotated[int, 1]
+    _zero1 : Annotated[int, 1]
+    aarsize : Annotated[int, 3]
+    _zero2 : Annotated[int, 1]
+
+assert AccessRegisterLayout.from_int(0x1).regno == 0x1
+
 command_regs = {
-    DMICommand.AccessRegister: [
-        ("regno", 16),
-        ("write", 1),
-        ("transfer", 1),
-        ("postexec", 1),
-        ("_zero1", 1),
-        ("aarsize", 3),
-        ("_zero2", 1),
-    ]
+    DMICommand.AccessRegister: AccessRegisterLayout.to_layout()
 }
 
 # https://people.eecs.berkeley.edu/~krste/papers/riscv-privileged-v1.9.1.pdf    
@@ -429,7 +467,7 @@ class HandlerPROGBUF(HandlerDMI):
             self.comb += self.controller.command_finished.eq(1)
 
 
-class HandlerABSTRACTS(HandlerDMI):
+class HandlerABSTRACTCS(HandlerDMI):
     def handle_write(self):
         m = self.debug_unit.m
         sync = self.sync
@@ -542,8 +580,8 @@ class DebugUnit(Elaboratable):
                 self.dmi_regs[DMIReg.DMCONTROL].r.hartsello.eq(1),
                 self.dmi_regs[DMIReg.DMCONTROL].r.hartselhi.eq(0),
 
-                self.dmi_regs[DMIReg.ABSTRACTS].r.datacount.eq(1),
-                self.dmi_regs[DMIReg.ABSTRACTS].r.progbufsize.eq(PROGBUFSIZE),
+                self.dmi_regs[DMIReg.ABSTRACTCS].r.datacount.eq(1),
+                self.dmi_regs[DMIReg.ABSTRACTCS].r.progbufsize.eq(PROGBUFSIZE),
             ]
 
             self.m.d.comb += [
@@ -584,13 +622,13 @@ class DebugUnit(Elaboratable):
                             m.next = "WAIT"
                     # sync += self.dmi_regs[DMIReg.ABSTRACTS].r.busy.eq(1) # TODO
             with m.State("WAIT"):
-                sync += self.dmi_regs[DMIReg.ABSTRACTS].r.cmderr.eq(self.controller.command_err)
+                sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.cmderr.eq(self.controller.command_err)
                 with m.Switch(dmi_address):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
                             h.handle_write()
                 with m.If(self.controller.command_finished):
                     m.next = "IDLE"
-                    sync += self.dmi_regs[DMIReg.ABSTRACTS].r.busy.eq(0) # TODO make busy=1 at some point
+                    sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(0) # TODO make busy=1 at some point
 
         return m
