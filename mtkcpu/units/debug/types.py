@@ -37,6 +37,17 @@ class NamedOrderedLayout:
             args.append(typed_val)
             value = value >> size
         return cls(*args)
+
+    @classmethod
+    def width(cls, field_name: str) -> int:
+        for type, name, size in cls._fetch_fields_ordered():
+            if name == field_name:
+                return size
+        raise ValueError(f"Could not find named '{field_name}' in {cls}!")
+    
+    @classmethod
+    def total_width(cls) -> int:
+        return sum([size for _, _, size in cls._fetch_fields_ordered()])
     
     @classmethod
     def to_layout(cls) -> List[Tuple[str, int]]:
@@ -177,3 +188,49 @@ class DMIOp(IntEnum):
     NOP     = 0
     READ    = 1
     WRITE   = 2
+
+
+# Spike's irlen == 5
+class JtagIR(IntEnum):
+    BYPASS      = 0x00
+    IDCODE      = 0x01
+    DTMCS       = 0x10
+    DMI         = 0x11
+
+
+# Default value for read-only IR
+class JtagIRValue(IntEnum):
+    # Pretend to be Spike for now.
+    # TODO - when core is stable enough, change it to some unique value.
+    IDCODE      = 0x10e31913
+    DM_VERSION  = 0x1 # 0x1 stands for '0.13 Debug Spec'
+    DM_ABITS    = 7 # RVDS 0.13.2, chapter 3.1: "The DMI uses between 7 and 32 address bits."
+
+class DMISTAT(IntEnum):
+    NO_ERR                              = 0
+    OP_FAILED                           = 2
+    OP_INTERRUPTED_WHILE_IN_PROGRESS    = 3    
+
+@dataclass
+class IR_DTMCS_Layout(NamedOrderedLayout):
+    version : Annotated[int, 4]
+    abits : Annotated[int, 6]
+    dmistat : Annotated[int, 2]
+    idle : Annotated[int, 3]
+    _zero0 : Annotated[int, 1]
+    dmireset : Annotated[int, 1]
+    dmihardreset : Annotated[int, 1]
+    _zero1 : Annotated[int, 1]
+
+@dataclass
+class IR_DMI_Layout(NamedOrderedLayout):
+    op : Annotated[int, 2]
+    data : Annotated[int, 32]
+    address : Annotated[int, JtagIRValue.DM_ABITS]
+    
+
+JTAG_IR_regs = {
+    JtagIR.IDCODE: _flat_Layout.to_layout(),
+    JtagIR.DTMCS: IR_DTMCS_Layout.to_layout(),
+    JtagIR.DMI: IR_DMI_Layout.to_layout(),
+}

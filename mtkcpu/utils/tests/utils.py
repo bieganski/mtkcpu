@@ -748,9 +748,13 @@ def assert_jtag_test(
 
                 if addr == DMIReg.COMMAND:
                     from mtkcpu.units.debug.types import COMMAND_Layout, AccessRegisterLayout
-                    cmdtype = COMMAND_Layout.from_int(data).cmdtype
-                    raise ValueError(f"cmd == {str(cmdtype)}")
-                    pass
+                    cmd_layout : COMMAND_Layout = COMMAND_Layout.from_int(data)
+                    assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
+                    ar_layout : AccessRegisterLayout= AccessRegisterLayout.from_int(cmd_layout.control)
+                    assert ar_layout.aarsize == 2  # 32-bits only registers are supported
+                    if ar_layout.postexec:
+                        raise ValueError("XXX detected program buffer execution!")
+
                 yield
         return aux
     

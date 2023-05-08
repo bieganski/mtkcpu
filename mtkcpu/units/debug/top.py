@@ -3,8 +3,8 @@ from amaranth.hdl.rec import Layout
 from amaranth import *
 from enum import IntEnum
 
-from mtkcpu.units.debug.jtag import JTAGTap, JtagIR, JtagIRValue, DMISTAT, debug_module_get_width
-from mtkcpu.units.debug.types import DMIOp, DMICommand, DMIReg, DMI_COMMAND_reg_kinds, DMI_reg_kinds
+from mtkcpu.units.debug.jtag import JTAGTap
+from mtkcpu.units.debug.types import DMIOp, DMICommand, DMIReg, DMI_COMMAND_reg_kinds, DMI_reg_kinds, IR_DMI_Layout, JtagIR, JtagIRValue, DMISTAT
 
 # * The Debug Module’s own state and registers should only 
 # be reset at power-up and while dmactive in dmcontrol is 0.
@@ -377,9 +377,9 @@ class DebugUnit(Elaboratable):
         with m.If(jtag_dtmcs.update & jtag_dtmcs.w.dmireset):
             comb += sticky.eq(0) # TODO
 
-        dmi_op      = self.dmi_op       = Signal(DMIOp)# Signal(debug_module_get_width(JtagIR.DMI, "op"))
-        dmi_address = self.dmi_address  = Signal(debug_module_get_width(JtagIR.DMI, "address"))
-        dmi_data    = self.dmi_data     = Signal(debug_module_get_width(JtagIR.DMI, "data"))
+        dmi_op      = self.dmi_op       = Signal(IR_DMI_Layout.width("op"))
+        dmi_address = self.dmi_address  = Signal(IR_DMI_Layout.width("address"))
+        dmi_data    = self.dmi_data     = Signal(IR_DMI_Layout.width("data"))
 
         self.dmi_regs = dict([(k, Record(reg_make_rw(v))) for k, v in DMI_reg_kinds.items()])
         # command registers are write only, no need to 'reg_make_rw', nor Record instances.
