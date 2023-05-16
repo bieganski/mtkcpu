@@ -716,17 +716,27 @@ def assert_jtag_test(
                     gdb_executable=gdb_executable,
                     elf_file=elf_path,
                 )
+    
+    from mtkcpu.utils.tests.sim_conditions_evaluator import evaluate_conditions_inplace
 
     from multiprocessing import Process
     gdb_process = Process(target=run_gdb_when_ocd_ready)
     gdb_process.start()
     # XXX gdb_process.join()
 
+
+    # def wrapper(process: Callable[[Elaboratable]], cond: Callable[[Elaboratable], bool], dut: Elaboratable):
+        # yield Passive()
+        # while True:
+        #     if cond(dut):
+        #     yield
+
+
     def dmi_watchdog(cpu: MtkCpu):
         """
         This process provides various asserts, regarding to what we may expect from 
         mtkcpu implementation. It may be particulary useful when bumping gdb version or switching
-        to different debugger, foe smoother integration.
+        to a different debugger, for as smooth integration as possible.
         """
         def aux():
             yield Passive()
@@ -750,7 +760,7 @@ def assert_jtag_test(
                     from mtkcpu.units.debug.types import COMMAND_Layout, AccessRegisterLayout
                     cmd_layout : COMMAND_Layout = COMMAND_Layout.from_int(data)
                     assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
-                    ar_layout : AccessRegisterLayout= AccessRegisterLayout.from_int(cmd_layout.control)
+                    ar_layout : AccessRegisterLayout = AccessRegisterLayout.from_int(cmd_layout.control)
                     assert ar_layout.aarsize == 2  # 32-bits only registers are supported
                     if ar_layout.postexec:
                         raise ValueError("XXX detected program buffer execution!")
