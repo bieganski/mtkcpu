@@ -49,6 +49,11 @@ class JTAGTap(Elaboratable):
         self.regs = dict( [(k, Record(jtagify_dr(v))) for k, v in ir_regs.items()] )
         self.ir_reset = ir_reset
 
+        self.jtag_fsm_update_dr = Signal()
+
+        self.ir = Signal(JtagIR)
+        assert self.ir.width == 5 # Spike
+        self.dr = Signal(max([len(v) for _, v in self.regs.items()]))
 
     def elaborate(self, platform):
         m = Module()
@@ -86,10 +91,6 @@ class JTAGTap(Elaboratable):
 
         with m.If(rising_tck):
             sync += self.tck_ctr.eq(self.tck_ctr + 1)
-
-        self.ir = Signal(JtagIR)
-        assert self.ir.width == 5 # Spike
-        self.dr = Signal(max([len(v) for _, v in self.regs.items()]))
 
         self.DATA_WRITE = Signal(IR_DMI_Layout.total_width())
         self.DATA_READ = Signal.like(self.DATA_WRITE)
@@ -162,6 +163,7 @@ class JTAGTap(Elaboratable):
                         m.next = "SHIFT-DR"
 
             with m.State("UPDATE-DR"):
+                comb += self.jtag_fsm_update_dr.eq(1)
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):

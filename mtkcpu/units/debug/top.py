@@ -344,7 +344,7 @@ handlers = {
 class DebugUnit(Elaboratable):
     def __init__(self, cpu):
         self.cpu = cpu
-
+        self.jtag = JTAGTap()
         self.HALT = Signal()
 
     def elaborate(self, platform):
@@ -352,7 +352,7 @@ class DebugUnit(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
 
-        self.jtag = m.submodules.jtag = JTAGTap()
+        m.submodules.jtag = self.jtag
 
         jtag_dtmcs   = self.jtag.regs[JtagIR.DTMCS]
         jtag_dmi     = self.jtag.regs[JtagIR.DMI]

@@ -199,7 +199,6 @@ def get_ocd_checkpoint_checker(
 def get_sim_jtag_controller(
     cpu: MtkCpu,
     timeout_cycles: int,
-    jtag_fsm,
 ):
 
     if not cpu.with_debug:
@@ -217,7 +216,6 @@ def get_sim_jtag_controller(
         print(f'OCD Connected! From addr: {addr}')
 
         jtag_loc = cpu.debug.jtag
-        jtag_fsm_state = jtag_fsm.state
         cpu_tdi = jtag_loc.tdi
         cpu_tdo = jtag_loc.port.tdo
         cpu_tms = jtag_loc.tms

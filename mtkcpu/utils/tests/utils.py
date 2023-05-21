@@ -479,15 +479,16 @@ def assert_mem_test(case: MemTestCase):
 # "frag" - Fragment object
 # "vcd_traces" - List of JTAG/DM signals to be traced
 # "jtag_fsm" - JTAG FSM
-def create_jtag_simulator(cpu: MtkCpu):
+def create_jtag_simulator(monitor, cpu: MtkCpu):
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
     # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
-    frag = Fragment.get(cpu, platform=None)
-    jtag_fsm = frag.find_generated("debug", "jtag", "fsm")
-    sim = Simulator(frag)
+    frag = Fragment.get(monitor, platform=None)
+    # jtag_fsm = frag.find_generated("debug", "jtag", "fsm")
+    # sim = Simulator(frag) # XXX
+    sim = Simulator(monitor)
     sim.add_clock(1e-6)
 
-    jtag_fsm_sig = jtag_fsm.state
+    # jtag_fsm_sig = jtag_fsm.state
     main_clk_sig = sim._fragment.domains["sync"].clk
 
     jtag_loc = cpu.debug.jtag
@@ -561,9 +562,8 @@ def create_jtag_simulator(cpu: MtkCpu):
     ]
     return {
         "sim": sim,
-        "frag": frag,
         "vcd_traces": vcd_traces,
-        "jtag_fsm": jtag_fsm,
+        # "jtag_fsm": jtag_fsm,
     }
 
 
@@ -724,12 +724,40 @@ def assert_jtag_test(
     gdb_process.start()
     # XXX gdb_process.join()
 
+    from amaranth.hdl import Record
 
-    # def wrapper(process: Callable[[Elaboratable]], cond: Callable[[Elaboratable], bool], dut: Elaboratable):
-        # yield Passive()
-        # while True:
-        #     if cond(dut):
-        #     yield
+    from mtkcpu.units.debug.types import JtagIR, IR_DMI_Layout
+
+    class DMI_Monitor(Elaboratable):
+        def __init__(self):
+            self.cur_dmi_op = Record(IR_DMI_Layout.to_layout())
+            self.prev_dmi_op = Signal.like(self.cur_dmi_op)
+            
+            # class IR_DMI_Layout(NamedOrderedLayout):
+            #     op : Annotated[int, 2]
+            #     data : Annotated[int, 32]
+            #     address : Annotated[int, JtagIRValue.DM_ABITS]
+        
+        def elaborate(self, platform):
+            from amaranth import Module
+            m = Module()
+
+            m.submodules.cpu = cpu
+            
+            jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
+            jtag_ir = cpu.debug.jtag.ir
+
+            with m.If(jtag_ir == JtagIR.DMI & jtag_dr_update):
+
+                m.d.sync += [
+                    # self.cur_dmi_op.eq(cpu.debug.jtag.regs[JtagIR.DMI].r),
+                    self.prev_dmi_op.eq(self.cur_dmi_op),
+                ]
+
+            return m
+    
+    dmi_monitor = DMI_Monitor()
+        
 
 
     def dmi_watchdog(cpu: MtkCpu):
@@ -738,12 +766,20 @@ def assert_jtag_test(
         mtkcpu implementation. It may be particulary useful when bumping gdb version or switching
         to a different debugger, for as smooth integration as possible.
         """
+
         def aux():
             yield Passive()
             while True:
                 op = yield cpu.debug.dmi_op
                 addr = yield cpu.debug.dmi_address
                 data = yield cpu.debug.dmi_data
+
+                # from amaranth.lib import data
+
+                # XXX
+                # monitor_dmi_op = yield dmi_monitor.cur_dmi_op
+                # if monitor_dmi_op:
+                    # raise ValueError(f"siema: {monitor_dmi_op} {op} {data} {addr}")
                 
                 if op != DMIOp.NOP:
                     try:
@@ -768,15 +804,13 @@ def assert_jtag_test(
                 yield
         return aux
     
-
-    
-    sim_gadgets = create_jtag_simulator(cpu)
-    sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
+    sim_gadgets = create_jtag_simulator(dmi_monitor, cpu)
+    sim, vcd_traces = [sim_gadgets[k] for k in ["sim", "vcd_traces"]]
 
     processes = [
         dmi_watchdog(cpu=cpu),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
-        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=jtag_fsm),
+        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
     ]
 
     if with_checkpoints:
