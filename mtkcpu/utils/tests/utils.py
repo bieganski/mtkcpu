@@ -717,8 +717,6 @@ def assert_jtag_test(
                     elf_file=elf_path,
                 )
     
-    from mtkcpu.utils.tests.sim_conditions_evaluator import evaluate_conditions_inplace
-
     from multiprocessing import Process
     gdb_process = Process(target=run_gdb_when_ocd_ready)
     gdb_process.start()

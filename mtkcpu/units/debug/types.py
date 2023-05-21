@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Annotated, Sequence, Tuple, List, Type
 from enum import IntEnum
 
+from amaranth.lib import data
+from amaranth import unsigned
 
 @dataclass
 class NamedOrderedLayout:
@@ -212,25 +214,25 @@ class DMISTAT(IntEnum):
     OP_INTERRUPTED_WHILE_IN_PROGRESS    = 3    
 
 @dataclass
-class IR_DTMCS_Layout(NamedOrderedLayout):
-    version : Annotated[int, 4]
-    abits : Annotated[int, 6]
-    dmistat : Annotated[int, 2]
-    idle : Annotated[int, 3]
-    _zero0 : Annotated[int, 1]
-    dmireset : Annotated[int, 1]
-    dmihardreset : Annotated[int, 1]
-    _zero1 : Annotated[int, 1]
+class IR_DTMCS_Layout(data.Struct):
+    version : unsigned(4)
+    abits : unsigned(6)
+    dmistat : unsigned(2)
+    idle : unsigned(3)
+    _zero0 : unsigned(1)
+    dmireset : unsigned(1)
+    dmihardreset : unsigned(1)
+    _zero1 : unsigned(1)
 
-@dataclass
-class IR_DMI_Layout(NamedOrderedLayout):
-    op : Annotated[int, 2]
-    data : Annotated[int, 32]
-    address : Annotated[int, JtagIRValue.DM_ABITS]
-    
+
+class IR_DMI_Layout(data.Struct):
+    op : unsigned(2)
+    data : unsigned(32)
+    address : unsigned(JtagIRValue.DM_ABITS)
+
 
 JTAG_IR_regs = {
-    JtagIR.IDCODE: _flat_Layout.to_layout(),
-    JtagIR.DTMCS: IR_DTMCS_Layout.to_layout(),
-    JtagIR.DMI: IR_DMI_Layout.to_layout(),
+    JtagIR.IDCODE: unsigned(32),
+    JtagIR.DTMCS: IR_DTMCS_Layout,
+    JtagIR.DMI: IR_DMI_Layout,
 }

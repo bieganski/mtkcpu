@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, AnyStr
 from amaranth import *
 from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
 from amaranth.lib.cdc import FFSynchronizer
-
+from amaranth.lib import data
 
 from mtkcpu.units.debug.types import JtagIR, JTAG_IR_regs, IR_DMI_Layout
 
@@ -14,26 +14,18 @@ jtag_layout = [
     ("tdo", 1, DIR_FANOUT),
 ]
 
-# We either read and write to DR, make it non-overlapping.
-def jtagify_dr(layout):
-    # assert all(len(x) == 2 for x in layout) or all(len(x) == 3 for x in layout)
-
-    def f(x):
-        if len(x) == 2:
-            return tuple([*x, DIR_FANOUT])
-        else:
-            return x
+def jtagify_dr(reg_layout: data.Layout) -> data.View:
     
-    res = [
-        ("r", list(map(f, layout))),
-        ("w", list(map(f, layout))),
-        ("update", 1, DIR_FANOUT),
-        ("capture", 1, DIR_FANOUT),
-    ]
+    layout = data.StructLayout({
+        "r": reg_layout,
+        "w": reg_layout,
+        "update": unsigned(1),
+        "capture": unsigned(1),
+    })
 
-    return Layout(res)
+    return data.View(layout, Signal(layout))
+
     
-
 
 # Jtag FSM described here:
 # https://www.xilinx.com/support/answers/3203.html
@@ -46,14 +38,18 @@ class JTAGTap(Elaboratable):
             ir_reset=JtagIR.IDCODE.value):
 
         self.port = Record(jtag_layout)
-        self.regs = dict( [(k, Record(jtagify_dr(v))) for k, v in ir_regs.items()] )
+        self.regs = dict( [(k, jtagify_dr(v)) for k, v in ir_regs.items()] )
         self.ir_reset = ir_reset
 
         self.jtag_fsm_update_dr = Signal()
 
         self.ir = Signal(JtagIR)
         assert self.ir.width == 5 # Spike
-        self.dr = Signal(max([len(v) for _, v in self.regs.items()]))
+        self.regs[JtagIR.DMI] : data.View
+
+        dr_layout = data.UnionLayout({str(k): v for k, v in ir_regs.items()})
+        self.dr = data.View(dr_layout, Signal(dr_layout))
+
 
     def elaborate(self, platform):
         m = Module()
