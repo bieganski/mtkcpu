@@ -19,9 +19,9 @@ jtag_layout = [
 from typing import Type
 
 def jtagify_dr(type: Type[data.View]) -> data.View:
-
-    print(f"jtagify {type}")
-    
+    """
+    TODO: unify with 'reg_make_rw' from top.py.
+    """
     layout = data.StructLayout({
         "r": Layout.cast(type),
         "w": Layout.cast(type),

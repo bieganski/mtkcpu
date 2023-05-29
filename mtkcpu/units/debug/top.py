@@ -1,5 +1,4 @@
 from typing import overload, Dict
-from amaranth.hdl.rec import Layout
 from amaranth import *
 from enum import IntEnum
 
@@ -104,23 +103,17 @@ const_csr_values = {
 }
 
 
-def reg_make_rw(layout):
-    from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
-    # assert all(len(x) == 2 for x in layout) or all(len(x) == 3 for x in layout)
+def reg_make_rw(type: Type[data.View]) -> data.View:
+    """
+    TODO: unify with 'jtagify_dr' from jtag.py.
+    """
 
-    def f(x):
-        if len(x) == 2:
-            return tuple([*x, DIR_FANOUT])
-        else:
-            return x
-    
-    res = [
-        ("r", list(map(f, layout))),
-        ("w", list(map(f, layout))),
-        ("update", 1, DIR_FANOUT),
-    ]
+    layout = data.StructLayout({
+        "r": data.Layout.cast(type),
+        "w": data.Layout.cast(type),
+    })
 
-    return Layout(res)
+    return data.Signal(layout)
 
 class ControllerInterface():
     def __init__(self):
@@ -389,9 +382,9 @@ class DebugUnit(Elaboratable):
         dmi_address = self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
         dmi_data    = self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
 
-        self.dmi_regs = dict([(k, Record(reg_make_rw(v))) for k, v in DMI_reg_kinds.items()])
+        self.dmi_regs = dict([(k, reg_make_rw(v)) for k, v in DMI_reg_kinds.items()])
         # command registers are write only, no need to 'reg_make_rw', nor Record instances.
-        self.command_regs = dict([(k, Record(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
+        self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
         self.csr_regs = dbg_csr_regs
         self.const_csr_values = const_csr_values
         self.nonconst_csr_values = dict([(k,Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
