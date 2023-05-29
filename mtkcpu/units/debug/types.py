@@ -230,9 +230,13 @@ class IR_DMI_Layout(data.Struct):
     data : unsigned(32)
     address : unsigned(JtagIRValue.DM_ABITS)
 
+def flat_layout_factory(size: int):
+    return data.StructLayout({
+        "value": unsigned(size),
+    })
 
 JTAG_IR_regs = {
-    JtagIR.IDCODE: unsigned(32),
+    JtagIR.IDCODE: flat_layout_factory(32),
     JtagIR.DTMCS: IR_DTMCS_Layout,
     JtagIR.DMI: IR_DMI_Layout,
 }

@@ -28,11 +28,10 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_controller,
                                           get_ocd_checkpoint_checker)
-from mtkcpu.units.debug.types import DMICommand
+from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 
-from mtkcpu.units.debug.types import DMIOp, DMIReg, DMI_reg_kinds
 from mtkcpu.utils.misc import get_color_logging_object
 
 logging = get_color_logging_object()
@@ -722,13 +721,9 @@ def assert_jtag_test(
     gdb_process.start()
     # XXX gdb_process.join()
 
-    from amaranth.hdl import Record
-
-    from mtkcpu.units.debug.types import JtagIR, IR_DMI_Layout
-
     class DMI_Monitor(Elaboratable):
         def __init__(self):
-            self.cur_dmi_op = Record(IR_DMI_Layout.to_layout())
+            self.cur_dmi_op = cpu.debug.jtag.regs[JtagIR.DMI].r # IR_DMI_Layout(Signal())
             self.prev_dmi_op = Signal.like(self.cur_dmi_op)
             
             # class IR_DMI_Layout(NamedOrderedLayout):
@@ -742,15 +737,15 @@ def assert_jtag_test(
 
             m.submodules.cpu = cpu
             
-            jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
-            jtag_ir = cpu.debug.jtag.ir
+            # jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
+            # jtag_ir = cpu.debug.jtag.ir
 
-            with m.If(jtag_ir == JtagIR.DMI & jtag_dr_update):
+            # with m.If(jtag_ir == JtagIR.DMI & jtag_dr_update):
 
-                m.d.sync += [
-                    # self.cur_dmi_op.eq(cpu.debug.jtag.regs[JtagIR.DMI].r),
-                    self.prev_dmi_op.eq(self.cur_dmi_op),
-                ]
+            #     m.d.sync += [
+            #         # self.cur_dmi_op.eq(cpu.debug.jtag.regs[JtagIR.DMI].r),
+            #         self.prev_dmi_op.eq(self.cur_dmi_op),
+            #     ]
 
             return m
     
@@ -791,7 +786,6 @@ def assert_jtag_test(
                 #     raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
 
                 if addr == DMIReg.COMMAND:
-                    from mtkcpu.units.debug.types import COMMAND_Layout, AccessRegisterLayout
                     cmd_layout : COMMAND_Layout = COMMAND_Layout.from_int(data)
                     assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
                     ar_layout : AccessRegisterLayout = AccessRegisterLayout.from_int(cmd_layout.control)

@@ -1,9 +1,11 @@
 from typing import Dict, List, Tuple, AnyStr
 
 from amaranth import *
-from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
+from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record
 from amaranth.lib.cdc import FFSynchronizer
 from amaranth.lib import data
+
+from amaranth.lib.data import Layout
 
 from mtkcpu.units.debug.types import JtagIR, JTAG_IR_regs, IR_DMI_Layout
 
@@ -14,16 +16,20 @@ jtag_layout = [
     ("tdo", 1, DIR_FANOUT),
 ]
 
-def jtagify_dr(reg_layout: data.Layout) -> data.View:
+from typing import Type
+
+def jtagify_dr(type: Type[data.View]) -> data.View:
+
+    print(f"jtagify {type}")
     
     layout = data.StructLayout({
-        "r": reg_layout,
-        "w": reg_layout,
+        "r": Layout.cast(type),
+        "w": Layout.cast(type),
         "update": unsigned(1),
         "capture": unsigned(1),
     })
 
-    return data.View(layout, Signal(layout))
+    return data.Signal(layout)
 
     
 
@@ -45,10 +51,11 @@ class JTAGTap(Elaboratable):
 
         self.ir = Signal(JtagIR)
         assert self.ir.width == 5 # Spike
-        self.regs[JtagIR.DMI] : data.View
 
-        dr_layout = data.UnionLayout({str(k): v for k, v in ir_regs.items()})
-        self.dr = data.View(dr_layout, Signal(dr_layout))
+        # Only to delegate signal width calculation.
+        _dr_layout = data.UnionLayout({str(k): v for k, v in ir_regs.items()})
+        
+        self.dr = Signal(_dr_layout.size)
 
 
     def elaborate(self, platform):
@@ -88,7 +95,7 @@ class JTAGTap(Elaboratable):
         with m.If(rising_tck):
             sync += self.tck_ctr.eq(self.tck_ctr + 1)
 
-        self.DATA_WRITE = Signal(IR_DMI_Layout.total_width())
+        self.DATA_WRITE = Signal(IR_DMI_Layout)
         self.DATA_READ = Signal.like(self.DATA_WRITE)
         self.DMI_WRITE = Signal(32)
 
@@ -135,7 +142,9 @@ class JTAGTap(Elaboratable):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
                             with m.If(rising_tck):
-                                sync += self.dr.eq(Cat(self.dr[1:len(record.r)], tdi))
+                                # TODO - off by one when calculating 'upper_bound'??
+                                upper_bound = Layout.of(record.r).size
+                                sync += self.dr.eq(Cat(self.dr[1:upper_bound], tdi))
                 with m.If(rising_tck & tms):
                     m.next = "EXIT1-DR"
 
