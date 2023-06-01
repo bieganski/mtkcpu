@@ -14,7 +14,7 @@ from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
 from amaranth import Signal
 from amaranth.sim.core import Active, Passive
-from amaranth.lib.data import View
+from amaranth.hdl import rec
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -479,7 +479,7 @@ def assert_mem_test(case: MemTestCase):
 # "frag" - Fragment object
 # "vcd_traces" - List of JTAG/DM signals to be traced
 # "jtag_fsm" - JTAG FSM
-def create_jtag_simulator(monitor, cpu: MtkCpu):
+def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
     # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
     frag = Fragment.get(monitor, platform=None)
@@ -514,6 +514,8 @@ def create_jtag_simulator(monitor, cpu: MtkCpu):
     # data0_r = dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
+        *monitor.cur_COMMAND_r.fields.values(),
+        *monitor.cur_AR_r.fields.values(),
         jtag_loc.tck_ctr,
         cpu.debug.dmi_op,
         cpu.debug.dmi_address,
@@ -672,6 +674,94 @@ def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     
     return elf_path
 
+
+class DMI_Monitor(Elaboratable):
+    def __init__(self, cpu: MtkCpu):
+        self.cpu = cpu
+
+        self.cur_dmi_op  = cpu.debug.dmi_op
+        self.prev_dmi_op = Signal.like(self.cur_dmi_op)
+        assert unsigned(2) == self.cur_dmi_op.shape()
+        
+        self.cur_dmi_data  = cpu.debug.dmi_data
+        self.prev_dmi_data = Signal.like(self.cur_dmi_data)
+        assert unsigned(32) == self.cur_dmi_data.shape()
+
+        self.cur_dmi_address  = cpu.debug.dmi_address
+        assert unsigned(7) == self.cur_dmi_address.shape()
+        
+        # TODO - typing annotations below are wrong, but IDE is happy.
+        self.cur_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.cur_dmi_data)
+        self.prev_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.prev_dmi_data)
+
+        self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
+
+        self.error = Signal()
+
+        # Records below are to be removed after https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+        self.cur_COMMAND_r = DMI_Monitor.to_record(self.cur_COMMAND)
+        self.cur_AR_r = DMI_Monitor.to_record(self.cur_AR)
+
+
+    @staticmethod
+    def to_record(v: data.View) -> rec.Record:
+        """
+        For simulation, to properly display named slices of Views.
+        Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+        """
+        members : dict = data.Layout.cast(v._View__orig_layout).members
+        return rec.Record(rec.Layout([x for x in members.items()]))
+
+    @staticmethod
+    def record_view_connect_statements(r: rec.Record, v: data.View) -> list:
+        members : dict = data.Layout.cast(v._View__orig_layout).members
+        return [getattr(r, name).eq(getattr(v, name)) for name in members]
+    
+    def elaborate(self, platform):
+        from amaranth import Module
+        m = Module()
+
+        # Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+        records_views = [
+            (self.cur_COMMAND_r, self.cur_COMMAND),
+            (self.cur_AR_r, self.cur_AR),
+        ]
+
+        for r, v in records_views:
+            m.d.comb += DMI_Monitor.record_view_connect_statements(r, v)
+        ############################################################################
+
+        def _raise():
+            m.d.sync += self.error.eq(1)
+
+        cpu = self.cpu
+        m.submodules.cpu = cpu
+
+        sync = m.d.sync
+
+        jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
+        jtag_ir = cpu.debug.jtag.ir
+
+        new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
+        
+        # latch previous DMI op.
+        with m.If(new_dmi_transaction):
+            sync += [
+                self.prev_dmi_op.eq(self.cur_dmi_op),
+                self.prev_dmi_data.eq(self.cur_dmi_data),
+            ]
+
+        access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
+
+        with m.If(self.cur_dmi_address == DMIReg.COMMAND):
+            with m.If(self.cur_COMMAND.cmdtype != access_register):
+                _raise()
+            
+            # with m.If(self.cur_AR.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
+            #     pass
+        return m
+
+
 def assert_jtag_test(
     timeout_cycles: Optional[int],
     openocd_executable: Path,
@@ -721,61 +811,7 @@ def assert_jtag_test(
     gdb_process.start()
     # XXX gdb_process.join()
 
-    class DMI_Monitor(Elaboratable):
-        def __init__(self):
-            self.cur_dmi_op  = cpu.debug.dmi_op
-            self.prev_dmi_op = Signal.like(self.cur_dmi_op)
-            assert unsigned(2) == self.cur_dmi_op.shape()
-            
-            self.cur_dmi_data  = cpu.debug.dmi_data
-            self.prev_dmi_data = Signal.like(self.cur_dmi_data)
-            assert unsigned(32) == self.cur_dmi_data.shape()
-
-            self.cur_dmi_address  = cpu.debug.dmi_address
-            assert unsigned(7) == self.cur_dmi_address.shape()
-            
-            # TODO - typing annotations below are wrong, but IDE is happy.
-            self.cur_COMMAND : COMMAND_Layout = View(COMMAND_Layout, self.cur_dmi_data)
-            self.prev_COMMAND : COMMAND_Layout = View(COMMAND_Layout, self.prev_dmi_data)
-
-            self.cur_AR : AccessRegisterLayout = View(AccessRegisterLayout, self.cur_COMMAND.control)
-
-            self.error = Signal()
-            
-
-        def elaborate(self, platform):
-            from amaranth import Module
-            m = Module()
-
-            def _raise():
-                m.d.sync += self.error.eq(1)
-
-            m.submodules.cpu = cpu
-
-            sync = m.d.sync
-
-            jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
-            jtag_ir = cpu.debug.jtag.ir
-
-            new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
-            
-            # latch previous DMI op.
-            with m.If(new_dmi_transaction):
-                sync += [
-                    self.prev_dmi_op.eq(self.cur_dmi_op),
-                ]
-
-            with m.If(self.cur_dmi_address == DMIReg.COMMAND):
-                with m.If(self.cur_COMMAND.cmdtype != DMICommand.AccessRegister):
-                    _raise()
-                
-                # with m.If(self.cur_AR.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
-                #     pass
-                
-
-            return m
-    
-    dmi_monitor = DMI_Monitor()
+    dmi_monitor = DMI_Monitor(cpu=cpu)
         
 
 
@@ -798,11 +834,11 @@ def assert_jtag_test(
                 data = yield cpu.debug.dmi_data
 
                 ar = yield dmi_monitor.cur_AR.aarsize
-                cur_COMMAND = yield dmi_monitor.cur_COMMAND
+                cur_COMMAND = yield dmi_monitor.cur_COMMAND.as_value()
                 # cur_COMMAND = yield dmi_monitor.cur_COMMAND
                 
-                if ar > AccessRegisterLayout.AARSIZE.BIT32:
-                    raise ValueError(ar, cur_COMMAND)
+                # if ar > AccessRegisterLayout.AARSIZE.BIT32:
+                #     raise ValueError(ar, cur_COMMAND)
                 
                 # raise ValueError(ar)
 

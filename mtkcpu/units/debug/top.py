@@ -3,7 +3,7 @@ from amaranth import *
 from enum import IntEnum
 
 from mtkcpu.units.debug.jtag import JTAGTap
-from mtkcpu.units.debug.types import DMIOp, DMICommand, DMIReg, DMI_COMMAND_reg_kinds, DMI_reg_kinds, IR_DMI_Layout, JtagIR, JtagIRValue, DMISTAT
+from mtkcpu.units.debug.types import DMIOp, COMMAND_Layout, DMIReg, DMI_COMMAND_reg_kinds, DMI_reg_kinds, IR_DMI_Layout, JtagIR, JtagIRValue, DMISTAT
 
 from amaranth.lib import data
 from typing import Type
@@ -230,10 +230,12 @@ class HandlerCOMMAND(HandlerDMI):
                 with m.Case(k):
                     comb += self.debug_unit.command_regs[k].eq(self.reg_command.w.control)
 
-        with m.If(self.reg_command.w.cmdtype == DMICommand.AccessRegister):
+        access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
+
+        with m.If(self.reg_command.w.cmdtype == access_register):
             # TODO
             # we use Record here to have named fields.
-            record = self.debug_unit.command_regs[DMICommand.AccessRegister]
+            record = self.debug_unit.command_regs[access_register]
             with m.If(record.aarsize > 2):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
                 comb += self.controller.command_err.eq(2)
@@ -347,6 +349,11 @@ class DebugUnit(Elaboratable):
         self.jtag = JTAGTap()
         self.HALT = Signal()
 
+        # TODO it can be simplify when https://github.com/amaranth-lang/amaranth/issues/790 is implemented.
+        # dmi_bus : IR_DMI_Layout = Signal(IR_DMI_Layout)
+        # self.dmi_op       = dmi_bus.op
+        # self.dmi_address  = dmi_bus.address
+        # self.dmi_data     = dmi_bus.data
         self.dmi_op       = Signal(shape(IR_DMI_Layout, "op"))
         self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
         self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
@@ -472,7 +479,7 @@ class DebugUnit(Elaboratable):
                         with m.Case(DMIOp.WRITE):
                             on_write(dmi_address, dmi_data) # takes data from jtag regs into command regs.
                             m.next = "WAIT"
-                    # sync += self.dmi_regs[DMIReg.ABSTRACTS].r.busy.eq(1) # TODO
+                        sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(dmi_op != DMIOp.NOP)
             with m.State("WAIT"):
                 sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.cmderr.eq(self.controller.command_err)
                 with m.Switch(dmi_address):
@@ -481,6 +488,6 @@ class DebugUnit(Elaboratable):
                             h.handle_write()
                 with m.If(self.controller.command_finished):
                     m.next = "IDLE"
-                    sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(0) # TODO make busy=1 at some point
+                    sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(0)
 
         return m

@@ -5,12 +5,6 @@ from enum import IntEnum
 from amaranth.lib import data, enum
 from amaranth import unsigned
 
-class DMICommand(enum.IntEnum, shape=unsigned(2)):
-    AccessRegister = 0x0  # the only one required by specs to be (at least partially) implemented.
-    Not_Implemented_QuickAccess = 0x1
-    Not_Implemented_AccessMemory = 0x2
-
-
 class DMSTATUS_Layout(data.Struct):
     version : unsigned(4)
     confstrptrvalid : unsigned(1)
@@ -57,18 +51,36 @@ class HARTINFO_Layout(data.Struct):
     _zero2 : unsigned(8)
 
 class ABSTRACTCS_Layout(data.Struct):
+    class CMDERR(enum.IntEnum, shape=unsigned(3)):
+        """
+        RV_DBG_SPECS 1.0; 3.15.6 Abstract Control and Status (abstractcs, at 0x16)
+        """
+        NO_ERR = 0
+        BUSY = 1 # An abstract command was executing while command, abstractcs, or abstractauto was written, or when one of the data or progbuf registers was read or written. 
+        NOT_SUPPORTED = 2 # 3.12.6: The requested command is not supported, regardless of whether the hart is running or not.
+        EXCEPTION = 3 # An exception occurred while executing the command.
+        HALT_OR_RESUME = 4 # The abstract command couldn’t execute because the hart wasn’t in the required state (running/halted), or unavailable.
+        BUS_ERROR = 5
+        OTHER = 7
+
+
     datacount : unsigned(4)
     _zero1 : unsigned(4)
-    cmderr : unsigned(3)
+    cmderr : CMDERR
     _zero2 : unsigned(1)
     busy : unsigned(1)
     _zero3 : unsigned(11)
     progbufsize : unsigned(5)
     _zero4 : unsigned(3)
 
+
 class COMMAND_Layout(data.Struct):
+    class AbstractCommandCmdtype(enum.IntEnum, shape=unsigned(8)):
+        AccessRegister = 0x0  # the only one required by specs to be (at least partially) implemented.
+        Not_Implemented_QuickAccess = 0x1
+        Not_Implemented_AccessMemory = 0x2
     control : unsigned(24)
-    cmdtype : unsigned(8)
+    cmdtype : AbstractCommandCmdtype
 
 class ABSTRACTAUTO_Layout(data.Struct):
     autoexecdata : unsigned(12)
@@ -84,24 +96,25 @@ def flat_layout_factory(size: int):
 
 class AccessRegisterLayout(data.Struct):
     class AARSIZE(enum.IntEnum, shape=unsigned(3)):
-        BIT32  = 2
-        BIT64  = 3
-        BIT128 = 4
+        NOT_SET = 0
+        BIT32   = 2
+        BIT64   = 3
+        BIT128  = 4
     regno : unsigned(16)
     write : unsigned(1)
     transfer : unsigned(1)
     postexec : unsigned(1)
-    _zero1 : unsigned(1)
+    zero1_ : unsigned(1)
     aarsize : AARSIZE
-    _zero2 : unsigned(1)
+    zero2_ : unsigned(1)
 
 
 DMI_COMMAND_reg_kinds = {
-    DMICommand.AccessRegister: AccessRegisterLayout,
+    COMMAND_Layout.AbstractCommandCmdtype.AccessRegister: AccessRegisterLayout,
     # TODO - for now there are only implemented ones.
 }
 
-class DMIOp(IntEnum):
+class DMIOp(enum.IntEnum, shape=unsigned(2)):
     NOP     = 0
     READ    = 1
     WRITE   = 2
@@ -137,19 +150,8 @@ class IR_DTMCS_Layout(data.Struct):
     dmihardreset : unsigned(1)
     _zero1 : unsigned(1)
 
-
-class IR_DMI_Layout(data.Struct):
-    op : DMICommand
-    data : unsigned(32)
-    address : unsigned(JtagIRValue.DM_ABITS)
-
-JTAG_IR_regs = {
-    JtagIR.IDCODE: flat_layout_factory(32),
-    JtagIR.DTMCS: IR_DTMCS_Layout,
-    JtagIR.DMI: IR_DMI_Layout,
-}
-
 class DMIReg(enum.IntEnum, shape=unsigned(JtagIRValue.DM_ABITS)):
+    UNDEFINED = 0x0
     DMSTATUS = 0x11
     DMCONTROL = 0x10
     HARTINFO = 0x12
@@ -164,6 +166,16 @@ class DMIReg(enum.IntEnum, shape=unsigned(JtagIRValue.DM_ABITS)):
     ABSTRACTAUTO = 0x18
 
 
+class IR_DMI_Layout(data.Struct):
+    op : DMIOp
+    data : unsigned(32)
+    address : DMIReg
+
+JTAG_IR_regs = {
+    JtagIR.IDCODE: flat_layout_factory(32),
+    JtagIR.DTMCS: IR_DTMCS_Layout,
+    JtagIR.DMI: IR_DMI_Layout,
+}
 DMI_reg_kinds = {
     DMIReg.DMSTATUS: DMSTATUS_Layout,
     DMIReg.DMCONTROL: DMCONTROL_Layout,
