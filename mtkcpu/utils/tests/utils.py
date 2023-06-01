@@ -14,6 +14,7 @@ from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
 from amaranth import Signal
 from amaranth.sim.core import Active, Passive
+from amaranth.lib.data import View
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -494,23 +495,23 @@ def create_jtag_simulator(monitor, cpu: MtkCpu):
 
     dmi_regs = cpu.debug.dmi_regs
 
-    dmcontrol_r = dmi_regs[DMIReg.DMCONTROL].r.fields.values()
-    dmcontrol_w = dmi_regs[DMIReg.DMCONTROL].w.fields.values()
+    # dmcontrol_r = dmi_regs[DMIReg.DMCONTROL].r.fields.values()
+    # dmcontrol_w = dmi_regs[DMIReg.DMCONTROL].w.fields.values()
 
-    hartinfo_r = dmi_regs[DMIReg.HARTINFO].r.fields.values()
-    hartinfo_w = dmi_regs[DMIReg.HARTINFO].w.fields.values()
+    # hartinfo_r = dmi_regs[DMIReg.HARTINFO].r.fields.values()
+    # hartinfo_w = dmi_regs[DMIReg.HARTINFO].w.fields.values()
 
-    abstracts_r = dmi_regs[DMIReg.ABSTRACTCS].r.fields.values()
-    abstracts_w = dmi_regs[DMIReg.ABSTRACTCS].w.fields.values()
+    # abstracts_r = dmi_regs[DMIReg.ABSTRACTCS].r.fields.values()
+    # abstracts_w = dmi_regs[DMIReg.ABSTRACTCS].w.fields.values()
 
-    dmstatus_r = dmi_regs[DMIReg.DMSTATUS].r.fields.values()
-    dmstatus_w = dmi_regs[DMIReg.DMSTATUS].w.fields.values()
+    # dmstatus_r = dmi_regs[DMIReg.DMSTATUS].r.fields.values()
+    # dmstatus_w = dmi_regs[DMIReg.DMSTATUS].w.fields.values()
 
-    command_w = dmi_regs[DMIReg.COMMAND].w.fields.values()
-    command_r = dmi_regs[DMIReg.COMMAND].r.fields.values()
+    # command_w = dmi_regs[DMIReg.COMMAND].w.fields.values()
+    # command_r = dmi_regs[DMIReg.COMMAND].r.fields.values()
 
-    data0_w = dmi_regs[DMIReg.DATA0].w.fields.values()
-    data0_r = dmi_regs[DMIReg.DATA0].r.fields.values()
+    # data0_w = dmi_regs[DMIReg.DATA0].w.fields.values()
+    # data0_r = dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
         jtag_loc.tck_ctr,
@@ -526,11 +527,10 @@ def create_jtag_simulator(monitor, cpu: MtkCpu):
         cpu.debug.ONWRITE,
         cpu.debug.ONREAD,
         # cpu.debug.HANDLER,
-        cpu.debug.DBG_DMI_ADDR,
 
         jtag_loc.BAR,
-        *data0_r,
-        *data0_w,
+        # *data0_r,
+        # *data0_w,
         jtag_loc.BAR,
 
         # *dmcontrol_r,
@@ -543,17 +543,17 @@ def create_jtag_simulator(monitor, cpu: MtkCpu):
         # jtag_loc.BAR,
         # *dmstatus_r,
         # *hartinfo_w,
-        *abstracts_w,
+        # *abstracts_w,
         jtag_loc.BAR,
-        *abstracts_r,
+        # *abstracts_r,
         jtag_loc.BAR,
-        *command_w,
+        # *command_w,
         jtag_loc.BAR,
-        *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
+        # *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
         jtag_loc.BAR,
-        *dmstatus_r,
+        # *dmstatus_r,
         jtag_loc.BAR,
-        *dmcontrol_w,
+        # *dmcontrol_w,
 
         cpu.gprf_debug_data,
         cpu.gprf_debug_addr,
@@ -723,29 +723,55 @@ def assert_jtag_test(
 
     class DMI_Monitor(Elaboratable):
         def __init__(self):
-            self.cur_dmi_op = cpu.debug.jtag.regs[JtagIR.DMI].r # IR_DMI_Layout(Signal())
+            self.cur_dmi_op  = cpu.debug.dmi_op
             self.prev_dmi_op = Signal.like(self.cur_dmi_op)
+            assert unsigned(2) == self.cur_dmi_op.shape()
             
-            # class IR_DMI_Layout(NamedOrderedLayout):
-            #     op : Annotated[int, 2]
-            #     data : Annotated[int, 32]
-            #     address : Annotated[int, JtagIRValue.DM_ABITS]
-        
+            self.cur_dmi_data  = cpu.debug.dmi_data
+            self.prev_dmi_data = Signal.like(self.cur_dmi_data)
+            assert unsigned(32) == self.cur_dmi_data.shape()
+
+            self.cur_dmi_address  = cpu.debug.dmi_address
+            assert unsigned(7) == self.cur_dmi_address.shape()
+            
+            # TODO - typing annotations below are wrong, but IDE is happy.
+            self.cur_COMMAND : COMMAND_Layout = View(COMMAND_Layout, self.cur_dmi_data)
+            self.prev_COMMAND : COMMAND_Layout = View(COMMAND_Layout, self.prev_dmi_data)
+
+            self.cur_AR : AccessRegisterLayout = View(AccessRegisterLayout, self.cur_COMMAND.control)
+
+            self.error = Signal()
+            
+
         def elaborate(self, platform):
             from amaranth import Module
             m = Module()
 
+            def _raise():
+                m.d.sync += self.error.eq(1)
+
             m.submodules.cpu = cpu
+
+            sync = m.d.sync
+
+            jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
+            jtag_ir = cpu.debug.jtag.ir
+
+            new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
             
-            # jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
-            # jtag_ir = cpu.debug.jtag.ir
+            # latch previous DMI op.
+            with m.If(new_dmi_transaction):
+                sync += [
+                    self.prev_dmi_op.eq(self.cur_dmi_op),
+                ]
 
-            # with m.If(jtag_ir == JtagIR.DMI & jtag_dr_update):
-
-            #     m.d.sync += [
-            #         # self.cur_dmi_op.eq(cpu.debug.jtag.regs[JtagIR.DMI].r),
-            #         self.prev_dmi_op.eq(self.cur_dmi_op),
-            #     ]
+            with m.If(self.cur_dmi_address == DMIReg.COMMAND):
+                with m.If(self.cur_COMMAND.cmdtype != DMICommand.AccessRegister):
+                    _raise()
+                
+                # with m.If(self.cur_AR.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
+                #     pass
+                
 
             return m
     
@@ -763,9 +789,22 @@ def assert_jtag_test(
         def aux():
             yield Passive()
             while True:
+                error = yield dmi_monitor.error
+                if error:
+                    raise ValueError("XXX SIM ERROR TO BE HANDLED")
+
                 op = yield cpu.debug.dmi_op
                 addr = yield cpu.debug.dmi_address
                 data = yield cpu.debug.dmi_data
+
+                ar = yield dmi_monitor.cur_AR.aarsize
+                cur_COMMAND = yield dmi_monitor.cur_COMMAND
+                # cur_COMMAND = yield dmi_monitor.cur_COMMAND
+                
+                if ar > AccessRegisterLayout.AARSIZE.BIT32:
+                    raise ValueError(ar, cur_COMMAND)
+                
+                # raise ValueError(ar)
 
                 # from amaranth.lib import data
 
@@ -785,13 +824,18 @@ def assert_jtag_test(
                 # if addr == DMIReg.ABSTRACTCS:
                 #     raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
 
-                if addr == DMIReg.COMMAND:
-                    cmd_layout : COMMAND_Layout = COMMAND_Layout.from_int(data)
-                    assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
-                    ar_layout : AccessRegisterLayout = AccessRegisterLayout.from_int(cmd_layout.control)
-                    assert ar_layout.aarsize == 2  # 32-bits only registers are supported
-                    if ar_layout.postexec:
-                        raise ValueError("XXX detected program buffer execution!")
+                # if True: # addr == DMIReg.COMMAND:
+                #     x = yield Signal(cpu.debug.dmi_op)
+                #     raise ValueError(x)
+                #     
+                #     raise ValueError(type(data), dir(data))
+                #     cmd_layout = View(COMMAND_Layout, data)
+                #     raise ValueError("OK")
+                #     assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
+                #     ar_layout : AccessRegisterLayout = AccessRegisterLayout.from_int(cmd_layout.control)
+                #     assert ar_layout.aarsize == 2  # 32-bits only registers are supported
+                #     if ar_layout.postexec:
+                #         raise ValueError("XXX detected program buffer execution!")
 
                 yield
         return aux

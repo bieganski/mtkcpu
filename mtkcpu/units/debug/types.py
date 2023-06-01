@@ -2,24 +2,10 @@ from dataclasses import dataclass
 from typing import Annotated, Sequence, Tuple, List, Type
 from enum import IntEnum
 
-from amaranth.lib import data
+from amaranth.lib import data, enum
 from amaranth import unsigned
 
-class DMIReg(IntEnum):
-    DMSTATUS = 0x11
-    DMCONTROL = 0x10
-    HARTINFO = 0x12
-    ABSTRACTCS = 0x16
-    COMMAND = 0x17
-    SBCS = 0x38
-    DATA0 = 0x4
-    DATA1 = 0x5
-    PROGBUF0 = 0x20
-    PROGBUF1 = 0x21
-    PROGBUF2 = 0x22
-    ABSTRACTAUTO = 0x18
-
-class DMICommand(IntEnum):
+class DMICommand(enum.IntEnum, shape=unsigned(2)):
     AccessRegister = 0x0  # the only one required by specs to be (at least partially) implemented.
     Not_Implemented_QuickAccess = 0x1
     Not_Implemented_AccessMemory = 0x2
@@ -96,28 +82,17 @@ def flat_layout_factory(size: int):
     })
 
 
-DMI_reg_kinds = {
-    DMIReg.DMSTATUS: DMSTATUS_Layout,
-    DMIReg.DMCONTROL: DMCONTROL_Layout,
-    DMIReg.HARTINFO: HARTINFO_Layout,
-    DMIReg.ABSTRACTCS: ABSTRACTCS_Layout,
-    DMIReg.COMMAND: COMMAND_Layout,
-    DMIReg.ABSTRACTAUTO: ABSTRACTAUTO_Layout,
-
-    DMIReg.DATA0: flat_layout_factory(32),
-    DMIReg.DATA1: flat_layout_factory(32),
-    DMIReg.PROGBUF0: flat_layout_factory(32),
-    DMIReg.PROGBUF1: flat_layout_factory(32),
-    DMIReg.PROGBUF2: flat_layout_factory(32),
-}
-
 class AccessRegisterLayout(data.Struct):
+    class AARSIZE(enum.IntEnum, shape=unsigned(3)):
+        BIT32  = 2
+        BIT64  = 3
+        BIT128 = 4
     regno : unsigned(16)
     write : unsigned(1)
     transfer : unsigned(1)
     postexec : unsigned(1)
     _zero1 : unsigned(1)
-    aarsize : unsigned(3)
+    aarsize : AARSIZE
     _zero2 : unsigned(1)
 
 
@@ -164,7 +139,7 @@ class IR_DTMCS_Layout(data.Struct):
 
 
 class IR_DMI_Layout(data.Struct):
-    op : unsigned(2)
+    op : DMICommand
     data : unsigned(32)
     address : unsigned(JtagIRValue.DM_ABITS)
 
@@ -172,4 +147,34 @@ JTAG_IR_regs = {
     JtagIR.IDCODE: flat_layout_factory(32),
     JtagIR.DTMCS: IR_DTMCS_Layout,
     JtagIR.DMI: IR_DMI_Layout,
+}
+
+class DMIReg(enum.IntEnum, shape=unsigned(JtagIRValue.DM_ABITS)):
+    DMSTATUS = 0x11
+    DMCONTROL = 0x10
+    HARTINFO = 0x12
+    ABSTRACTCS = 0x16
+    COMMAND = 0x17
+    SBCS = 0x38
+    DATA0 = 0x4
+    DATA1 = 0x5
+    PROGBUF0 = 0x20
+    PROGBUF1 = 0x21
+    PROGBUF2 = 0x22
+    ABSTRACTAUTO = 0x18
+
+
+DMI_reg_kinds = {
+    DMIReg.DMSTATUS: DMSTATUS_Layout,
+    DMIReg.DMCONTROL: DMCONTROL_Layout,
+    DMIReg.HARTINFO: HARTINFO_Layout,
+    DMIReg.ABSTRACTCS: ABSTRACTCS_Layout,
+    DMIReg.COMMAND: COMMAND_Layout,
+    DMIReg.ABSTRACTAUTO: ABSTRACTAUTO_Layout,
+
+    DMIReg.DATA0: flat_layout_factory(32),
+    DMIReg.DATA1: flat_layout_factory(32),
+    DMIReg.PROGBUF0: flat_layout_factory(32),
+    DMIReg.PROGBUF1: flat_layout_factory(32),
+    DMIReg.PROGBUF2: flat_layout_factory(32),
 }

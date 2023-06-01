@@ -335,6 +335,10 @@ handlers = {
     DMIReg.ABSTRACTAUTO: HandlerABSTRACTAUTO,
 }
 
+def shape(layout_cls: data.StructLayout, field: str) -> Shape:
+    return data.Layout.cast(layout_cls).members[field]
+
+
 # Jtag FSM described here:
 # https://www.xilinx.com/support/answers/3203.html
 class DebugUnit(Elaboratable):
@@ -342,6 +346,11 @@ class DebugUnit(Elaboratable):
         self.cpu = cpu
         self.jtag = JTAGTap()
         self.HALT = Signal()
+
+        self.dmi_op       = Signal(shape(IR_DMI_Layout, "op"))
+        self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
+        self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
+
 
     def elaborate(self, platform):
         m = self.m = Module()
@@ -353,8 +362,6 @@ class DebugUnit(Elaboratable):
         jtag_dtmcs   = self.jtag.regs[JtagIR.DTMCS]
         jtag_dmi     = self.jtag.regs[JtagIR.DMI]
         jtag_idcode  = self.jtag.regs[JtagIR.IDCODE]
-
-        # raise ValueError(jtag_idcode.r)
 
         comb += [
             jtag_idcode.r.eq(JtagIRValue.IDCODE),
@@ -375,19 +382,16 @@ class DebugUnit(Elaboratable):
         with m.If(jtag_dtmcs.update & jtag_dtmcs.w.dmireset):
             comb += sticky.eq(0) # TODO
 
-        def shape(layout_cls: data.StructLayout, field: str) -> Shape:
-            return data.Layout.cast(layout_cls).members[field]
-
-        dmi_op      = self.dmi_op       = Signal(shape(IR_DMI_Layout, "op"))
-        dmi_address = self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
-        dmi_data    = self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
+        dmi_op      = self.dmi_op
+        dmi_address = self.dmi_address
+        dmi_data    = self.dmi_data
 
         self.dmi_regs = dict([(k, reg_make_rw(v)) for k, v in DMI_reg_kinds.items()])
         # command registers are write only, no need to 'reg_make_rw', nor Record instances.
         self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
         self.csr_regs = dbg_csr_regs
         self.const_csr_values = const_csr_values
-        self.nonconst_csr_values = dict([(k,Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
+        self.nonconst_csr_values = dict([(k, Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
 
         self.controller = ControllerInterface()
 
@@ -397,15 +401,11 @@ class DebugUnit(Elaboratable):
             ]
         )
 
-        DBG_DMI_ADDR = self.DBG_DMI_ADDR = Signal(DMIReg)
-        comb += DBG_DMI_ADDR.eq(dmi_address)
-
         sync += [
             dmi_op.eq(jtag_dmi.w.op),
             dmi_address.eq(jtag_dmi.w.address),
             dmi_data.eq(jtag_dmi.w.data),
         ]
-
 
         sync += [
             jtag_dmi.r.address.eq(dmi_address),
