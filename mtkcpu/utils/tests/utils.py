@@ -12,9 +12,9 @@ from tempfile import NamedTemporaryFile
 from amaranth.hdl.ast import Signal
 from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
-from amaranth import Signal
 from amaranth.sim.core import Active, Passive
 from amaranth.hdl import rec
+from amaranth import Module, Cat, Signal
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -679,20 +679,15 @@ class DMI_Monitor(Elaboratable):
     def __init__(self, cpu: MtkCpu):
         self.cpu = cpu
 
-        self.cur_dmi_op  = cpu.debug.dmi_op
-        self.prev_dmi_op = Signal.like(self.cur_dmi_op)
-        assert unsigned(2) == self.cur_dmi_op.shape()
-        
-        self.cur_dmi_data  = cpu.debug.dmi_data
-        self.prev_dmi_data = Signal.like(self.cur_dmi_data)
-        assert unsigned(32) == self.cur_dmi_data.shape()
+        dmi_bus_signal = Cat(cpu.debug.dmi_op, cpu.debug.dmi_data, cpu.debug.dmi_address)
 
-        self.cur_dmi_address  = cpu.debug.dmi_address
-        assert unsigned(7) == self.cur_dmi_address.shape()
-        
         # TODO - typing annotations below are wrong, but IDE is happy.
-        self.cur_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.cur_dmi_data)
-        self.prev_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.prev_dmi_data)
+
+        self.cur_dmi_bus : IR_DMI_Layout = data.View(IR_DMI_Layout, dmi_bus_signal)
+        self.prev_dmi_bus : IR_DMI_Layout = Signal.like(self.cur_dmi_bus)
+        
+        self.cur_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.cur_dmi_bus.data)
+        self.prev_COMMAND : COMMAND_Layout = Signal.like(self.cur_COMMAND)
 
         self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
 
@@ -718,9 +713,9 @@ class DMI_Monitor(Elaboratable):
         return [getattr(r, name).eq(getattr(v, name)) for name in members]
     
     def elaborate(self, platform):
-        from amaranth import Module
         m = Module()
 
+        ############################################################################
         # Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
         records_views = [
             (self.cur_COMMAND_r, self.cur_COMMAND),
@@ -742,23 +737,20 @@ class DMI_Monitor(Elaboratable):
         jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
         jtag_ir = cpu.debug.jtag.ir
 
-        new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
-        
+        self.new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
+
         # latch previous DMI op.
-        with m.If(new_dmi_transaction):
+        with m.If(self.new_dmi_transaction):
             sync += [
-                self.prev_dmi_op.eq(self.cur_dmi_op),
-                self.prev_dmi_data.eq(self.cur_dmi_data),
+                self.prev_dmi_bus.eq(self.cur_dmi_bus),
             ]
 
         access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
 
-        with m.If(self.cur_dmi_address == DMIReg.COMMAND):
+        with m.If(self.cur_dmi_bus.address == DMIReg.COMMAND):
             with m.If(self.cur_COMMAND.cmdtype != access_register):
                 _raise()
             
-            # with m.If(self.cur_AR.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
-            #     pass
         return m
 
 
@@ -774,18 +766,9 @@ def assert_jtag_test(
         with_debug=True,
     )
 
-    with_checkpoints = False # XXX
-
     sw_project_path = get_git_root() / "sw" / "blink_led"
+    
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
-
-    # run_gdb(
-    #     gdb_executable=gdb_executable,
-    #     elf_file=elf_path,
-
-    #     stdout=None, # Path("gdb.stdout"),
-    #     stderr=None,
-    # )
 
     lines = run_openocd(
         delay_execution_num_seconds=1,
@@ -800,7 +783,7 @@ def assert_jtag_test(
             # * when they can connect with gdb/telnet.
             # * We will need to update those suites if we want to change that text. */
             if "Examined RISC-V core" in line:
-                logging.info("Detected that openOCD successfully finished mtkcpu examination! Running GDB..")
+                logging.info("Detected that openOCD successfully finished CPU examination! Running GDB..")
                 run_gdb(
                     gdb_executable=gdb_executable,
                     elf_file=elf_path,
@@ -814,13 +797,28 @@ def assert_jtag_test(
     dmi_monitor = DMI_Monitor(cpu=cpu)
         
 
-
-    def dmi_watchdog(cpu: MtkCpu):
+    def dmi_watchdogs(cpu: MtkCpu):
         """
-        This process provides various asserts, regarding to what we may expect from 
-        mtkcpu implementation. It may be particulary useful when bumping gdb version or switching
+        These processes provides various asserts, regarding to what we may expect from 
+        CPU implementation. It may be particulary useful when bumping gdb version or switching
         to a different debugger, for as smooth integration as possible.
         """
+
+        def print_dmi_transactions():
+            yield Passive()
+
+            print_fn = print
+            
+            while True:
+                new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
+                if new_dmi_transaction:
+                    op   = yield dmi_monitor.cur_dmi_bus.op
+                    addr = yield dmi_monitor.cur_dmi_bus.address
+                    
+                    if op in [DMIOp.READ, DMIOp.WRITE]:
+                        prefix = "reading " if op == DMIOp.READ else "writing "
+                        print_fn(f"{prefix} {addr!r}")
+                yield
 
         def aux():
             yield Passive()
@@ -829,25 +827,23 @@ def assert_jtag_test(
                 if error:
                     raise ValueError("XXX SIM ERROR TO BE HANDLED")
 
-                op = yield cpu.debug.dmi_op
-                addr = yield cpu.debug.dmi_address
-                data = yield cpu.debug.dmi_data
+                op   = yield dmi_monitor.cur_dmi_bus.op
+                addr = yield dmi_monitor.cur_dmi_bus.address
+                data = yield dmi_monitor.cur_dmi_bus.data
 
-                ar = yield dmi_monitor.cur_AR.aarsize
+                new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
+
+                # if new_dmi_transaction:
+                #     if addr == DMIReg.COMMAND:
+                #         pass
+                #     else:
+                #         raise ValueError(f"XXX {DMIReg(addr)}")
+                
+                ar   = yield dmi_monitor.cur_AR.aarsize
                 cur_COMMAND = yield dmi_monitor.cur_COMMAND.as_value()
-                # cur_COMMAND = yield dmi_monitor.cur_COMMAND
                 
                 # if ar > AccessRegisterLayout.AARSIZE.BIT32:
                 #     raise ValueError(ar, cur_COMMAND)
-                
-                # raise ValueError(ar)
-
-                # from amaranth.lib import data
-
-                # XXX
-                # monitor_dmi_op = yield dmi_monitor.cur_dmi_op
-                # if monitor_dmi_op:
-                    # raise ValueError(f"siema: {monitor_dmi_op} {op} {data} {addr}")
                 
                 if op != DMIOp.NOP:
                     try:
@@ -874,16 +870,20 @@ def assert_jtag_test(
                 #         raise ValueError("XXX detected program buffer execution!")
 
                 yield
-        return aux
+        
+        # return all nested watchdogs defined.
+        return [x for x in locals().values() if callable(x)]
     
     sim_gadgets = create_jtag_simulator(dmi_monitor, cpu)
     sim, vcd_traces = [sim_gadgets[k] for k in ["sim", "vcd_traces"]]
 
     processes = [
-        dmi_watchdog(cpu=cpu),
+        *dmi_watchdogs(cpu=cpu),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
     ]
+
+    with_checkpoints = False # XXX
 
     if with_checkpoints:
         processes.append(get_ocd_checkpoint_checker(cpu))

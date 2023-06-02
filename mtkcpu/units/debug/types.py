@@ -119,8 +119,11 @@ class DMIOp(enum.IntEnum, shape=unsigned(2)):
     READ    = 1
     WRITE   = 2
 
-# Spike's irlen == 5
-class JtagIR(IntEnum):
+
+# 6.1.2: JTAG TAPs used as a DTM must have an IR of at least 5 bits.
+JTAG_IR_WIDTH = 5
+
+class JtagIR(enum.IntEnum, shape=unsigned(JTAG_IR_WIDTH)):
     BYPASS      = 0x00
     IDCODE      = 0x01
     DTMCS       = 0x10
@@ -151,18 +154,18 @@ class IR_DTMCS_Layout(data.Struct):
     _zero1 : unsigned(1)
 
 class DMIReg(enum.IntEnum, shape=unsigned(JtagIRValue.DM_ABITS)):
-    UNDEFINED = 0x0
-    DMSTATUS = 0x11
-    DMCONTROL = 0x10
-    HARTINFO = 0x12
-    ABSTRACTCS = 0x16
-    COMMAND = 0x17
-    SBCS = 0x38
-    DATA0 = 0x4
-    DATA1 = 0x5
-    PROGBUF0 = 0x20
-    PROGBUF1 = 0x21
-    PROGBUF2 = 0x22
+    _UNDEFINED    = 0x0
+    DMSTATUS     = 0x11
+    DMCONTROL    = 0x10
+    HARTINFO     = 0x12
+    ABSTRACTCS   = 0x16
+    COMMAND      = 0x17
+    SBCS         = 0x38
+    DATA0        = 0x4
+    DATA1        = 0x5
+    PROGBUF0     = 0x20
+    PROGBUF1     = 0x21
+    PROGBUF2     = 0x22
     ABSTRACTAUTO = 0x18
 
 
@@ -176,6 +179,7 @@ JTAG_IR_regs = {
     JtagIR.DTMCS: IR_DTMCS_Layout,
     JtagIR.DMI: IR_DMI_Layout,
 }
+
 DMI_reg_kinds = {
     DMIReg.DMSTATUS: DMSTATUS_Layout,
     DMIReg.DMCONTROL: DMCONTROL_Layout,

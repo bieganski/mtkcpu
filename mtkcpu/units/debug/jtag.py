@@ -52,9 +52,8 @@ class JTAGTap(Elaboratable):
         self.ir = Signal(JtagIR)
         assert self.ir.width == 5 # Spike
 
-        # Only to delegate signal width calculation.
+        # Use 'UnionLayout' only to delegate signal width calculation.
         _dr_layout = data.UnionLayout({str(k): v for k, v in ir_regs.items()})
-        
         self.dr = Signal(_dr_layout.size)
 
 
@@ -88,7 +87,6 @@ class JTAGTap(Elaboratable):
             rising_tck.eq((~prev_tck) & tck),
             falling_tck.eq(prev_tck & (~tck)),
         ]
-
 
         self.tck_ctr = Signal(32)
 
