@@ -29,6 +29,10 @@ def matcher(encodings):
         ),
     )
 
+from math import log2, ceil
+from mtkcpu.utils.tests.memory import MemoryContents
+
+
 @dataclass(frozen=True)
 class EBRMemConfig():
     word_size = 4
@@ -37,10 +41,13 @@ class EBRMemConfig():
     mem_addr : int
     simulate: bool
 
-    from mtkcpu.utils.tests.memory import MemoryContents
-
     @property
     def last_valid_addr_excl(self):
+        return self.mem_addr + self.mem_size_words * self.word_size
+    
+    @property
+    def arena_kb_ceiled(self):
+        ceil(self.word_size * self.mem_size_words / 1024)
         return self.mem_addr + self.mem_size_words * self.word_size
 
     @staticmethod
@@ -57,7 +64,6 @@ class EBRMemConfig():
                 f"(tried {mem_dict if len(mem_dict.memory) < 100 else f'<too big to print> (of length {len(mem_dict.memory)}'}."
                 f"E.g. {hex(non_matching)}={hex(d[non_matching])} not matches.)"
             )
-        from math import log2
         mem_map = [0] * num_words
         # raise ValueError(num_words, int(log2(ws)), [k - start_addr for k in d.keys()])
         for k, v in d.items():

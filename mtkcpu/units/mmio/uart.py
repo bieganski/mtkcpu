@@ -4,7 +4,7 @@
 from ctypes import ArgumentError
 from amaranth import *
 from amaranth.build import *
-from nmigen_boards.icebreaker import *
+from amaranth_boards.icebreaker import *
 
 
 def _divisor(freq_in, freq_out, max_ppm=None):

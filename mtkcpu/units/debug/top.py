@@ -1,9 +1,12 @@
 from typing import overload, Dict
-from amaranth.hdl.rec import Layout
 from amaranth import *
 from enum import IntEnum
 
-from mtkcpu.units.debug.jtag import JTAGTap, JtagIR, JtagIRValue, DMISTAT, debug_module_get_width
+from mtkcpu.units.debug.jtag import JTAGTap
+from mtkcpu.units.debug.types import DMIOp, COMMAND_Layout, DMIReg, DMI_COMMAND_reg_kinds, DMI_reg_kinds, IR_DMI_Layout, JtagIR, JtagIRValue, DMISTAT
+
+from amaranth.lib import data
+from typing import Type
 
 # * The Debug Module’s own state and registers should only 
 # be reset at power-up and while dmactive in dmcontrol is 0.
@@ -18,115 +21,12 @@ from mtkcpu.units.debug.jtag import JTAGTap, JtagIR, JtagIRValue, DMISTAT, debug
 #  no  more  instructions  are executed,  the  hart  remains  in  Debug  Mode,  
 #  and cmderr is  set  to  3  (exception error).
 
-class DMIReg(IntEnum):
-    DMSTATUS = 0x11
-    DMCONTROL = 0x10
-    HARTINFO = 0x12
-    ABSTRACTS = 0x16
-    COMMAND = 0x17
-    SBCS = 0x38
-    DATA0 = 0x4
-    DATA1 = 0x5
-    PROGBUF0 = 0x20
-    PROGBUF1 = 0x21
-    PROGBUF2 = 0x22
-    ABSTRACTAUTO = 0x18
 
 
 PROGBUFSIZE = 3
 DATASIZE = 2
 PROGBUF_MMIO_ADDR = 0xde88
 
-flat_layout = [
-    ("value", 32)
-]
-
-dmi_regs = {
-    DMIReg.DMSTATUS: [
-        ("version",           4),
-        ("confstrptrvalid",   1),
-        ("hasresethaltreq",   1),
-        ("authbusy",          1),
-        ("authenticated",     1),
-        ("anyhalted",         1),
-        ("allhalted",         1),
-        ("anyrunning",        1),
-        ("allrunning",        1), # 1_or_0 if in debug mode
-        ("anyunavail",        1),
-        ("allunavail",        1),
-        ("anynonexistent",    1),
-        ("allnonexistent",    1),
-        ("anyresumeack",      1),
-        ("allresumeack",      1),
-        ("anyhavereset",      1),
-        ("allhavereset",      1),
-        ("_zero0",            2),
-        ("impebreak",         1), # R, 1 if implicit ebreak at the end of program buffer
-        ("_zero1",            9),
-    ],
-    DMIReg.DMCONTROL: [
-        ("dmactive", 1),
-        ("ndmreset", 1),
-        ("clrresethaltreXq", 1),
-        ("setresethaltreXq", 1),
-        ("_zero1",  2),
-        ("hartselhi", 10),
-        ("hartsello", 10),
-        ("hasel",    1),
-        ("_zero2",   1),
-        ("ackhavereset",   1),
-        ("hartreset",1),
-        ("resumereq",1),
-        ("haltreq",  1),
-    ],
-    DMIReg.HARTINFO: [
-        ("dataaddr", 12),
-        ("datasize", 4),
-        ("dataaccess", 1),
-        ("_zero1", 3),
-        ("nscratch", 4),
-        ("_zero2", 8),
-    ],
-    DMIReg.ABSTRACTS: [
-        ("datacount", 4),
-        ("_zero1", 4),
-        ("cmderr", 3),
-        ("_zero2", 1),
-        ("busy", 1),
-        ("_zero3", 11),
-        ("progbufsize", 5),
-        ("_zero4", 3),
-    ],
-    DMIReg.COMMAND: [
-        ("control", 24),
-        ("cmdtype", 8)
-    ],
-    DMIReg.DATA0: flat_layout,
-    DMIReg.DATA1: flat_layout,
-    DMIReg.PROGBUF0: flat_layout,
-    DMIReg.PROGBUF1: flat_layout,
-    DMIReg.PROGBUF2: flat_layout,
-    DMIReg.ABSTRACTAUTO: [
-        ("autoexecdata", 12),
-        ("_zero", 4),
-        ("autoexecprogbuf", 16), 
-    ]
-}
-
-class DMICommand(IntEnum):
-    AccessRegister = 0x0
-
-command_regs = {
-    DMICommand.AccessRegister: [
-        ("regno", 16),
-        ("write", 1),
-        ("transfer", 1),
-        ("postexec", 1),
-        ("_zero1", 1),
-        ("aarsize", 3),
-        ("_zero2", 1),
-    ]
-}
 
 # https://people.eecs.berkeley.edu/~krste/papers/riscv-privileged-v1.9.1.pdf    
 class DMI_CSR(IntEnum):
@@ -202,33 +102,18 @@ const_csr_values = {
     DMI_CSR.MISA: RegValueMISA,
 }
 
-reg_len = lambda lst: sum(map(lambda x : x[1], lst))
-assert all(map(lambda lst: 32 == reg_len(lst), dmi_regs.values()))
-assert all(map(lambda lst: 24 == reg_len(lst), command_regs.values()))
 
+def reg_make_rw(type: Type[data.View]) -> data.View:
+    """
+    TODO: unify with 'jtagify_dr' from jtag.py.
+    """
 
-def reg_make_rw(layout):
-    from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
-    # assert all(len(x) == 2 for x in layout) or all(len(x) == 3 for x in layout)
+    layout = data.StructLayout({
+        "r": data.Layout.cast(type),
+        "w": data.Layout.cast(type),
+    })
 
-    def f(x):
-        if len(x) == 2:
-            return tuple([*x, DIR_FANOUT])
-        else:
-            return x
-    
-    res = [
-        ("r", list(map(f, layout))),
-        ("w", list(map(f, layout))),
-        ("update", 1, DIR_FANOUT),
-    ]
-
-    return Layout(res)
-
-class DMIOp(IntEnum):
-    NOP     = 0
-    READ    = 1
-    WRITE   = 2
+    return data.Signal(layout)
 
 class ControllerInterface():
     def __init__(self):
@@ -307,22 +192,29 @@ class HandlerDMCONTROL(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        with m.If(self.reg_dmcontrol.w.dmactive):
+        write_value = self.reg_dmcontrol.w
+
+        with m.If(write_value.dmactive):
             sync += self.reg_dmcontrol.r.dmactive.eq(1)
 
-            with m.If(self.reg_dmcontrol.w.haltreq):
+            with m.If(write_value.haltreq):
                 sync += self.debug_unit.HALT.eq(1)
                 sync += self.reg_dmstatus.r.allhalted.eq(1)
                 sync += self.reg_dmstatus.r.anyhalted.eq(1)
             
-            with m.If(self.reg_dmcontrol.w.resumereq):
-                # with m.If(self.reg_dmcontrol.w.step): # TODO step does not exist yet.
+            with m.If(write_value.resumereq):
+                # with m.If(write_value.step): # TODO step does not exist yet.
                 #     pass # TODO auto-halt after single instruction
                 sync += self.debug_unit.HALT.eq(0)
                 sync += self.reg_dmstatus.r.allresumeack.eq(1)
                 sync += self.reg_dmstatus.r.anyresumeack.eq(1)
                 sync += self.reg_dmstatus.r.allhalted.eq(0)
                 sync += self.reg_dmstatus.r.anyhalted.eq(0)
+            
+            # Only hart 0 exists.
+            sync += self.reg_dmstatus.r.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
+        with m.Else():
+            pass # TODO - reset the DM!
         
         comb += self.controller.command_finished.eq(1)
 
@@ -338,10 +230,12 @@ class HandlerCOMMAND(HandlerDMI):
                 with m.Case(k):
                     comb += self.debug_unit.command_regs[k].eq(self.reg_command.w.control)
 
-        with m.If(self.reg_command.w.cmdtype == DMICommand.AccessRegister):
+        access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
+
+        with m.If(self.reg_command.w.cmdtype == access_register):
             # TODO
             # we use Record here to have named fields.
-            record = self.debug_unit.command_regs[DMICommand.AccessRegister]
+            record = self.debug_unit.command_regs[access_register]
             with m.If(record.aarsize > 2):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
                 comb += self.controller.command_err.eq(2)
@@ -422,7 +316,7 @@ class HandlerPROGBUF(HandlerDMI):
             self.comb += self.controller.command_finished.eq(1)
 
 
-class HandlerABSTRACTS(HandlerDMI):
+class HandlerABSTRACTCS(HandlerDMI):
     def handle_write(self):
         m = self.debug_unit.m
         sync = self.sync
@@ -443,20 +337,34 @@ handlers = {
     DMIReg.ABSTRACTAUTO: HandlerABSTRACTAUTO,
 }
 
+def shape(layout_cls: data.StructLayout, field: str) -> Shape:
+    return data.Layout.cast(layout_cls).members[field]
+
+
 # Jtag FSM described here:
 # https://www.xilinx.com/support/answers/3203.html
 class DebugUnit(Elaboratable):
     def __init__(self, cpu):
         self.cpu = cpu
-
+        self.jtag = JTAGTap()
         self.HALT = Signal()
+
+        # TODO it can be simplify when https://github.com/amaranth-lang/amaranth/issues/790 is implemented.
+        # dmi_bus : IR_DMI_Layout = Signal(IR_DMI_Layout)
+        # self.dmi_op       = dmi_bus.op
+        # self.dmi_address  = dmi_bus.address
+        # self.dmi_data     = dmi_bus.data
+        self.dmi_op       = Signal(shape(IR_DMI_Layout, "op"))
+        self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
+        self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
+
 
     def elaborate(self, platform):
         m = self.m = Module()
         sync = m.d.sync
         comb = m.d.comb
 
-        self.jtag = m.submodules.jtag = JTAGTap()
+        m.submodules.jtag = self.jtag
 
         jtag_dtmcs   = self.jtag.regs[JtagIR.DTMCS]
         jtag_dmi     = self.jtag.regs[JtagIR.DMI]
@@ -481,16 +389,16 @@ class DebugUnit(Elaboratable):
         with m.If(jtag_dtmcs.update & jtag_dtmcs.w.dmireset):
             comb += sticky.eq(0) # TODO
 
-        dmi_op      = self.dmi_op       = Signal(DMIOp)# Signal(debug_module_get_width(JtagIR.DMI, "op"))
-        dmi_address = self.dmi_address  = Signal(debug_module_get_width(JtagIR.DMI, "address"))
-        dmi_data    = self.dmi_data     = Signal(debug_module_get_width(JtagIR.DMI, "data"))
+        dmi_op      = self.dmi_op
+        dmi_address = self.dmi_address
+        dmi_data    = self.dmi_data
 
-        self.dmi_regs = dict([(k, Record(reg_make_rw(v))) for k, v in dmi_regs.items()])
+        self.dmi_regs = dict([(k, reg_make_rw(v)) for k, v in DMI_reg_kinds.items()])
         # command registers are write only, no need to 'reg_make_rw', nor Record instances.
-        self.command_regs = dict([(k, Record(v)) for k, v in command_regs.items()])
+        self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
         self.csr_regs = dbg_csr_regs
         self.const_csr_values = const_csr_values
-        self.nonconst_csr_values = dict([(k,Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
+        self.nonconst_csr_values = dict([(k, Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
 
         self.controller = ControllerInterface()
 
@@ -500,15 +408,11 @@ class DebugUnit(Elaboratable):
             ]
         )
 
-        DBG_DMI_ADDR = self.DBG_DMI_ADDR = Signal(DMIReg)
-        comb += DBG_DMI_ADDR.eq(dmi_address)
-
         sync += [
             dmi_op.eq(jtag_dmi.w.op),
             dmi_address.eq(jtag_dmi.w.address),
             dmi_data.eq(jtag_dmi.w.data),
         ]
-
 
         sync += [
             jtag_dmi.r.address.eq(dmi_address),
@@ -535,8 +439,8 @@ class DebugUnit(Elaboratable):
                 self.dmi_regs[DMIReg.DMCONTROL].r.hartsello.eq(1),
                 self.dmi_regs[DMIReg.DMCONTROL].r.hartselhi.eq(0),
 
-                self.dmi_regs[DMIReg.ABSTRACTS].r.datacount.eq(1),
-                self.dmi_regs[DMIReg.ABSTRACTS].r.progbufsize.eq(PROGBUFSIZE),
+                self.dmi_regs[DMIReg.ABSTRACTCS].r.datacount.eq(1),
+                self.dmi_regs[DMIReg.ABSTRACTCS].r.progbufsize.eq(PROGBUFSIZE),
             ]
 
             self.m.d.comb += [
@@ -575,15 +479,15 @@ class DebugUnit(Elaboratable):
                         with m.Case(DMIOp.WRITE):
                             on_write(dmi_address, dmi_data) # takes data from jtag regs into command regs.
                             m.next = "WAIT"
-                    # sync += self.dmi_regs[DMIReg.ABSTRACTS].r.busy.eq(1) # TODO
+                        sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(dmi_op != DMIOp.NOP)
             with m.State("WAIT"):
-                sync += self.dmi_regs[DMIReg.ABSTRACTS].r.cmderr.eq(self.controller.command_err)
+                sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.cmderr.eq(self.controller.command_err)
                 with m.Switch(dmi_address):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
                             h.handle_write()
                 with m.If(self.controller.command_finished):
                     m.next = "IDLE"
-                    sync += self.dmi_regs[DMIReg.ABSTRACTS].r.busy.eq(0) # TODO make busy=1 at some point
+                    sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(0)
 
         return m

@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         # Specify here the list of images to use for the machine
-        os: [ubuntu-20.04]
+        os: [ubuntu-22.04]
     steps:
       - name: Checkout the project
         uses: actions/checkout@v2

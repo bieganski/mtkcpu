@@ -1,4 +1,4 @@
-FROM python:3.8.10-buster
+FROM python:3.10
 
 LABEL version='{{ version }}'
 LABEL org.opencontainers.image.description='{{ readme }}'
@@ -10,14 +10,15 @@ WORKDIR /toolchain
 RUN apt-get update -y
 
 # Install nodejs
-RUN apt-get install -y nodejs npm
+RUN curl -sL https://deb.nodesource.com/setup_16.x  | bash -
+RUN apt-get -y install nodejs
 
 # Install XPM
 RUN npm install --global xpm@latest
 
 # Install gcc extensions
-RUN xpm install --global @xpack-dev-tools/riscv-none-embed-gcc@latest
-ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-embed-gcc/10.2.0-1.2.1/.content/bin:$PATH" 
+RUN xpm install --global @xpack-dev-tools/riscv-none-elf-gcc@latest --verbose
+ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-embed-gcc/12.2.0-1.3.1/.content/bin:$PATH" 
 
 # Install Poetry
 RUN pip install poetry

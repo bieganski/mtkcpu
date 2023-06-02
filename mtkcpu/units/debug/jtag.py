@@ -1,9 +1,13 @@
-from amaranth import *
-from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record, Layout
-from amaranth.lib.cdc import FFSynchronizer
-
-from enum import IntEnum
 from typing import Dict, List, Tuple, AnyStr
+
+from amaranth import *
+from amaranth.hdl.rec import DIR_FANIN, DIR_FANOUT, Record
+from amaranth.lib.cdc import FFSynchronizer
+from amaranth.lib import data
+
+from amaranth.lib.data import Layout
+
+from mtkcpu.units.debug.types import JtagIR, JTAG_IR_regs, IR_DMI_Layout
 
 jtag_layout = [
     ("tck", 1, DIR_FANIN),
@@ -12,90 +16,46 @@ jtag_layout = [
     ("tdo", 1, DIR_FANOUT),
 ]
 
-# Spike's irlen == 5
-class JtagIR(IntEnum):
-    BYPASS      = 0x00
-    IDCODE      = 0x01
-    DTMCS       = 0x10
-    DMI         = 0x11
+from typing import Type
 
+def jtagify_dr(type: Type[data.View]) -> data.View:
+    """
+    TODO: unify with 'reg_make_rw' from top.py.
+    """
+    layout = data.StructLayout({
+        "r": Layout.cast(type),
+        "w": Layout.cast(type),
+        "update": unsigned(1),
+        "capture": unsigned(1),
+    })
 
-# Default value for read-only IR
-class JtagIRValue(IntEnum):
-    # Spike's openocd config 'exptected-id', see github.com/riscv-isa-sim/README.md
-    IDCODE      = 0x10e31913
-    DM_VERSION  = 0x1 # 0x1 == 0.13 Debug Spec
-    DM_ABITS    = 7 # TODO does it have to be 7?
+    return data.Signal(layout)
 
-class DMISTAT(IntEnum):
-    NO_ERR                              = 0
-    OP_FAILED                           = 2
-    OP_INTERRUPTED_WHILE_IN_PROGRESS    = 3    
-
-
-
-dr_regs = {
-    JtagIR.IDCODE: [
-        ("value", 32)
-    ],
-    JtagIR.DTMCS: [
-        ("version", 4), # R, 0x1 == 0.13
-        ("abits", 6), # R, size of address in DMI
-        ("dmistat", 2), # R, 0 - no error, 1-same as 2, 2-op failed, 3 - WIP
-        ("idle", 3), # R, minimum RunTestIdle cycles. to avoid dmistat = 3 = 'busy'
-        ("_zero0", 1),
-        ("dmireset", 1, DIR_FANIN), # W1 clear error state (DTM retries or completes previous trans.)
-        ("dmihardreset", 1, DIR_FANIN), # W1 hard reset DTM (forget DMI transs.)
-        ("_zero1", 14),
-    ],
-    JtagIR.DMI: [
-        ("op", 2),
-        ("data", 32),
-        ("address", JtagIRValue.DM_ABITS),
-    ]
-}
-
-def debug_module_register_len(ir):
-    snd = lambda xy: xy[1]
-    return sum(map(snd, dr_regs[ir]))
-
-def debug_module_get_width(ir, field):
-    return dict(dr_regs[ir])[field]
-
-# We either read and write to DR, make it non-overlapping.
-def jtagify_dr(layout):
-    # assert all(len(x) == 2 for x in layout) or all(len(x) == 3 for x in layout)
-
-    def f(x):
-        if len(x) == 2:
-            return tuple([*x, DIR_FANOUT])
-        else:
-            return x
     
-    res = [
-        ("r", list(map(f, layout))),
-        ("w", list(map(f, layout))),
-        ("update", 1, DIR_FANOUT),
-        ("capture", 1, DIR_FANOUT),
-    ]
-
-    return Layout(res)
-    
-
 
 # Jtag FSM described here:
 # https://www.xilinx.com/support/answers/3203.html
 class JTAGTap(Elaboratable):
     def __init__(
             self, 
-            regs : Dict[JtagIR, List[Tuple[AnyStr, int]]] = dr_regs, 
+            ir_regs : Dict[JtagIR, List[Tuple[AnyStr, int]]] = JTAG_IR_regs, 
 
             # blind interrogation
             ir_reset=JtagIR.IDCODE.value):
 
         self.port = Record(jtag_layout)
-        self.regs = dict( [(k, Record(jtagify_dr(v))) for k, v in regs.items()] )
+        self.regs = dict( [(k, jtagify_dr(v)) for k, v in ir_regs.items()] )
         self.ir_reset = ir_reset
+
+        self.jtag_fsm_update_dr = Signal()
+
+        self.ir = Signal(JtagIR)
+        assert self.ir.width == 5 # Spike
+
+        # Only to delegate signal width calculation.
+        _dr_layout = data.UnionLayout({str(k): v for k, v in ir_regs.items()})
+        
+        self.dr = Signal(_dr_layout.size)
 
 
     def elaborate(self, platform):
@@ -103,6 +63,7 @@ class JTAGTap(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
 
+        # XXX it does nothing but draws a horizontal bar on waveform..
         self.BAR = Signal()
         sync += self.BAR.eq(~self.BAR)
 
@@ -128,12 +89,14 @@ class JTAGTap(Elaboratable):
             falling_tck.eq(prev_tck & (~tck)),
         ]
 
-        self.ir = Signal(JtagIR)
-        assert self.ir.width == 5 # Spike
-        self.dr = Signal(max([len(v) for _, v in self.regs.items()]))
 
-        self.DATA_WRITE = Signal(debug_module_register_len(JtagIR.DMI))
-        self.DATA_READ = Signal(debug_module_register_len(JtagIR.DMI))
+        self.tck_ctr = Signal(32)
+
+        with m.If(rising_tck):
+            sync += self.tck_ctr.eq(self.tck_ctr + 1)
+
+        self.DATA_WRITE = Signal(IR_DMI_Layout)
+        self.DATA_READ = Signal.like(self.DATA_WRITE)
         self.DMI_WRITE = Signal(32)
 
         # TODO
@@ -179,9 +142,9 @@ class JTAGTap(Elaboratable):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
                             with m.If(rising_tck):
-                                sync += self.dr.eq(Cat(self.dr[1:len(record.r)], tdi))
-                # below is not enough, as it may effect in garbage 
-                # sync += self.dr.eq(Cat(self.dr[1:], tdi))
+                                # TODO - off by one when calculating 'upper_bound'??
+                                upper_bound = Layout.of(record.r).size
+                                sync += self.dr.eq(Cat(self.dr[1:upper_bound], tdi))
                 with m.If(rising_tck & tms):
                     m.next = "EXIT1-DR"
 
@@ -205,6 +168,7 @@ class JTAGTap(Elaboratable):
                         m.next = "SHIFT-DR"
 
             with m.State("UPDATE-DR"):
+                comb += self.jtag_fsm_update_dr.eq(1)
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):

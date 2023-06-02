@@ -105,7 +105,7 @@ def remote_jtag_get_cmd(conn):
             continue
         yield cmd
 
-def AAA(conn):
+def rcv_cmd_from_gdb(conn):
     data = conn.recv(1)
     cmd = decode_cmd(data)
     return cmd
@@ -136,7 +136,7 @@ class Checkpoint:
 # assert that each signal from 'signals[0]' till 'deadline' JTAG clock cycle will have value 'signals[1]' 
 CHECKPOINTS = lambda cpu: [
     Checkpoint(
-        deadline=0x8000,
+        deadline=0x14000,
         signals=[
             (cpu.debug.dmi_address, DMIReg.PROGBUF0) # FENCE instr. pushed into progbuf
         ]
@@ -164,40 +164,41 @@ FINISH_SIM_OK = False
 def get_ocd_checkpoint_checker(
     cpu: MtkCpu,
 ):
-    global FINISH_SIM_OK
-    yield Passive()
+    def aux():
+        global FINISH_SIM_OK
+        yield Passive()
 
-    clk = 0
-    checkpoints = CHECKPOINTS(cpu)
-    finished = [False for _ in checkpoints]
+        clk = 0
+        checkpoints = CHECKPOINTS(cpu)
+        finished = [False for _ in checkpoints]
 
-    while True:
-        for i, c in enumerate(checkpoints):
-            if finished[i]:
-                continue
-            if clk == c.deadline:
-                raise ValueError(f"checkpoint failed: event {c} not holded!")
-            ok = True
-            for sig, expected in c.signals:
-                actual = yield sig
-                if actual != expected:
-                    ok = False
-                    break
-            if ok:
-                print(f"OK, checkpoint {c} matched...")
-                finished[i] = True
+        while True:
+            for i, c in enumerate(checkpoints):
+                if finished[i]:
+                    continue
+                if clk == c.deadline:
+                    raise ValueError(f"checkpoint failed: event {c} not holded!")
+                ok = True
+                for sig, expected in c.signals:
+                    actual = yield sig
+                    if actual != expected:
+                        ok = False
+                        break
+                if ok:
+                    print(f"OK, checkpoint {c} matched...")
+                    finished[i] = True
 
-        if (clk != 0 and clk % 1000 == 0):
-            if all(finished):
-                FINISH_SIM_OK = True
-        clk += 1
-        yield
+            if (clk != 0 and clk % 1000 == 0):
+                if all(finished):
+                    FINISH_SIM_OK = True
+            clk += 1
+            yield
+    return aux
 
 
 def get_sim_jtag_controller(
     cpu: MtkCpu,
     timeout_cycles: int,
-    jtag_fsm,
 ):
 
     if not cpu.with_debug:
@@ -215,17 +216,12 @@ def get_sim_jtag_controller(
         print(f'OCD Connected! From addr: {addr}')
 
         jtag_loc = cpu.debug.jtag
-        jtag_fsm_state = jtag_fsm.state
         cpu_tdi = jtag_loc.tdi
         cpu_tdo = jtag_loc.port.tdo
         cpu_tms = jtag_loc.tms
         cpu_tck = jtag_loc.tck
 
         CPU_JTAG_CLK_FACTOR = 4 # how many times JTAG clock is slower than CPU clock.
-
-        DEBUGS = []
-
-        prev_tck = None
 
         from termcolor import colored
 
@@ -235,35 +231,31 @@ def get_sim_jtag_controller(
                 yield i
                 i += 1
                 if (i % 1000 == 0):
-                    print(f"i = {i}")
-                    if i == 12000:
-                        # Removed WIP
-                        pass
-                    if i == 17000:
-                        from subprocess import Popen, DEVNULL
-                        gdb = Popen("riscv-none-embed-gdb -x gdb_cmd", shell=True, stdout=DEVNULL, stderr=DEVNULL)
-                        # gdb.communicate()
-                    if FINISH_SIM_OK:
-                        return # checkpoint checker catched all configurations
-                    if i == 120000:
-                        # TODO exit gracefully
-                        exit(1) # finish manual test or catch bug if automated test
+                    print(f"clk = {i}")                    
+                if FINISH_SIM_OK:
+                    print("XXX finishing sim")
+                    return # checkpoint checker catched all configurations
+                if i == 120000:
+                    # TODO exit gracefully
+                    exit(1) # finish manual test or catch bug if automated test
         timeout = None
         iter = inf() if not timeout else range(timeout)
         SETUP_CYCLES = 10
         for _ in range(SETUP_CYCLES):
             yield
-        for i in iter:
-            cmd = AAA(conn)
-            # cmd = next(cmd_gen)
+        
+        prev_tck = 0
+        tck_ctr = 0
+        
+        for _ in iter:
+            cmd = rcv_cmd_from_gdb(conn)
+
+            if (tck_ctr and tck_ctr % 1000 == 0):
+                print(f"                tck = {tck_ctr}")
 
             if isinstance(cmd, OcdCommand):
-                # if i < 100:
-                #     print(f"DEBUG: {cmd.value}")
                 if cmd == OcdCommand.SAMPLE:
                     tdo = yield cpu_tdo
-                    # DEBUGS.append(tdo)
-                    # print(f"TDO: {tdo}")
                     remote_jtag_send_response(conn, bytes(str(tdo), 'ascii'))
 
                 elif cmd == OcdCommand.RESET:
@@ -273,30 +265,21 @@ def get_sim_jtag_controller(
                         for _ in range(CPU_JTAG_CLK_FACTOR):
                             yield
 
-                    # print("RESET! TODO")
             elif isinstance(cmd, JTAGInput):
-                if i < 100:
-                    state_num = yield jtag_fsm_state
-                    # print(f"DEBUG: {''.join(['  ' for _ in range(cmd.tms)])}{cmd.tms}, {jtag_get_state(state_num)}")
                 yield cpu_tck.eq(cmd.tck)
                 yield cpu_tms.eq(cmd.tms)
-                # dummy = 1 - dummy
-                # yield cpu_tms.eq(dummy)
                 yield cpu_tdi.eq(cmd.tdi)
-                DEBUGS.append((cmd.tms, cmd.tck))
+                
+                rising = cmd.tck > prev_tck
+                if rising:
+                    tck_ctr += 1
                 prev_tck = cmd.tck
+                
                 for _ in range(CPU_JTAG_CLK_FACTOR):
                     yield
             else:
                 raise ValueError(f"Type mismatch! cmd must be either OcdCommand or JTAGInput, not {type(cmd)}!")
         
-        def f(tms, tck):
-            if tck == 0:
-                return colored(str(tms), 'yellow')
-            return str(tms)
-        
-        # print(", ".join([f(tms, tck) for (tms, tck) in DEBUGS]))
-
     return jtag_controller
 
 
@@ -319,22 +302,24 @@ def get_sim_memory_test(
 
         arbiter = cpu.arbiter
 
+        bus = arbiter.wb_bus
+
         while True:  # infinite loop is ok, I'm passive.
             import numpy.random as random
 
             rdy = random.choice((0, 1), p=[1 - p, p])
 
             if state == MemState.FREE:
-                ack = yield arbiter.bus.ack
+                ack = yield bus.ack
                 if ack:
-                    yield arbiter.bus.ack.eq(0)
+                    yield bus.ack.eq(0)
                     yield
                     continue
-                cyc = yield arbiter.bus.cyc
-                we = yield arbiter.bus.we
+                cyc = yield bus.cyc
+                we = yield bus.we
                 write = cyc and we
                 read = cyc and not we
-                mem_addr = yield arbiter.bus.adr
+                mem_addr = yield bus.adr
                 if read and write:
                     raise ValueError(
                         "ERROR (TODO handle): simultaneous 'read' and 'write' detected."
@@ -343,14 +328,14 @@ def get_sim_memory_test(
                     state = MemState.BUSY_READ
                 elif write:
                     state = MemState.BUSY_WRITE
-                    data = yield arbiter.bus.dat_w
-                # if mem_addr >= PROGBUF_MMIO_ADDR and mem_addr < PROGBUF_MMIO_ADDR + 0x20:
-                #     print(f"=== PROGBUF: putting {data} in {mem_addr}")
+                    data = yield bus.dat_w
+                if mem_addr >= PROGBUF_MMIO_ADDR and mem_addr < PROGBUF_MMIO_ADDR + 0x20:
+                    print(f"=== PROGBUF: putting {data} in {mem_addr}")
             else:
                 # request processing
                 if rdy:  # random indicated transaction done in current cycle
-                    yield arbiter.bus.ack.eq(1)
-                    sel = yield arbiter.bus.sel
+                    yield bus.ack.eq(1)
+                    sel = yield bus.sel
                     mask = get_sel_bus_mask(sel)
                     read_val = mem_dict.get_default(mem_addr)
                     if state == MemState.BUSY_WRITE:
@@ -359,7 +344,7 @@ def get_sim_memory_test(
                         )
                     elif state == MemState.BUSY_READ:
                         read_val &= mask
-                        yield arbiter.bus.dat_r.eq(read_val)
+                        yield bus.dat_r.eq(read_val)
                         # print(f"==== fetched {read_val} (from {mem_dict})...")
                     state = MemState.FREE
             yield

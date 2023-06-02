@@ -117,6 +117,10 @@ class MtkCpu(Elaboratable):
         self.gprf_debug_data = Signal(32)
         self.gprf_debug_write_en = Signal()
 
+        if self.with_debug:
+            self.debug = DebugUnit(self)
+
+
     def elaborate(self, platform):
         self.m = m = Module()
 
@@ -145,15 +149,16 @@ class MtkCpu(Elaboratable):
             csr_unit=csr_unit, # SATP register
             exception_unit=exception_unit, # current privilege mode
         )
+
+        if self.with_debug:
+            m.submodules.debug = self.debug
+            self.debug_bus = arbiter.port(priority=1)
+
         mem_unit = m.submodules.mem_unit = MemoryUnit(
             mem_port=arbiter.port(priority=0)
         )
 
         ibus = arbiter.port(priority=2)
-
-        if self.with_debug:
-            m.submodules.debug = self.debug = DebugUnit(self)
-            self.debug_bus = arbiter.port(priority=1)
 
         # Current decoding state signals.
         instr = self.instr = Signal(32)

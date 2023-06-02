@@ -40,7 +40,7 @@ def get_board_cpu(elf_path : Optional[Path] = None):
 
 
 def get_platform() -> Platform:
-    from nmigen_boards.icebreaker import ICEBreakerPlatform
+    from amaranth_boards.icebreaker import ICEBreakerPlatform
     from amaranth.build.dsl import Resource, Pins, Attrs
     
     platform = ICEBreakerPlatform()

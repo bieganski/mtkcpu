@@ -12,3 +12,7 @@ build/
 **/build
 **/tmp.elf
 sw/*/linker.ld
+*.stdout
+*.stderr
+
+openocd_riscv

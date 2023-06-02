@@ -3,16 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
-from typing import List, Optional, OrderedDict
+from typing import Dict, List, Optional, OrderedDict
 import pytest
 from pathlib import Path
 import subprocess
+from tempfile import NamedTemporaryFile
 
 from amaranth.hdl.ast import Signal
 from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
 from amaranth import Signal
 from amaranth.sim.core import Active, Passive
+from amaranth.hdl import rec
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -27,10 +29,13 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_controller,
                                           get_ocd_checkpoint_checker)
-from mtkcpu.units.debug.top import DMIReg, DMICommand
+from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
-from mtkcpu.global_config import Config
+
+from mtkcpu.utils.misc import get_color_logging_object
+
+logging = get_color_logging_object()
 
 @unique
 class MemTestSourceType(str, Enum):
@@ -57,12 +62,6 @@ class MemTestCase:
     reg_init: Optional[RegistryContents] = None
     mem_size_kb: int = 1
     shift_mem_content: bool = True # 0x1000 becomes 0x8000_1000 if mem. start address is 0x8000_0000
-
-
-@dataclass(frozen=True)
-class JtagTestCase:
-    with_ocd : bool
-    with_checkpoints : bool
 
 @dataclass(frozen=True)
 class ComponentTestbenchCase:
@@ -480,38 +479,44 @@ def assert_mem_test(case: MemTestCase):
 # "frag" - Fragment object
 # "vcd_traces" - List of JTAG/DM signals to be traced
 # "jtag_fsm" - JTAG FSM
-def create_jtag_simulator(cpu):
+def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
     # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
-    frag = Fragment.get(cpu, platform=None)
-    jtag_fsm = frag.find_generated("debug", "jtag", "fsm")
-    sim = Simulator(frag)
+    frag = Fragment.get(monitor, platform=None)
+    # jtag_fsm = frag.find_generated("debug", "jtag", "fsm")
+    # sim = Simulator(frag) # XXX
+    sim = Simulator(monitor)
     sim.add_clock(1e-6)
 
-    jtag_fsm_sig = jtag_fsm.state
+    # jtag_fsm_sig = jtag_fsm.state
     main_clk_sig = sim._fragment.domains["sync"].clk
 
     jtag_loc = cpu.debug.jtag
 
-    dmcontrol_r = cpu.debug.dmi_regs[DMIReg.DMCONTROL].r.fields.values()
-    dmcontrol_w = cpu.debug.dmi_regs[DMIReg.DMCONTROL].w.fields.values()
+    dmi_regs = cpu.debug.dmi_regs
 
-    hartinfo_r = cpu.debug.dmi_regs[DMIReg.HARTINFO].r.fields.values()
-    hartinfo_w = cpu.debug.dmi_regs[DMIReg.HARTINFO].w.fields.values()
+    # dmcontrol_r = dmi_regs[DMIReg.DMCONTROL].r.fields.values()
+    # dmcontrol_w = dmi_regs[DMIReg.DMCONTROL].w.fields.values()
 
-    abstracts_r = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].r.fields.values()
-    abstracts_w = cpu.debug.dmi_regs[DMIReg.ABSTRACTS].w.fields.values()
+    # hartinfo_r = dmi_regs[DMIReg.HARTINFO].r.fields.values()
+    # hartinfo_w = dmi_regs[DMIReg.HARTINFO].w.fields.values()
 
-    dmstatus_r = cpu.debug.dmi_regs[DMIReg.DMSTATUS].r.fields.values()
-    dmstatus_w = cpu.debug.dmi_regs[DMIReg.DMSTATUS].w.fields.values()
+    # abstracts_r = dmi_regs[DMIReg.ABSTRACTCS].r.fields.values()
+    # abstracts_w = dmi_regs[DMIReg.ABSTRACTCS].w.fields.values()
 
-    command_w = cpu.debug.dmi_regs[DMIReg.COMMAND].w.fields.values()
-    command_r = cpu.debug.dmi_regs[DMIReg.COMMAND].r.fields.values()
+    # dmstatus_r = dmi_regs[DMIReg.DMSTATUS].r.fields.values()
+    # dmstatus_w = dmi_regs[DMIReg.DMSTATUS].w.fields.values()
 
-    data0_w = cpu.debug.dmi_regs[DMIReg.DATA0].w.fields.values()
-    data0_r = cpu.debug.dmi_regs[DMIReg.DATA0].r.fields.values()
+    # command_w = dmi_regs[DMIReg.COMMAND].w.fields.values()
+    # command_r = dmi_regs[DMIReg.COMMAND].r.fields.values()
+
+    # data0_w = dmi_regs[DMIReg.DATA0].w.fields.values()
+    # data0_r = dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
+        *monitor.cur_COMMAND_r.fields.values(),
+        *monitor.cur_AR_r.fields.values(),
+        jtag_loc.tck_ctr,
         cpu.debug.dmi_op,
         cpu.debug.dmi_address,
         cpu.debug.dmi_data,
@@ -524,10 +529,11 @@ def create_jtag_simulator(cpu):
         cpu.debug.ONWRITE,
         cpu.debug.ONREAD,
         # cpu.debug.HANDLER,
-        cpu.debug.DBG_DMI_ADDR,
 
         jtag_loc.BAR,
-        *data0_r,
+        # *data0_r,
+        # *data0_w,
+        jtag_loc.BAR,
 
         # *dmcontrol_r,
         # jtag_loc.BAR,
@@ -539,18 +545,17 @@ def create_jtag_simulator(cpu):
         # jtag_loc.BAR,
         # *dmstatus_r,
         # *hartinfo_w,
+        # *abstracts_w,
         jtag_loc.BAR,
-        *abstracts_w,
+        # *abstracts_r,
         jtag_loc.BAR,
-        *abstracts_r,
+        # *command_w,
         jtag_loc.BAR,
-        *command_w,
+        # *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
         jtag_loc.BAR,
-        *cpu.debug.command_regs[DMICommand.AccessRegister].fields.values(),
+        # *dmstatus_r,
         jtag_loc.BAR,
-        *dmstatus_r,
-        jtag_loc.BAR,
-        *dmcontrol_w,
+        # *dmcontrol_w,
 
         cpu.gprf_debug_data,
         cpu.gprf_debug_addr,
@@ -558,21 +563,59 @@ def create_jtag_simulator(cpu):
     ]
     return {
         "sim": sim,
-        "frag": frag,
         "vcd_traces": vcd_traces,
-        "jtag_fsm": jtag_fsm,
+        # "jtag_fsm": jtag_fsm,
     }
 
 
+def run_gdb(
+    gdb_executable: Path,
+    elf_file: Path,
+    stdout: Optional[Path] = None,
+    stderr: Optional[Path] = None,
+):
+
+    gdb_cmd = f"""
+set arch riscv:rv32
+target extended-remote localhost:3333
+set mem inaccessible-by-default off
+set remotetimeout 10
+file {elf_file.absolute()}
+load
+run    
+"""
+
+    stdout = stdout.open("w") if stdout else stdout
+    stderr = stderr.open("w") if stderr else stderr
+
+    with NamedTemporaryFile(dir=".", delete=False) as f:
+        f.write(gdb_cmd.encode("ascii"))
+        f.flush()
+
+    process = subprocess.Popen(f"{gdb_executable} -x {f.name}", shell=True, stdout=stdout, stderr=stderr)
 
 
 # Make sure that 'OCD_CWD' points to directory with VexRiscv's fork of openOCD:
 # https://github.com/SpinalHDL/openocd_riscv
 # Compile it according to instructions in README in repository above.
-def run_openocd(delay=1):
-    from pathlib import Path
+from typing import Generator
 
-    OCD_CFG = """
+def run_openocd(
+    openocd_executable: Path, 
+    delay_execution_num_seconds: int,
+    ) -> Generator[str, None, None]:
+    """
+    Runs subprocess with 'openocd_executable' invocation, after delay of 
+    'delay_execution_num_seconds' seconds.
+    
+    TODO The openocd config used is hardcoded.
+    """
+
+    if not openocd_executable.exists():
+        raise ValueError(f"Please make sure that path: {openocd_executable} is existing executable!")
+    
+
+    ocd_commands = """
 interface remote_bitbang
 remote_bitbang_host localhost
 remote_bitbang_port 9824
@@ -588,42 +631,258 @@ gdb_report_data_abort enable
 # init
 # halt
 """
-    OCD_CWD = Path("/home/mateusz/github/openocd_riscv")
-    OCD_CMD = "sleep %s && ./src/openocd -f %s"
-    OCD_OUTPUT_REDIRECT_PATH = OCD_CWD / "OUT.txt"
 
-    output = OCD_OUTPUT_REDIRECT_PATH.open(mode='w')
-
-    print(f"=== OCD Output redirected to {OCD_OUTPUT_REDIRECT_PATH} file")
-
-    from subprocess import Popen, DEVNULL
-    from tempfile import NamedTemporaryFile
     with NamedTemporaryFile(mode='w', delete=False) as f:
         ocd_cfg_fname = f.name
-        f.write(OCD_CFG)
-    OCD_CMD = OCD_CMD % (delay, ocd_cfg_fname)
-    if not OCD_CWD.exists() or not OCD_CWD.is_dir():
-        raise ValueError(f"Please make sure that path: {OCD_CWD} is existing directory with src/openocd executable!")
-    process = Popen(OCD_CMD, cwd=OCD_CWD, shell=True, stderr=DEVNULL, stdout=output)
+        f.write(ocd_commands)
+
+    ocd_invocation = f"sleep {delay_execution_num_seconds} && {openocd_executable} -f {ocd_cfg_fname}"
+
+    popen = subprocess.Popen(ocd_invocation, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+
+    for line in iter(popen.stderr.readline, ""):
+        yield line
+
+def get_git_root() -> Path:
+    """
+    WARNING: not to be used inside package!
+    """
+    import subprocess
+    process = subprocess.Popen("git rev-parse --show-toplevel", shell=True, stdout=subprocess.PIPE)
+    stdout, _ = process.communicate()
+    return Path(stdout.decode("ascii").strip())
 
 
-# def assert_jtag_test(
-#     name: str,
-#     timeout_cycles: Optional[int],
-#     with_ocd=False,
-#     with_checkpoints=False,
-# ):
+def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
+    "returns .elf path, previously asserting that it exists."
+    from mtkcpu.utils.linker import write_linker_script
+    from tempfile import NamedTemporaryFile
 
-    if with_ocd:
-        run_openocd(delay=1)
+    linker_script = Path(NamedTemporaryFile(delete=False, suffix=".ld").name).absolute()
+
+    write_linker_script(
+        out_path=linker_script,
+        mem_addr=cpu.mem_config.mem_addr,
+        mem_size_kb=cpu.mem_config.arena_kb_ceiled,
+    )
+
+    process = subprocess.Popen(f"make -B LINKER_SCRIPT={linker_script}", cwd=sw_project_path, shell=True)
+    process.communicate()
     
-    cpu = MtkCpu(reg_init=[0xabcd + i for i in range(32)], with_debug=True)    
-    sim_gadgets = create_jtag_simulator(cpu)
-    sim, vcd_traces, jtag_fsm = [sim_gadgets[k] for k in ["sim", "vcd_traces", "jtag_fsm"]]
+    elf_path = sw_project_path / "build" / f"{sw_project_path.name}.elf"
+    assert elf_path.exists()
+    
+    return elf_path
+
+
+class DMI_Monitor(Elaboratable):
+    def __init__(self, cpu: MtkCpu):
+        self.cpu = cpu
+
+        self.cur_dmi_op  = cpu.debug.dmi_op
+        self.prev_dmi_op = Signal.like(self.cur_dmi_op)
+        assert unsigned(2) == self.cur_dmi_op.shape()
+        
+        self.cur_dmi_data  = cpu.debug.dmi_data
+        self.prev_dmi_data = Signal.like(self.cur_dmi_data)
+        assert unsigned(32) == self.cur_dmi_data.shape()
+
+        self.cur_dmi_address  = cpu.debug.dmi_address
+        assert unsigned(7) == self.cur_dmi_address.shape()
+        
+        # TODO - typing annotations below are wrong, but IDE is happy.
+        self.cur_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.cur_dmi_data)
+        self.prev_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.prev_dmi_data)
+
+        self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
+
+        self.error = Signal()
+
+        # Records below are to be removed after https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+        self.cur_COMMAND_r = DMI_Monitor.to_record(self.cur_COMMAND)
+        self.cur_AR_r = DMI_Monitor.to_record(self.cur_AR)
+
+
+    @staticmethod
+    def to_record(v: data.View) -> rec.Record:
+        """
+        For simulation, to properly display named slices of Views.
+        Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+        """
+        members : dict = data.Layout.cast(v._View__orig_layout).members
+        return rec.Record(rec.Layout([x for x in members.items()]))
+
+    @staticmethod
+    def record_view_connect_statements(r: rec.Record, v: data.View) -> list:
+        members : dict = data.Layout.cast(v._View__orig_layout).members
+        return [getattr(r, name).eq(getattr(v, name)) for name in members]
+    
+    def elaborate(self, platform):
+        from amaranth import Module
+        m = Module()
+
+        # Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+        records_views = [
+            (self.cur_COMMAND_r, self.cur_COMMAND),
+            (self.cur_AR_r, self.cur_AR),
+        ]
+
+        for r, v in records_views:
+            m.d.comb += DMI_Monitor.record_view_connect_statements(r, v)
+        ############################################################################
+
+        def _raise():
+            m.d.sync += self.error.eq(1)
+
+        cpu = self.cpu
+        m.submodules.cpu = cpu
+
+        sync = m.d.sync
+
+        jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
+        jtag_ir = cpu.debug.jtag.ir
+
+        new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
+        
+        # latch previous DMI op.
+        with m.If(new_dmi_transaction):
+            sync += [
+                self.prev_dmi_op.eq(self.cur_dmi_op),
+                self.prev_dmi_data.eq(self.cur_dmi_data),
+            ]
+
+        access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
+
+        with m.If(self.cur_dmi_address == DMIReg.COMMAND):
+            with m.If(self.cur_COMMAND.cmdtype != access_register):
+                _raise()
+            
+            # with m.If(self.cur_AR.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
+            #     pass
+        return m
+
+
+def assert_jtag_test(
+    timeout_cycles: Optional[int],
+    openocd_executable: Path,
+    gdb_executable: Path,
+    with_checkpoints=False,
+):
+    cpu = MtkCpu(
+        reg_init=[0xabcd + i for i in range(32)],
+        mem_config=EBRMemConfig(mem_size_words=1000, mem_addr=0x8000, mem_content_words=None, simulate=False),
+        with_debug=True,
+    )
+
+    with_checkpoints = False # XXX
+
+    sw_project_path = get_git_root() / "sw" / "blink_led"
+    elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
+
+    # run_gdb(
+    #     gdb_executable=gdb_executable,
+    #     elf_file=elf_path,
+
+    #     stdout=None, # Path("gdb.stdout"),
+    #     stderr=None,
+    # )
+
+    lines = run_openocd(
+        delay_execution_num_seconds=1,
+        openocd_executable=openocd_executable
+    )
+
+    def run_gdb_when_ocd_ready():
+        for line in lines:
+            # from openocd/src/target/riscv/riscv-013.c:
+            #
+            #  /* Some regression suites rely on seeing 'Examined RISC-V core' to know
+            # * when they can connect with gdb/telnet.
+            # * We will need to update those suites if we want to change that text. */
+            if "Examined RISC-V core" in line:
+                logging.info("Detected that openOCD successfully finished mtkcpu examination! Running GDB..")
+                run_gdb(
+                    gdb_executable=gdb_executable,
+                    elf_file=elf_path,
+                )
+    
+    from multiprocessing import Process
+    gdb_process = Process(target=run_gdb_when_ocd_ready)
+    gdb_process.start()
+    # XXX gdb_process.join()
+
+    dmi_monitor = DMI_Monitor(cpu=cpu)
+        
+
+
+    def dmi_watchdog(cpu: MtkCpu):
+        """
+        This process provides various asserts, regarding to what we may expect from 
+        mtkcpu implementation. It may be particulary useful when bumping gdb version or switching
+        to a different debugger, for as smooth integration as possible.
+        """
+
+        def aux():
+            yield Passive()
+            while True:
+                error = yield dmi_monitor.error
+                if error:
+                    raise ValueError("XXX SIM ERROR TO BE HANDLED")
+
+                op = yield cpu.debug.dmi_op
+                addr = yield cpu.debug.dmi_address
+                data = yield cpu.debug.dmi_data
+
+                ar = yield dmi_monitor.cur_AR.aarsize
+                cur_COMMAND = yield dmi_monitor.cur_COMMAND.as_value()
+                # cur_COMMAND = yield dmi_monitor.cur_COMMAND
+                
+                # if ar > AccessRegisterLayout.AARSIZE.BIT32:
+                #     raise ValueError(ar, cur_COMMAND)
+                
+                # raise ValueError(ar)
+
+                # from amaranth.lib import data
+
+                # XXX
+                # monitor_dmi_op = yield dmi_monitor.cur_dmi_op
+                # if monitor_dmi_op:
+                    # raise ValueError(f"siema: {monitor_dmi_op} {op} {data} {addr}")
+                
+                if op != DMIOp.NOP:
+                    try:
+                        addr = DMIReg(addr)
+                    except:
+                        raise ValueError(f"dmi_op={op}, but tried to access unknown DMI register {addr}!")
+                if op == DMIOp.READ and addr == DMIReg.COMMAND:
+                    raise ValueError("weak assert: 'command' register is expected to only be written! (it's not required by implementation though)")
+                
+                # if addr == DMIReg.ABSTRACTCS:
+                #     raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
+
+                # if True: # addr == DMIReg.COMMAND:
+                #     x = yield Signal(cpu.debug.dmi_op)
+                #     raise ValueError(x)
+                #     
+                #     raise ValueError(type(data), dir(data))
+                #     cmd_layout = View(COMMAND_Layout, data)
+                #     raise ValueError("OK")
+                #     assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
+                #     ar_layout : AccessRegisterLayout = AccessRegisterLayout.from_int(cmd_layout.control)
+                #     assert ar_layout.aarsize == 2  # 32-bits only registers are supported
+                #     if ar_layout.postexec:
+                #         raise ValueError("XXX detected program buffer execution!")
+
+                yield
+        return aux
+    
+    sim_gadgets = create_jtag_simulator(dmi_monitor, cpu)
+    sim, vcd_traces = [sim_gadgets[k] for k in ["sim", "vcd_traces"]]
 
     processes = [
+        dmi_watchdog(cpu=cpu),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
-        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles, jtag_fsm=jtag_fsm),
+        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
     ]
 
     if with_checkpoints:
@@ -634,18 +893,6 @@ gdb_report_data_abort enable
 
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
         sim.run()
-
-
-# def test_jtag(test_case: JtagTestCase):
-#     assert_jtag_test(
-#         name="JTAG test (with openocd and gdb)",
-#         timeout_cycles=1000, # TODO timeout not used
-#         with_ocd=test_case.with_ocd,
-#         with_checkpoints=test_case.with_checkpoints
-#     )
-
-# TODO
-# unify all functions below, we don't need it enumerated
 
 @parametrized
 def component_testbench(f, cases: List[ComponentTestbenchCase]):
@@ -674,13 +921,3 @@ def cpu_testbench(f, cases: List[CpuTestbenchCase]):
         cpu_testbench_test(test_case)
         f(test_case)
     return aux
-
-# @parametrized
-# def jtag_test(f, cases: List[JtagTestCase]):
-#     @pytest.mark.parametrize("test_case", cases)
-#     @rename(f.__name__)
-#     def aux(test_case):
-#         test_jtag(test_case)
-#         f(test_case)
-
-#     return aux
