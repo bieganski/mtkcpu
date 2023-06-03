@@ -97,6 +97,8 @@ class JTAGTap(Elaboratable):
         self.DATA_READ = Signal.like(self.DATA_WRITE)
         self.DMI_WRITE = Signal(32)
 
+        sync += self.jtag_fsm_update_dr.eq(0)
+
         # TODO
         for ir, record in self.regs.items():
             sync += record.update.eq(0)
@@ -166,7 +168,6 @@ class JTAGTap(Elaboratable):
                         m.next = "SHIFT-DR"
 
             with m.State("UPDATE-DR"):
-                comb += self.jtag_fsm_update_dr.eq(1)
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
@@ -174,7 +175,9 @@ class JTAGTap(Elaboratable):
                             with m.If(ir == JtagIR.DMI):
                                 sync += self.DMI_WRITE.eq(self.dr[2:34])
                             sync += record.w.eq(self.dr)
-                            sync += record.update.eq(falling_tck)
+                            with m.If(falling_tck):
+                                sync += record.update.eq(1)
+                                sync += self.jtag_fsm_update_dr.eq(1)
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "SELECT-DR-SCAN"

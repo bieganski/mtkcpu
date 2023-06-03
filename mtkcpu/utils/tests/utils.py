@@ -32,7 +32,7 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
-
+from mtkcpu.utils.tests.dmi_utils import DMI_Monitor, monitor_cmderr, print_dmi_transactions
 from mtkcpu.utils.misc import get_color_logging_object
 
 logging = get_color_logging_object()
@@ -675,83 +675,6 @@ def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     return elf_path
 
 
-class DMI_Monitor(Elaboratable):
-    def __init__(self, cpu: MtkCpu):
-        self.cpu = cpu
-
-        dmi_bus_signal = Cat(cpu.debug.dmi_op, cpu.debug.dmi_data, cpu.debug.dmi_address)
-
-        # TODO - typing annotations below are wrong, but IDE is happy.
-
-        self.cur_dmi_bus : IR_DMI_Layout = data.View(IR_DMI_Layout, dmi_bus_signal)
-        self.prev_dmi_bus : IR_DMI_Layout = Signal.like(self.cur_dmi_bus)
-        
-        self.cur_COMMAND : COMMAND_Layout = data.View(COMMAND_Layout, self.cur_dmi_bus.data)
-        self.prev_COMMAND : COMMAND_Layout = Signal.like(self.cur_COMMAND)
-
-        self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
-
-        self.error = Signal()
-
-        # Records below are to be removed after https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
-        self.cur_COMMAND_r = DMI_Monitor.to_record(self.cur_COMMAND)
-        self.cur_AR_r = DMI_Monitor.to_record(self.cur_AR)
-
-
-    @staticmethod
-    def to_record(v: data.View) -> rec.Record:
-        """
-        For simulation, to properly display named slices of Views.
-        Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
-        """
-        members : dict = data.Layout.cast(v._View__orig_layout).members
-        return rec.Record(rec.Layout([x for x in members.items()]))
-
-    @staticmethod
-    def record_view_connect_statements(r: rec.Record, v: data.View) -> list:
-        members : dict = data.Layout.cast(v._View__orig_layout).members
-        return [getattr(r, name).eq(getattr(v, name)) for name in members]
-    
-    def elaborate(self, platform):
-        m = Module()
-
-        ############################################################################
-        # Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
-        records_views = [
-            (self.cur_COMMAND_r, self.cur_COMMAND),
-            (self.cur_AR_r, self.cur_AR),
-        ]
-
-        for r, v in records_views:
-            m.d.comb += DMI_Monitor.record_view_connect_statements(r, v)
-        ############################################################################
-
-        def _raise():
-            m.d.sync += self.error.eq(1)
-
-        cpu = self.cpu
-        m.submodules.cpu = cpu
-
-        sync = m.d.sync
-
-        jtag_dr_update = cpu.debug.jtag.jtag_fsm_update_dr
-        jtag_ir = cpu.debug.jtag.ir
-
-        self.new_dmi_transaction = (jtag_ir == JtagIR.DMI & jtag_dr_update)
-
-        # latch previous DMI op.
-        with m.If(self.new_dmi_transaction):
-            sync += [
-                self.prev_dmi_bus.eq(self.cur_dmi_bus),
-            ]
-
-        access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
-
-        with m.If(self.cur_dmi_bus.address == DMIReg.COMMAND):
-            with m.If(self.cur_COMMAND.cmdtype != access_register):
-                _raise()
-            
-        return m
 
 
 def assert_jtag_test(
@@ -782,6 +705,7 @@ def assert_jtag_test(
             #  /* Some regression suites rely on seeing 'Examined RISC-V core' to know
             # * when they can connect with gdb/telnet.
             # * We will need to update those suites if we want to change that text. */
+            logging.warn(line)
             if "Examined RISC-V core" in line:
                 logging.info("Detected that openOCD successfully finished CPU examination! Running GDB..")
                 run_gdb(
@@ -795,90 +719,13 @@ def assert_jtag_test(
     # XXX gdb_process.join()
 
     dmi_monitor = DMI_Monitor(cpu=cpu)
-        
 
-    def dmi_watchdogs(cpu: MtkCpu):
-        """
-        These processes provides various asserts, regarding to what we may expect from 
-        CPU implementation. It may be particulary useful when bumping gdb version or switching
-        to a different debugger, for as smooth integration as possible.
-        """
-
-        def print_dmi_transactions():
-            yield Passive()
-
-            print_fn = print
-            
-            while True:
-                new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
-                if new_dmi_transaction:
-                    op   = yield dmi_monitor.cur_dmi_bus.op
-                    addr = yield dmi_monitor.cur_dmi_bus.address
-                    
-                    if op in [DMIOp.READ, DMIOp.WRITE]:
-                        prefix = "reading " if op == DMIOp.READ else "writing "
-                        print_fn(f"{prefix} {addr!r}")
-                yield
-
-        def aux():
-            yield Passive()
-            while True:
-                error = yield dmi_monitor.error
-                if error:
-                    raise ValueError("XXX SIM ERROR TO BE HANDLED")
-
-                op   = yield dmi_monitor.cur_dmi_bus.op
-                addr = yield dmi_monitor.cur_dmi_bus.address
-                data = yield dmi_monitor.cur_dmi_bus.data
-
-                new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
-
-                # if new_dmi_transaction:
-                #     if addr == DMIReg.COMMAND:
-                #         pass
-                #     else:
-                #         raise ValueError(f"XXX {DMIReg(addr)}")
-                
-                ar   = yield dmi_monitor.cur_AR.aarsize
-                cur_COMMAND = yield dmi_monitor.cur_COMMAND.as_value()
-                
-                # if ar > AccessRegisterLayout.AARSIZE.BIT32:
-                #     raise ValueError(ar, cur_COMMAND)
-                
-                if op != DMIOp.NOP:
-                    try:
-                        addr = DMIReg(addr)
-                    except:
-                        raise ValueError(f"dmi_op={op}, but tried to access unknown DMI register {addr}!")
-                if op == DMIOp.READ and addr == DMIReg.COMMAND:
-                    raise ValueError("weak assert: 'command' register is expected to only be written! (it's not required by implementation though)")
-                
-                # if addr == DMIReg.ABSTRACTCS:
-                #     raise ValueError("weak assert: 'abstractcs' register access detected, probably we need to implement it!")
-
-                # if True: # addr == DMIReg.COMMAND:
-                #     x = yield Signal(cpu.debug.dmi_op)
-                #     raise ValueError(x)
-                #     
-                #     raise ValueError(type(data), dir(data))
-                #     cmd_layout = View(COMMAND_Layout, data)
-                #     raise ValueError("OK")
-                #     assert cmd_layout.cmdtype == DMICommand.AccessRegister # for now mtkcpu supports only register access
-                #     ar_layout : AccessRegisterLayout = AccessRegisterLayout.from_int(cmd_layout.control)
-                #     assert ar_layout.aarsize == 2  # 32-bits only registers are supported
-                #     if ar_layout.postexec:
-                #         raise ValueError("XXX detected program buffer execution!")
-
-                yield
-        
-        # return all nested watchdogs defined.
-        return [x for x in locals().values() if callable(x)]
-    
     sim_gadgets = create_jtag_simulator(dmi_monitor, cpu)
     sim, vcd_traces = [sim_gadgets[k] for k in ["sim", "vcd_traces"]]
 
     processes = [
-        *dmi_watchdogs(cpu=cpu),
+        monitor_cmderr(dmi_monitor),
+        print_dmi_transactions(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
     ]

@@ -3,7 +3,7 @@ from amaranth import *
 from enum import IntEnum
 
 from mtkcpu.units.debug.jtag import JTAGTap
-from mtkcpu.units.debug.types import DMIOp, COMMAND_Layout, DMIReg, DMI_COMMAND_reg_kinds, DMI_reg_kinds, IR_DMI_Layout, JtagIR, JtagIRValue, DMISTAT
+from mtkcpu.units.debug.types import *
 
 from amaranth.lib import data
 from typing import Type
@@ -127,7 +127,7 @@ class ControllerInterface():
 # controller.command_finished = 1 (in comb domain).
 # In same clock cycle it can drive any sync signal, it will be executed too (e.g. FSM state transition).
 class HandlerDMI():
-    def __init__(self, my_reg_addr, debug_unit, dmi_regs, controller) -> None:
+    def __init__(self, my_reg_addr, debug_unit: "DebugUnit", dmi_regs, controller) -> None:
         self.debug_unit = debug_unit
         self.dmi_regs = dmi_regs
         self.controller = controller
@@ -233,29 +233,28 @@ class HandlerCOMMAND(HandlerDMI):
         access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
 
         with m.If(self.reg_command.w.cmdtype == access_register):
-            # TODO
-            # we use Record here to have named fields.
-            record = self.debug_unit.command_regs[access_register]
-            with m.If(record.aarsize > 2):
+            record : AccessRegisterLayout = self.debug_unit.command_regs[access_register]
+
+            with m.If(record.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
-                comb += self.controller.command_err.eq(2)
+                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                 comb += self.controller.command_finished.eq(1)
             with m.Else():
                 with m.If(record.transfer):
                     dst = self.debug_unit.dmi_regs[DMIReg.DATA0].r # XXX rename
                     # decode register address, as it might be either CSR or GPR
                     with m.If(record.regno <= 0x0fff):
+                        # CSR
                         with m.If(record.write):
                             self.controller.command_finished.eq(1)
-                            self.controller.command_err.eq(2)
-                        # CSR
+                            self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                         with m.Switch(record.regno):
                             for addr, _ in self.debug_unit.csr_regs.items():
                                 with m.Case(addr):
                                     if addr in self.debug_unit.const_csr_values:
                                         with m.If(record.write):
                                             self.controller.command_finished.eq(1)
-                                            self.controller.command_err.eq(2)
+                                            self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                                         with m.Else():
                                             cls = self.debug_unit.const_csr_values[addr]
                                             layout = self.debug_unit.csr_regs[addr]
@@ -274,7 +273,7 @@ class HandlerCOMMAND(HandlerDMI):
                         # GPR
                         with m.FSM():
                             with m.State("A"):
-                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(record.regno - 0x1000),
+                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(record.regno & 0xFF),
                                 comb += self.debug_unit.cpu.gprf_debug_write_en.eq(record.write)
                                 comb += self.debug_unit.cpu.gprf_debug_data.eq(self.debug_unit.dmi_regs[DMIReg.DATA0].w)
                                 m.next = "B"
@@ -290,6 +289,10 @@ class HandlerCOMMAND(HandlerDMI):
                                     # execute Program Buffer
                                     # sync += self.debug_unit.cpu.pc.eq(PROGBUF_MMIO_ADDR)
                                     pass
+                    with m.Else():
+                        self.controller.command_finished.eq(1)
+                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+
 
 class HandlerPROGBUF(HandlerDMI):
     def handle_write(self):
@@ -358,6 +361,8 @@ class DebugUnit(Elaboratable):
         self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
         self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
 
+        self.dmi_regs = dict([(k, reg_make_rw(v)) for k, v in DMI_reg_kinds.items()])
+        self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
 
     def elaborate(self, platform):
         m = self.m = Module()
@@ -393,9 +398,6 @@ class DebugUnit(Elaboratable):
         dmi_address = self.dmi_address
         dmi_data    = self.dmi_data
 
-        self.dmi_regs = dict([(k, reg_make_rw(v)) for k, v in DMI_reg_kinds.items()])
-        # command registers are write only, no need to 'reg_make_rw', nor Record instances.
-        self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
         self.csr_regs = dbg_csr_regs
         self.const_csr_values = const_csr_values
         self.nonconst_csr_values = dict([(k, Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
@@ -470,7 +472,6 @@ class DebugUnit(Elaboratable):
         with m.FSM() as fsm:
             with m.State("IDLE"):
                 with m.If(jtag_dmi.update & ~sticky):
-                    m.next = "IDLE"
                     with m.Switch(dmi_op):
                         with m.Case(DMIOp.NOP):
                             pass
