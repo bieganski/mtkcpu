@@ -120,6 +120,8 @@ class MtkCpu(Elaboratable):
         if self.with_debug:
             self.debug = DebugUnit(self)
 
+        self.regs = Memory(width=32, depth=32, init=self.reg_init)
+
 
     def elaborate(self, platform):
         self.m = m = Module()
@@ -180,7 +182,7 @@ class MtkCpu(Elaboratable):
         active_unit = ActiveUnit()
 
         # Register file. Contains two read ports (for rs1, rs2) and one write port.
-        regs = Memory(width=32, depth=32, init=self.reg_init)
+        regs = self.regs
         reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
         reg_read_port2 = m.submodules.reg_read_port2 = regs.read_port()
         reg_write_port = (
