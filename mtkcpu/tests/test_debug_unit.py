@@ -68,9 +68,9 @@ def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
             break
         yield
     else:
-        raise ValueError("abstractcs.busy was not set high!")
+        raise ValueError(f"abstractcs.busy wasn't asserted during {timeout} cycles!")
     
-    for _ in range(i, timeout):
+    for i in range(i, timeout):
         busy = yield dmi_monitor.cur_ABSTRACTCS.busy
         cmderr = yield dmi_monitor.cur_ABSTRACTCS.cmderr
 
@@ -78,7 +78,12 @@ def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
             raise ValueError(f"abstractcs.cmderr detected high, while expecting it to be low!")
 
         if not busy:
+            raise ValueError("siema")
+            from mtkcpu.utils.misc import get_color_logging_object
+            logging = get_color_logging_object()
+            logging.info(f"DMI OP finished in {i} ticks.")
             break
+        yield   
     else:
         raise ValueError("abstractcs.busy high for too long!")
 
@@ -107,7 +112,15 @@ def test_dmi(
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
         yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
 
-        dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+        yield dmi_monitor.jtag_tap_data_just_written.eq(1)
+
+        for i in range(10):
+            x = yield dmi_monitor.jtag_tap_data_just_written
+            print(x)
+            yield
+
+
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
         # Make the Debug Module write DATA0 content to some CPU GPR.
         dmi_x1_regno = grp_to_dmi_access_register_regno(1)
@@ -119,7 +132,7 @@ def test_dmi(
         yield dmi_monitor.cur_AR.transfer.eq(1)
         yield dmi_monitor.cur_AR.aarsize.eq(AccessRegisterLayout.AARSIZE.BIT32)
 
-        dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
         # TODO - set DMI bits low when success found...
 

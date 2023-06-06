@@ -16,7 +16,16 @@ class DMI_Monitor(Elaboratable):
     def __init__(self, cpu: MtkCpu):
         self.cpu = cpu
 
-        dmi_bus = Cat(cpu.debug.dmi_op, cpu.debug.dmi_data, cpu.debug.dmi_address)
+        jtag_tap_dmi_bus = cpu.debug.jtag.regs[JtagIR.DMI]
+        jtag_tap_dmi_data_written = jtag_tap_dmi_bus.w
+        
+        self.jtag_tap_data_just_written = jtag_tap_dmi_bus.update
+        
+        dmi_bus = Cat(
+            jtag_tap_dmi_data_written.op,
+            jtag_tap_dmi_data_written.data,
+            jtag_tap_dmi_data_written.address,
+        )
 
         # TODO - typing annotations below are wrong, but IDE is happy.
 
