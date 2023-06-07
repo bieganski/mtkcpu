@@ -118,11 +118,21 @@ def test_dmi(
 
         yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
+        # raise ValueError(
+        #     cpu.debug.jtag.regs[JtagIR.DMI].update
+        #     is
+        #     dmi_monitor.jtag_tap_dmi_bus.update
+        # )
+
         for i in range(10):
-            x = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
-            y = yield cpu.debug.jtag.regs[JtagIR.DMI].w.data
-            z = yield dmi_monitor.jtag_tap_dmi_bus.update
-            print(x, y, z)
+            x = yield cpu.debug.jtag.regs[JtagIR.DMI].update
+            y = yield dmi_monitor.jtag_tap_dmi_bus.update
+
+            same_object = cpu.debug.jtag.regs[JtagIR.DMI].update is dmi_monitor.jtag_tap_dmi_bus.update
+            # x = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
+            # y = yield cpu.debug.jtag.regs[JtagIR.DMI].w.data
+            # z = yield cpu.debug.jtag.regs[JtagIR.DMI].update
+            print(same_object, x, y)
             yield
 
         # raise ValueError("A")

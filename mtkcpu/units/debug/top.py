@@ -479,7 +479,7 @@ class DebugUnit(Elaboratable):
         
         abstractcs : ABSTRACTCS_Layout = self.dmi_regs[DMIReg.ABSTRACTCS]
 
-        with m.FSM() as fsm:
+        with m.FSM() as self.fsm:
             with m.State("IDLE"):
                 with m.If(jtag_dmi.update & ~sticky):
                     with m.Switch(self.dmi_op):
