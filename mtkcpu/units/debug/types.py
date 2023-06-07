@@ -78,12 +78,31 @@ class ABSTRACTCS_Layout(data.Struct):
     zero4 : unsigned(3)
 
 
+class AbstractCommandControl(data.Union):
+    class AccessRegisterLayout(data.Struct):
+        class AARSIZE(enum.IntEnum, shape=unsigned(3)):
+            NOT_SET = 0
+            BIT32   = 2
+            BIT64   = 3
+            BIT128  = 4
+        regno : unsigned(16)
+        write : unsigned(1)
+        transfer : unsigned(1)
+        postexec : unsigned(1)
+        zero1_ : unsigned(1)
+        aarsize : AARSIZE
+        zero2_ : unsigned(1)
+    
+    # For now we only implement 'Access Register' (ar) Abstract Command.
+    # If 'Access Memory' or 'Quick Access' are implemented, append it to the list below.
+    ar : AccessRegisterLayout
+
 class COMMAND_Layout(data.Struct):
     class AbstractCommandCmdtype(enum.IntEnum, shape=unsigned(8)):
         AccessRegister = 0x0  # the only one required by specs to be (at least partially) implemented.
         Not_Implemented_QuickAccess = 0x1
         Not_Implemented_AccessMemory = 0x2
-    control : unsigned(24)
+    control : AbstractCommandControl
     cmdtype : AbstractCommandCmdtype
 
 class ABSTRACTAUTO_Layout(data.Struct):
@@ -98,23 +117,8 @@ def flat_layout_factory(size: int):
     })
 
 
-class AccessRegisterLayout(data.Struct):
-    class AARSIZE(enum.IntEnum, shape=unsigned(3)):
-        NOT_SET = 0
-        BIT32   = 2
-        BIT64   = 3
-        BIT128  = 4
-    regno : unsigned(16)
-    write : unsigned(1)
-    transfer : unsigned(1)
-    postexec : unsigned(1)
-    zero1_ : unsigned(1)
-    aarsize : AARSIZE
-    zero2_ : unsigned(1)
-
-
 DMI_COMMAND_reg_kinds = {
-    COMMAND_Layout.AbstractCommandCmdtype.AccessRegister: AccessRegisterLayout,
+    COMMAND_Layout.AbstractCommandCmdtype.AccessRegister: AbstractCommandControl.AccessRegisterLayout,
     # TODO - for now there are only implemented ones.
 }
 

@@ -227,36 +227,32 @@ class HandlerCOMMAND(HandlerDMI):
         sync = self.sync
         comb = self.comb
         
-        write_value : COMMAND_Layout = data.View(COMMAND_Layout, Signal(32)) # XXX
-        
-        with m.Switch(write_value.cmdtype):
-            for k, _ in self.debug_unit.command_regs.items():
-                with m.Case(k):
-                    comb += self.debug_unit.command_regs[k].eq(write_value.control)
+        write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.write_value)
 
         access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
 
         with m.If(write_value.cmdtype == access_register):
-            record : AccessRegisterLayout = self.debug_unit.command_regs[access_register]
 
-            with m.If(record.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
+            acc_reg : AbstractCommandControl.AccessRegisterLayout = write_value.control.ar
+
+            with m.If(acc_reg.control.aarsize != AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
                 comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                 comb += self.controller.command_finished.eq(1)
             with m.Else():
-                with m.If(record.transfer):
+                with m.If(acc_reg.transfer):
                     dst = self.debug_unit.dmi_regs[DMIReg.DATA0] # XXX rename
                     # decode register address, as it might be either CSR or GPR
-                    with m.If(record.regno <= 0x0fff):
+                    with m.If(acc_reg.regno <= 0x0fff):
                         # CSR
-                        with m.If(record.write):
+                        with m.If(acc_reg.write):
                             self.controller.command_finished.eq(1)
                             self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                        with m.Switch(record.regno):
+                        with m.Switch(acc_reg.regno):
                             for addr, _ in self.debug_unit.csr_regs.items():
                                 with m.Case(addr):
                                     if addr in self.debug_unit.const_csr_values:
-                                        with m.If(record.write):
+                                        with m.If(acc_reg.write):
                                             self.controller.command_finished.eq(1)
                                             self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                                         with m.Else():
@@ -264,8 +260,7 @@ class HandlerCOMMAND(HandlerDMI):
                                             layout = self.debug_unit.csr_regs[addr]
                                             sync += dst.eq(cls(layout).to_value())
                                     else:
-                                        with m.If(record.write):
-                                            
+                                        with m.If(acc_reg.write):
                                             self.debug_unit.nonconst_csr_values[addr].eq(write_value)
                                         with m.Else():
                                             sync += dst.eq(self.debug_unit.nonconst_csr_values[addr])                                    
@@ -273,20 +268,20 @@ class HandlerCOMMAND(HandlerDMI):
                             with m.Case(DMI_CSR.DPC):
                                 sync += dst.eq(self.debug_unit.cpu.pc)
                         comb += self.controller.command_finished.eq(1)
-                    with m.Elif(record.regno <= 0x101f):
+                    with m.Elif(acc_reg.regno <= 0x101f):
                         # GPR
                         with m.FSM():
                             with m.State("A"):
-                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(record.regno & 0xFF),
-                                comb += self.debug_unit.cpu.gprf_debug_write_en.eq(record.write)
+                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF),
+                                comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
                                 comb += self.debug_unit.cpu.gprf_debug_data.eq(write_value)
                                 m.next = "B"
                             with m.State("B"):
-                                with m.If(~record.write):
+                                with m.If(~acc_reg.write):
                                     sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
                                 m.next = "C"
                             with m.State("C"):
-                                with m.If(~record.postexec):
+                                with m.If(~acc_reg.postexec):
                                     comb += self.controller.command_finished.eq(1)
                                     m.next = "A"
                                 with m.Else():
@@ -360,17 +355,7 @@ class DebugUnit(Elaboratable):
         self.jtag = JTAGTap()
         self.HALT = Signal()
 
-        # TODO it can be simplify when https://github.com/amaranth-lang/amaranth/issues/790 is implemented.
-        # dmi_bus : IR_DMI_Layout = Signal(IR_DMI_Layout)
-        # self.dmi_op       = dmi_bus.op
-        # self.dmi_address  = dmi_bus.address
-        # self.dmi_data     = dmi_bus.data
-        self.dmi_op       = Signal(shape(IR_DMI_Layout, "op"))
-        self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
-        self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
-
         self.dmi_regs = dict([(k, data.Signal(v)) for k, v in DMI_reg_kinds.items()])
-        self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
 
     def elaborate(self, platform):
         m = self.m = Module()
@@ -418,16 +403,6 @@ class DebugUnit(Elaboratable):
                     write_value=jtag_dmi.w.data) ) for k, v in handlers.items()
             ]
         )
-
-        sync += [
-            self.dmi_op.eq(jtag_dmi.w.op),
-            self.dmi_address.eq(jtag_dmi.w.address),
-            self.dmi_data.eq(jtag_dmi.w.data),
-        ]
-
-        sync += [
-            jtag_dmi.r.address.eq(self.dmi_address),
-        ]
 
         self.ONREAD = Signal()
         self.ONWRITE = Signal()
@@ -482,18 +457,18 @@ class DebugUnit(Elaboratable):
         with m.FSM() as self.fsm:
             with m.State("IDLE"):
                 with m.If(jtag_dmi.update & ~sticky):
-                    with m.Switch(self.dmi_op):
+                    with m.Switch(jtag_dmi.w.op):
                         with m.Case(DMIOp.NOP):
                             pass
                         with m.Case(DMIOp.READ):
-                            on_read(self.dmi_address)            # moves data from command regs to jtag regs.
+                            on_read(jtag_dmi.w.address)            # moves data from command regs to jtag regs.
                         with m.Case(DMIOp.WRITE):
-                            on_write(self.dmi_address, self.dmi_data) # takes data from jtag regs into command regs.
+                            on_write(jtag_dmi.w.address, jtag_dmi.w.data) # takes data from jtag regs into command regs.
                             m.next = "WAIT"
-                        sync += abstractcs.busy.eq(self.dmi_op != DMIOp.NOP)
+                        sync += abstractcs.busy.eq(jtag_dmi.w.op != DMIOp.NOP)
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)
-                with m.Switch(self.dmi_address):
+                with m.Switch(jtag_dmi.w.address):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
                             h.handle_write()

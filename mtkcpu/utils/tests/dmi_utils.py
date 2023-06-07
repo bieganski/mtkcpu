@@ -31,13 +31,12 @@ class DMI_Monitor(Elaboratable):
         
         # TODO - typing annotations below are wrong, but IDE is happy.
 
-        # DMI bus, not yet latched by DM.
-        self.cur_dmi_bus : IR_DMI_Layout   = data.View(IR_DMI_Layout,        jtag_tap_dmi_bus.w)
-        self.cur_COMMAND : COMMAND_Layout  = data.View(COMMAND_Layout,       self.cur_dmi_bus.data)
-        self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
+        # JTAG tap's DMI bus, not yet latched by DM.
+        self.cur_dmi_bus : IR_DMI_Layout   = data.View(IR_DMI_Layout,   jtag_tap_dmi_bus.w)
+        self.cur_COMMAND : COMMAND_Layout  = data.View(COMMAND_Layout,  self.cur_dmi_bus.data)
         
         # latched by DM.
-        self.cur_ABSTRACTCS : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS])
+        self.cur_ABSTRACTCS_latched : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS])
 
         self.prev_COMMAND : COMMAND_Layout = Signal.like(self.cur_COMMAND)
         self.prev_dmi_bus : IR_DMI_Layout  = Signal.like(self.cur_dmi_bus)
@@ -46,8 +45,7 @@ class DMI_Monitor(Elaboratable):
 
         # Records below are to be removed after https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
         self.cur_COMMAND_r = to_record(self.cur_COMMAND)
-        self.cur_AR_r = to_record(self.cur_AR)
-        self.cur_ABSTRACTCS_r = to_record(self.cur_ABSTRACTCS)
+        self.cur_ABSTRACTCS_latched_r = to_record(self.cur_ABSTRACTCS_latched)
 
     def elaborate(self, platform):
         m = Module()
@@ -56,8 +54,7 @@ class DMI_Monitor(Elaboratable):
         # Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
         records_views = [
             (self.cur_COMMAND_r, self.cur_COMMAND),
-            (self.cur_AR_r, self.cur_AR),
-            (self.cur_ABSTRACTCS_r, self.cur_ABSTRACTCS),
+            (self.cur_ABSTRACTCS_latched_r, self.cur_ABSTRACTCS_latched),
         ]
 
         for r, v in records_views:
@@ -97,7 +94,7 @@ def monitor_cmderr(dmi_monitor: DMI_Monitor):
         yield Passive()
 
         while True:
-            cmderr = yield dmi_monitor.cur_ABSTRACTCS.cmderr
+            cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
             if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
                 cmderr = ABSTRACTCS_Layout.CMDERR(cmderr)
                 raise ValueError(cmderr)
@@ -125,10 +122,11 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                     print_fn(f"DMI: {action}, address: {addr!r}")
 
                     # if op == DMIOp.WRITE:  # XXX NOT YET TESTED.
-                    regno = yield dmi_monitor.cur_AR.regno
-                    write = yield dmi_monitor.cur_AR.write
-                    transfer = yield dmi_monitor.cur_AR.transfer
-                    aarsize = yield dmi_monitor.cur_AR.aarsize
+                    acc_reg = dmi_monitor.cur_COMMAND.control.ar
+                    regno = yield dmi_monitor.acc_reg.regno
+                    write = yield dmi_monitor.acc_reg.write
+                    transfer = yield dmi_monitor.acc_reg.transfer
+                    aarsize = yield dmi_monitor.acc_reg.aarsize
                     if transfer:
                         action = "REG write" if write else "REG read"
                         logging.critical("shit detected")

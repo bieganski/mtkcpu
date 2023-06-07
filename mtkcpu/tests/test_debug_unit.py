@@ -78,7 +78,6 @@ def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
             raise ValueError(f"abstractcs.cmderr detected high, while expecting it to be low!")
 
         if not busy:
-            raise ValueError("siema")
             from mtkcpu.utils.misc import get_color_logging_object
             logging = get_color_logging_object()
             logging.info(f"DMI OP finished in {i} ticks.")
@@ -112,37 +111,21 @@ def test_dmi(
 
         # Write pattern to DATA0, so that it becomes a payload for further register write.
         pattern = 0xdeadbeef
+
         yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
         yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
-
-        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
-
-        # raise ValueError(
-        #     cpu.debug.jtag.regs[JtagIR.DMI].update
-        #     is
-        #     dmi_monitor.jtag_tap_dmi_bus.update
-        # )
-
-        for i in range(10):
-            x = yield cpu.debug.jtag.regs[JtagIR.DMI].update
-            y = yield dmi_monitor.jtag_tap_dmi_bus.update
-
-            same_object = cpu.debug.jtag.regs[JtagIR.DMI].update is dmi_monitor.jtag_tap_dmi_bus.update
-            # x = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
-            # y = yield cpu.debug.jtag.regs[JtagIR.DMI].w.data
-            # z = yield cpu.debug.jtag.regs[JtagIR.DMI].update
-            print(same_object, x, y)
-            yield
         
-        exit(0)
-
-        # raise ValueError("A")
-
+        # Note that we assume it goes down after a single cycle.
+        # The relevant logic is inside Debug Module.
+        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
-        print("AAA")
+        # Make sure that DATA0 does contain 'pattern'.
+        data0 = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
+        if data0 != pattern:
+            raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
 
         # Make the Debug Module write DATA0 content to some CPU GPR.
         dmi_x1_regno = grp_to_dmi_access_register_regno(1)
@@ -162,7 +145,7 @@ def test_dmi(
         gpr_value = yield cpu.regs._array[1]
         
         if gpr_value != pattern:
-            raise ValueError(f"Expected to read {hex(pattern)}, got {hex(gpr_value)}!")
+            raise ValueError(f"GRP read: expected {hex(pattern)}, got {hex(gpr_value)}!")
         else:
             raise ValueError("GPR OK!")
 
