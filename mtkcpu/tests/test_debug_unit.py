@@ -134,6 +134,8 @@ def test_dmi(
             # z = yield cpu.debug.jtag.regs[JtagIR.DMI].update
             print(same_object, x, y)
             yield
+        
+        exit(0)
 
         # raise ValueError("A")
 
