@@ -93,10 +93,6 @@ class JTAGTap(Elaboratable):
         with m.If(rising_tck):
             sync += self.tck_ctr.eq(self.tck_ctr + 1)
 
-        self.DATA_WRITE = Signal(IR_DMI_Layout)
-        self.DATA_READ = Signal.like(self.DATA_WRITE)
-        self.DMI_WRITE = Signal(32)
-
         sync += self.jtag_fsm_update_dr.eq(0)
 
         # TODO
@@ -126,7 +122,6 @@ class JTAGTap(Elaboratable):
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
-                            sync += self.DATA_READ.eq(record.r)
                             sync += self.dr.eq(record.r)
                             sync += record.capture.eq(rising_tck)
                 with m.If(rising_tck):
@@ -171,9 +166,6 @@ class JTAGTap(Elaboratable):
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
-                            sync += self.DATA_WRITE.eq(self.dr)
-                            with m.If(ir == JtagIR.DMI):
-                                sync += self.DMI_WRITE.eq(self.dr[2:34])
                             sync += record.w.eq(self.dr)
                             with m.If(falling_tck):
                                 sync += record.update.eq(1)

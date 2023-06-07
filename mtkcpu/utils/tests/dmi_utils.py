@@ -5,11 +5,22 @@ from amaranth import Module, Cat, Signal
 from amaranth.sim import Passive
 
 from mtkcpu.units.debug.types import *
-from mtkcpu.utils.misc import get_color_logging_object
+from mtkcpu.utils.misc import get_color_logging_object, get_members
 from mtkcpu.cpu.cpu import MtkCpu
 
-
 logging = get_color_logging_object()
+
+def to_record(v: data.View) -> rec.Record:
+    """
+    For simulation, to properly display named slices of Views.
+    Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+    """
+    members : dict = data.Layout.cast(v._View__orig_layout).members
+    return rec.Record(rec.Layout([x for x in members.items()]))
+
+def record_view_connect_statements(r: rec.Record, v: data.View) -> list:
+    members : dict = data.Layout.cast(v._View__orig_layout).members
+    return [getattr(r, name).eq(getattr(v, name)) for name in members]
 
 
 class DMI_Monitor(Elaboratable):
@@ -32,7 +43,6 @@ class DMI_Monitor(Elaboratable):
         self.cur_dmi_bus : IR_DMI_Layout   = data.View(IR_DMI_Layout,        dmi_bus)
         self.cur_COMMAND : COMMAND_Layout  = data.View(COMMAND_Layout,       self.cur_dmi_bus.data)
         self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
-
         self.cur_ABSTRACTCS : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS].r)
 
         self.prev_COMMAND : COMMAND_Layout = Signal.like(self.cur_COMMAND)
@@ -41,24 +51,10 @@ class DMI_Monitor(Elaboratable):
         self.error = Signal()
 
         # Records below are to be removed after https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
-        self.cur_COMMAND_r = DMI_Monitor.to_record(self.cur_COMMAND)
-        self.cur_AR_r = DMI_Monitor.to_record(self.cur_AR)
+        self.cur_COMMAND_r = to_record(self.cur_COMMAND)
+        self.cur_AR_r = to_record(self.cur_AR)
+        self.cur_ABSTRACTCS_r = to_record(self.cur_ABSTRACTCS)
 
-
-    @staticmethod
-    def to_record(v: data.View) -> rec.Record:
-        """
-        For simulation, to properly display named slices of Views.
-        Only till https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
-        """
-        members : dict = data.Layout.cast(v._View__orig_layout).members
-        return rec.Record(rec.Layout([x for x in members.items()]))
-
-    @staticmethod
-    def record_view_connect_statements(r: rec.Record, v: data.View) -> list:
-        members : dict = data.Layout.cast(v._View__orig_layout).members
-        return [getattr(r, name).eq(getattr(v, name)) for name in members]
-    
     def elaborate(self, platform):
         m = Module()
 
@@ -67,10 +63,11 @@ class DMI_Monitor(Elaboratable):
         records_views = [
             (self.cur_COMMAND_r, self.cur_COMMAND),
             (self.cur_AR_r, self.cur_AR),
+            (self.cur_ABSTRACTCS_r, self.cur_ABSTRACTCS),
         ]
 
         for r, v in records_views:
-            m.d.comb += DMI_Monitor.record_view_connect_statements(r, v)
+            m.d.comb += record_view_connect_statements(r, v)
         ############################################################################
 
         def _raise():

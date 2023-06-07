@@ -106,6 +106,10 @@ def test_dmi(
         # Warmup.
         yield_few_ticks()
 
+        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
+        yield
+        yield
+
         # Write pattern to DATA0, so that it becomes a payload for further register write.
         pattern = 0xdeadbeef
         yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
@@ -116,8 +120,11 @@ def test_dmi(
 
         for i in range(10):
             x = yield dmi_monitor.jtag_tap_data_just_written
-            print(x)
+            val = yield cpu.debug.dmi_regs[DMIReg.DATA0].w
+            print(val)
             yield
+
+        raise ValueError("A")
 
 
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
@@ -145,8 +152,17 @@ def test_dmi(
             raise ValueError("GPR OK!")
 
     simulator.add_sync_process(process)
+
+    vcd_traces = [
+        *dmi_monitor.cur_COMMAND_r.fields.values(),
+        cpu.debug.jtag.BAR,
+        *dmi_monitor.cur_AR_r.fields.values(),
+        cpu.debug.jtag.BAR,
+        *dmi_monitor.cur_ABSTRACTCS_r.fields.values(),
+        cpu.debug.jtag.BAR,
+    ]
     
-    with simulator.write_vcd("temp.vcd"):
+    with simulator.write_vcd("temp.vcd", "temp.gtkw", traces=vcd_traces):
         simulator.run()
 
 

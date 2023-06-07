@@ -175,7 +175,7 @@ class HandlerDATA(HandlerDMI):
 class HandlerABSTRACTAUTO(HandlerDMI):
     def handle_write(self):
         m = self.debug_unit.m
-        # TODO maszyna stanów niepotrzebna
+        # TODO FSM here is probably an overkill?
         with m.FSM():
             with m.State("A"):
                 self.sync += self.debug_unit.autoexecdata.eq(self.reg_abstractauto.w.autoexecdata)

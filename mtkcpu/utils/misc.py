@@ -29,4 +29,7 @@ def get_color_logging_object():
 
     return _log
 
-
+def get_members(arg) -> str:
+    from inspect import getmembers
+    from pprint import pformat
+    return pformat(getmembers(arg))

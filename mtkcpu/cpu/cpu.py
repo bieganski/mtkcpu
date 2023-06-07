@@ -210,26 +210,24 @@ class MtkCpu(Elaboratable):
         ]
 
 
-        # TODO
+        # CPU is never halted if Debug Unit doesn't exist.
+        if self.with_debug:
+            sync += self.halt.eq(self.debug.HALT)
+
         # DebugModule is able to read and write GPR values.
-        # if self.with_debug:
-        #     comb += self.halt.eq(self.debug.HALT)
-        # else:
-        #     comb += self.halt.eq(0)
+        with m.If(self.halt):
+            comb += [
+                reg_read_port1.addr.eq(self.gprf_debug_addr),
+                reg_write_port.addr.eq(self.gprf_debug_addr),
+                reg_write_port.en.eq(self.gprf_debug_write_en)
+            ]
 
-        # with m.If(self.halt):
-        #     comb += [
-        #         reg_read_port1.addr.eq(self.gprf_debug_addr),
-        #         reg_write_port.addr.eq(self.gprf_debug_addr),
-        #         reg_write_port.en.eq(self.gprf_debug_write_en)
-        #     ]
-
-        #     with m.If(self.gprf_debug_write_en):
-        #         comb += reg_write_port.data.eq(self.gprf_debug_data)
-        #     with m.Else():
-        #         comb += self.gprf_debug_data.eq(reg_read_port1.data)
-        with m.If(0):
-            pass
+            # Swap data register assignment direction, depending on 'write_en'
+            with m.If(self.gprf_debug_write_en):
+                comb += reg_write_port.data.eq(self.gprf_debug_data)
+            with m.Else():
+                comb += self.gprf_debug_data.eq(reg_read_port1.data)
+        
         with m.Else():
             comb += [
                 reg_read_port1.addr.eq(rs1),

@@ -64,14 +64,18 @@ class ABSTRACTCS_Layout(data.Struct):
         OTHER = 7
 
 
+    # TODO
+    # all '_zeroX' were renamed to 'zeroX', but it can be reverted after 
+    # https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+    # The reason is that otherwise it would complicate view->record mapping code.
     datacount : unsigned(4)
-    _zero1 : unsigned(4)
+    zero1 : unsigned(4)
     cmderr : CMDERR
-    _zero2 : unsigned(1)
+    zero2 : unsigned(1)
     busy : unsigned(1)
-    _zero3 : unsigned(11)
+    zero3 : unsigned(11)
     progbufsize : unsigned(5)
-    _zero4 : unsigned(3)
+    zero4 : unsigned(3)
 
 
 class COMMAND_Layout(data.Struct):
