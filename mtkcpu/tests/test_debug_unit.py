@@ -116,18 +116,21 @@ def test_dmi(
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
         yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
 
-        yield dmi_monitor.jtag_tap_data_just_written.eq(1)
+        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
         for i in range(10):
-            x = yield dmi_monitor.jtag_tap_data_just_written
-            val = yield cpu.debug.dmi_regs[DMIReg.DATA0].w
-            print(val)
+            x = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
+            y = yield cpu.debug.jtag.regs[JtagIR.DMI].w.data
+            z = yield dmi_monitor.jtag_tap_dmi_bus.update
+            print(x, y, z)
             yield
 
-        raise ValueError("A")
+        # raise ValueError("A")
 
 
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        print("AAA")
 
         # Make the Debug Module write DATA0 content to some CPU GPR.
         dmi_x1_regno = grp_to_dmi_access_register_regno(1)

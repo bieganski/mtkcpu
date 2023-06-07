@@ -102,19 +102,6 @@ const_csr_values = {
     DMI_CSR.MISA: RegValueMISA,
 }
 
-
-def reg_make_rw(type: Type[data.View]) -> data.View:
-    """
-    TODO: unify with 'jtagify_dr' from jtag.py.
-    """
-
-    layout = data.StructLayout({
-        "r": data.Layout.cast(type),
-        "w": data.Layout.cast(type),
-    })
-
-    return data.Signal(layout)
-
 class ControllerInterface():
     def __init__(self):
         self.halted             = Signal()
@@ -127,19 +114,26 @@ class ControllerInterface():
 # controller.command_finished = 1 (in comb domain).
 # In same clock cycle it can drive any sync signal, it will be executed too (e.g. FSM state transition).
 class HandlerDMI():
-    def __init__(self, my_reg_addr, debug_unit: "DebugUnit", dmi_regs, controller) -> None:
+    def __init__(self, 
+                 my_reg_addr: int, # TODO rename so that it contains 'dmi_addr'.
+                 debug_unit: "DebugUnit",
+                 dmi_regs: dict,
+                 controller: ControllerInterface,
+                 write_value: Signal,
+            ):
         self.debug_unit = debug_unit
         self.dmi_regs = dmi_regs
         self.controller = controller
         self.my_reg_addr = my_reg_addr
 
+        self.reg_dmcontrol      = self.dmi_regs[DMIReg.DMCONTROL]
+        self.reg_dmstatus       = self.dmi_regs[DMIReg.DMSTATUS]
+        self.reg_command        = self.dmi_regs[DMIReg.COMMAND]
+        self.reg_abstractauto   = self.dmi_regs[DMIReg.ABSTRACTAUTO]
+        self.reg_data0          = self.dmi_regs[DMIReg.DATA0]
 
-        # TODO replace me with reg = self.dmi_regs[my_reg_addr]
-        # TODO or maybe not, as problem for DATA0-DATA15 etc.
-        self.reg_dmcontrol  = self.dmi_regs[DMIReg.DMCONTROL]
-        self.reg_dmstatus   = self.dmi_regs[DMIReg.DMSTATUS]
-        self.reg_command    = self.dmi_regs[DMIReg.COMMAND]
-        self.reg_abstractauto = self.dmi_regs[DMIReg.ABSTRACTAUTO]
+        assert write_value.shape() == unsigned(32)
+        self.write_value = write_value
     
         m = self.debug_unit.m
         self.sync = m.d.sync
@@ -147,6 +141,18 @@ class HandlerDMI():
 
     def handle_write(self):
         raise NotImplementedError("DMI Handler must implement 'handle_write(self)' method!")
+    
+    def default_handle_write(self):
+        """
+        XXX rename to "handle_write" when ready to do so.
+        """
+        my_reg = self.debug_unit.dmi_regs[self.my_reg_addr]
+        self.sync += [
+            my_reg.eq(self.write_value),
+        ]
+        self.comb += [
+            self.controller.command_finished.eq(1),
+        ]
 
 class HandlerDATA(HandlerDMI):
     def handle_write(self):
@@ -155,30 +161,24 @@ class HandlerDATA(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
+        write_value = Signal(32) # XXX
+
         with m.If(self.debug_unit.autoexecdata & (1 << num)):
             # trigger COMMAND handler manually and let it mark command handle finished.
             self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
-            # with m.FSM():
-            #     with m.State("A"):
-            #         # normally 'on_write' function would do that
-            #         sync += self.dmi_regs[DMIReg.COMMAND].w.eq(self.debug_unit.dmi_data)
-            #         m.next = "B"
-            #     with m.State("B"):
-            #         self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
-            #         with m.If(self.controller.command_finished):
-            #             m.next = "A"
         with m.Else():
-            # do nothing
-            comb += self.controller.command_finished.eq(1)
-        
+            self.default_handle_write()
 
 class HandlerABSTRACTAUTO(HandlerDMI):
     def handle_write(self):
+        return # TODO
         m = self.debug_unit.m
+        write_value : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, Signal(32)) # XXX
+
         # TODO FSM here is probably an overkill?
         with m.FSM():
             with m.State("A"):
-                self.sync += self.debug_unit.autoexecdata.eq(self.reg_abstractauto.w.autoexecdata)
+                self.sync += self.debug_unit.autoexecdata.eq(write_value.autoexecdata)
                 m.next = "B"
             with m.State("B"):
                 m.next = "A"
@@ -192,47 +192,51 @@ class HandlerDMCONTROL(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        write_value = self.reg_dmcontrol.w
+        write_value : DMCONTROL_Layout = data.View(DMCONTROL_Layout, Signal(32)) # XXX
+
+
+        # Everything needed latched in a single cycle.
+        comb += self.controller.command_finished.eq(1)
 
         with m.If(write_value.dmactive):
-            sync += self.reg_dmcontrol.r.dmactive.eq(1)
+            sync += self.reg_dmcontrol.dmactive.eq(1)
 
             with m.If(write_value.haltreq):
                 sync += self.debug_unit.HALT.eq(1)
-                sync += self.reg_dmstatus.r.allhalted.eq(1)
-                sync += self.reg_dmstatus.r.anyhalted.eq(1)
+                sync += self.reg_dmstatus.allhalted.eq(1)
+                sync += self.reg_dmstatus.anyhalted.eq(1)
             
             with m.If(write_value.resumereq):
                 # with m.If(write_value.step): # TODO step does not exist yet.
                 #     pass # TODO auto-halt after single instruction
                 sync += self.debug_unit.HALT.eq(0)
-                sync += self.reg_dmstatus.r.allresumeack.eq(1)
-                sync += self.reg_dmstatus.r.anyresumeack.eq(1)
-                sync += self.reg_dmstatus.r.allhalted.eq(0)
-                sync += self.reg_dmstatus.r.anyhalted.eq(0)
+                sync += self.reg_dmstatus.allresumeack.eq(1)
+                sync += self.reg_dmstatus.anyresumeack.eq(1)
+                sync += self.reg_dmstatus.allhalted.eq(0)
+                sync += self.reg_dmstatus.anyhalted.eq(0)
             
             # Only hart 0 exists.
-            sync += self.reg_dmstatus.r.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
+            sync += self.reg_dmstatus.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
         with m.Else():
             pass # TODO - reset the DM!
         
-        comb += self.controller.command_finished.eq(1)
-
 
 class HandlerCOMMAND(HandlerDMI):
     def handle_write(self):
         m = self.debug_unit.m
         sync = self.sync
         comb = self.comb
-
-        with m.Switch(self.reg_command.w.cmdtype):
-            for k, v in self.debug_unit.command_regs.items():
+        
+        write_value : COMMAND_Layout = data.View(COMMAND_Layout, Signal(32)) # XXX
+        
+        with m.Switch(write_value.cmdtype):
+            for k, _ in self.debug_unit.command_regs.items():
                 with m.Case(k):
-                    comb += self.debug_unit.command_regs[k].eq(self.reg_command.w.control)
+                    comb += self.debug_unit.command_regs[k].eq(write_value.control)
 
         access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
 
-        with m.If(self.reg_command.w.cmdtype == access_register):
+        with m.If(write_value.cmdtype == access_register):
             record : AccessRegisterLayout = self.debug_unit.command_regs[access_register]
 
             with m.If(record.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
@@ -241,7 +245,7 @@ class HandlerCOMMAND(HandlerDMI):
                 comb += self.controller.command_finished.eq(1)
             with m.Else():
                 with m.If(record.transfer):
-                    dst = self.debug_unit.dmi_regs[DMIReg.DATA0].r # XXX rename
+                    dst = self.debug_unit.dmi_regs[DMIReg.DATA0] # XXX rename
                     # decode register address, as it might be either CSR or GPR
                     with m.If(record.regno <= 0x0fff):
                         # CSR
@@ -261,8 +265,8 @@ class HandlerCOMMAND(HandlerDMI):
                                             sync += dst.eq(cls(layout).to_value())
                                     else:
                                         with m.If(record.write):
-                                            dst2 = self.debug_unit.dmi_regs[DMIReg.DATA0].w # XXX rename
-                                            self.debug_unit.nonconst_csr_values[addr].eq(dst2)
+                                            
+                                            self.debug_unit.nonconst_csr_values[addr].eq(write_value)
                                         with m.Else():
                                             sync += dst.eq(self.debug_unit.nonconst_csr_values[addr])                                    
                                     
@@ -275,11 +279,11 @@ class HandlerCOMMAND(HandlerDMI):
                             with m.State("A"):
                                 comb += self.debug_unit.cpu.gprf_debug_addr.eq(record.regno & 0xFF),
                                 comb += self.debug_unit.cpu.gprf_debug_write_en.eq(record.write)
-                                comb += self.debug_unit.cpu.gprf_debug_data.eq(self.debug_unit.dmi_regs[DMIReg.DATA0].w)
+                                comb += self.debug_unit.cpu.gprf_debug_data.eq(write_value)
                                 m.next = "B"
                             with m.State("B"):
                                 with m.If(~record.write):
-                                    sync += self.debug_unit.dmi_regs[DMIReg.DATA0].r.eq(self.debug_unit.cpu.gprf_debug_data)
+                                    sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
                                 m.next = "C"
                             with m.State("C"):
                                 with m.If(~record.postexec):
@@ -303,14 +307,17 @@ class HandlerPROGBUF(HandlerDMI):
         my_idx = self.my_reg_addr - DMIReg.PROGBUF0
         my_mmio_addr = PROGBUF_MMIO_ADDR + 4 * my_idx
 
-        value = self.dmi_regs[self.my_reg_addr].w
+        write_value = Signal(32) # XXX
 
         bus = self.debug_unit.cpu.debug_bus
+
+        assert write_value.shape() == bus.write_data.shape()
+
 
         comb += [
             bus.en.eq(1),
             bus.store.eq(1),
-            bus.write_data.eq(value),
+            bus.write_data.eq(write_value),
             bus.addr.eq(my_mmio_addr),
             bus.mask.eq(0b1111),
         ]
@@ -327,9 +334,10 @@ class HandlerABSTRACTCS(HandlerDMI):
 
         # TODO
         # does openocd even tries to write it?
+        return # TODO
 
 
-handlers = {
+handlers : dict[int, Type[HandlerDMI]]= {
     DMIReg.DMCONTROL: HandlerDMCONTROL,
     DMIReg.COMMAND: HandlerCOMMAND,
     DMIReg.PROGBUF0: HandlerPROGBUF,
@@ -361,7 +369,7 @@ class DebugUnit(Elaboratable):
         self.dmi_address  = Signal(shape(IR_DMI_Layout, "address"))
         self.dmi_data     = Signal(shape(IR_DMI_Layout, "data"))
 
-        self.dmi_regs = dict([(k, reg_make_rw(v)) for k, v in DMI_reg_kinds.items()])
+        self.dmi_regs = dict([(k, data.Signal(v)) for k, v in DMI_reg_kinds.items()])
         self.command_regs = dict([(k, data.Signal(v)) for k, v in DMI_COMMAND_reg_kinds.items()])
 
     def elaborate(self, platform):
@@ -394,10 +402,6 @@ class DebugUnit(Elaboratable):
         with m.If(jtag_dtmcs.update & jtag_dtmcs.w.dmireset):
             comb += sticky.eq(0) # TODO
 
-        dmi_op      = self.dmi_op
-        dmi_address = self.dmi_address
-        dmi_data    = self.dmi_data
-
         self.csr_regs = dbg_csr_regs
         self.const_csr_values = const_csr_values
         self.nonconst_csr_values = dict([(k, Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
@@ -406,19 +410,23 @@ class DebugUnit(Elaboratable):
 
         self.dmi_handlers = dict(
             [ 
-                ( k, v(k, self, self.dmi_regs, self.controller) ) for k, v in handlers.items()
+                ( k, v(
+                    my_reg_addr=k,
+                    debug_unit=self,
+                    dmi_regs=self.dmi_regs,
+                    controller=self.controller,
+                    write_value=jtag_dmi.w.data) ) for k, v in handlers.items()
             ]
         )
 
         sync += [
-            dmi_op.eq(jtag_dmi.w.op),
-            dmi_address.eq(jtag_dmi.w.address),
-            dmi_data.eq(jtag_dmi.w.data),
+            self.dmi_op.eq(jtag_dmi.w.op),
+            self.dmi_address.eq(jtag_dmi.w.address),
+            self.dmi_data.eq(jtag_dmi.w.data),
         ]
 
         sync += [
-            jtag_dmi.r.address.eq(dmi_address),
-            # dmi.r.op.eq(0),
+            jtag_dmi.r.address.eq(self.dmi_address),
         ]
 
         self.ONREAD = Signal()
@@ -435,14 +443,14 @@ class DebugUnit(Elaboratable):
 
         def reset():
             self.m.d.sync += [
-                self.dmi_regs[DMIReg.DMSTATUS].r.version.eq(2),
-                self.dmi_regs[DMIReg.DMSTATUS].r.authenticated.eq(1),
+                self.dmi_regs[DMIReg.DMSTATUS].version.eq(2),
+                self.dmi_regs[DMIReg.DMSTATUS].authenticated.eq(1),
 
-                self.dmi_regs[DMIReg.DMCONTROL].r.hartsello.eq(1),
-                self.dmi_regs[DMIReg.DMCONTROL].r.hartselhi.eq(0),
+                self.dmi_regs[DMIReg.DMCONTROL].hartsello.eq(1),
+                self.dmi_regs[DMIReg.DMCONTROL].hartselhi.eq(0),
 
-                self.dmi_regs[DMIReg.ABSTRACTCS].r.datacount.eq(1),
-                self.dmi_regs[DMIReg.ABSTRACTCS].r.progbufsize.eq(PROGBUFSIZE),
+                self.dmi_regs[DMIReg.ABSTRACTCS].datacount.eq(1),
+                self.dmi_regs[DMIReg.ABSTRACTCS].progbufsize.eq(PROGBUFSIZE),
             ]
 
             self.m.d.comb += [
@@ -458,7 +466,7 @@ class DebugUnit(Elaboratable):
             with m.Switch(addr):
                 for addr2, record in self.dmi_regs.items():
                     with m.Case(addr2):
-                        sync += jtag_dmi.r.data.eq(record.r),
+                        sync += jtag_dmi.r.data.eq(record),
                         sync += jtag_dmi.r.op.eq(0), # TODO        
 
         def on_write(addr, data):
@@ -467,28 +475,30 @@ class DebugUnit(Elaboratable):
             with m.Switch(addr):
                 for addr2, record in self.dmi_regs.items():
                     with m.Case(addr2):
-                        sync += record.w.eq(data)
+                        sync += record.eq(data)
+        
+        abstractcs : ABSTRACTCS_Layout = self.dmi_regs[DMIReg.ABSTRACTCS]
 
         with m.FSM() as fsm:
             with m.State("IDLE"):
                 with m.If(jtag_dmi.update & ~sticky):
-                    with m.Switch(dmi_op):
+                    with m.Switch(self.dmi_op):
                         with m.Case(DMIOp.NOP):
                             pass
                         with m.Case(DMIOp.READ):
-                            on_read(dmi_address)            # moves data from command regs to jtag regs.
+                            on_read(self.dmi_address)            # moves data from command regs to jtag regs.
                         with m.Case(DMIOp.WRITE):
-                            on_write(dmi_address, dmi_data) # takes data from jtag regs into command regs.
+                            on_write(self.dmi_address, self.dmi_data) # takes data from jtag regs into command regs.
                             m.next = "WAIT"
-                        sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(dmi_op != DMIOp.NOP)
+                        sync += abstractcs.busy.eq(self.dmi_op != DMIOp.NOP)
             with m.State("WAIT"):
-                sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.cmderr.eq(self.controller.command_err)
-                with m.Switch(dmi_address):
+                sync += abstractcs.cmderr.eq(self.controller.command_err)
+                with m.Switch(self.dmi_address):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
                             h.handle_write()
                 with m.If(self.controller.command_finished):
                     m.next = "IDLE"
-                    sync += self.dmi_regs[DMIReg.ABSTRACTCS].r.busy.eq(0)
+                    sync += abstractcs.busy.eq(0)
 
         return m

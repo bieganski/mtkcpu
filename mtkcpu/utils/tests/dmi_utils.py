@@ -27,23 +27,23 @@ class DMI_Monitor(Elaboratable):
     def __init__(self, cpu: MtkCpu):
         self.cpu = cpu
 
-        jtag_tap_dmi_bus = cpu.debug.jtag.regs[JtagIR.DMI]
-        jtag_tap_dmi_data_written = jtag_tap_dmi_bus.w
-        
-        self.jtag_tap_data_just_written = jtag_tap_dmi_bus.update
+        jtag_tap_dmi_bus = self.jtag_tap_dmi_bus = cpu.debug.jtag.regs[JtagIR.DMI]
         
         dmi_bus = Cat(
-            jtag_tap_dmi_data_written.op,
-            jtag_tap_dmi_data_written.data,
-            jtag_tap_dmi_data_written.address,
+            jtag_tap_dmi_bus.w.op,
+            jtag_tap_dmi_bus.w.data,
+            jtag_tap_dmi_bus.w.address,
         )
 
         # TODO - typing annotations below are wrong, but IDE is happy.
 
+        # DMI bus, not yet latched by DM.
         self.cur_dmi_bus : IR_DMI_Layout   = data.View(IR_DMI_Layout,        dmi_bus)
         self.cur_COMMAND : COMMAND_Layout  = data.View(COMMAND_Layout,       self.cur_dmi_bus.data)
         self.cur_AR : AccessRegisterLayout = data.View(AccessRegisterLayout, self.cur_COMMAND.control)
-        self.cur_ABSTRACTCS : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS].r)
+        
+        # latched by DM.
+        self.cur_ABSTRACTCS : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS])
 
         self.prev_COMMAND : COMMAND_Layout = Signal.like(self.cur_COMMAND)
         self.prev_dmi_bus : IR_DMI_Layout  = Signal.like(self.cur_dmi_bus)

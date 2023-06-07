@@ -40,7 +40,7 @@ class DMCONTROL_Layout(data.Struct):
     ackhavereset : unsigned(1)
     hartreset : unsigned(1)
     resumereq : unsigned(1)
-    haltreq : unsigned( 1)
+    haltreq : unsigned(1)
 
 class HARTINFO_Layout(data.Struct):
     dataaddr : unsigned(12)
