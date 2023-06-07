@@ -95,10 +95,15 @@ class JTAGTap(Elaboratable):
 
         sync += self.jtag_fsm_update_dr.eq(0)
 
-        # TODO
+        # Make 'update' bit high only for a single cycle.
+        # TODO - move it to combinatorial domain.
+        # TODO - without embracing ifs statements it produces undefined behavior in simulation,
+        # when driven also from process.
         for ir, record in self.regs.items():
-            sync += record.update.eq(0)
-            sync += record.capture.eq(0)
+            with m.If(record.update):
+                sync += record.update.eq(0)
+            with m.If(record.capture):
+                sync += record.capture.eq(0)
 
         with m.FSM() as jtag_fsm:
             with m.State("TEST-LOGIC-RESET"):
