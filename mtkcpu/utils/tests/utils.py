@@ -514,12 +514,8 @@ def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
     # data0_r = dmi_regs[DMIReg.DATA0].r.fields.values()
 
     vcd_traces = [
-        *monitor.cur_COMMAND_r.fields.values(),
-        *monitor.cur_AR_r.fields.values(),
+        # *monitor.cur_COMMAND_r.fields.values(),
         jtag_loc.tck_ctr,
-        cpu.debug.dmi_op,
-        cpu.debug.dmi_address,
-        cpu.debug.dmi_data,
         # jtag_loc.regs[JtagIR.DMI].update,
         # jtag_loc.regs[JtagIR.DMI].capture,
         # jtag_loc.DATA_WRITE,

@@ -123,10 +123,10 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
 
                     # if op == DMIOp.WRITE:  # XXX NOT YET TESTED.
                     acc_reg = dmi_monitor.cur_COMMAND.control.ar
-                    regno = yield dmi_monitor.acc_reg.regno
-                    write = yield dmi_monitor.acc_reg.write
-                    transfer = yield dmi_monitor.acc_reg.transfer
-                    aarsize = yield dmi_monitor.acc_reg.aarsize
+                    regno = yield acc_reg.regno
+                    write = yield acc_reg.write
+                    transfer = yield acc_reg.transfer
+                    aarsize = yield acc_reg.aarsize
                     if transfer:
                         action = "REG write" if write else "REG read"
                         logging.critical("shit detected")

@@ -63,7 +63,7 @@ def grp_to_dmi_access_register_regno(reg: int) -> int:
 def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
     # Check 'busy' and 'cmderr' fields in 'abstractcs'.
     for i in range(timeout):
-        busy = yield dmi_monitor.cur_ABSTRACTCS.busy
+        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
         if busy:
             break
         yield
@@ -71,8 +71,8 @@ def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
         raise ValueError(f"abstractcs.busy wasn't asserted during {timeout} cycles!")
     
     for i in range(i, timeout):
-        busy = yield dmi_monitor.cur_ABSTRACTCS.busy
-        cmderr = yield dmi_monitor.cur_ABSTRACTCS.cmderr
+        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
+        cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
 
         if cmderr:
             raise ValueError(f"abstractcs.cmderr detected high, while expecting it to be low!")
@@ -116,8 +116,10 @@ def test_dmi(
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
         yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
         
-        # Note that we assume it goes down after a single cycle.
+        # Note that we assume 'update' bit to go down after a single cycle.
         # The relevant logic is inside Debug Module.
+
+        # Start the transaction.
         yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
@@ -128,18 +130,20 @@ def test_dmi(
             raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
 
         # Make the Debug Module write DATA0 content to some CPU GPR.
-        dmi_x1_regno = grp_to_dmi_access_register_regno(1)
         yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
         yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
-        yield dmi_monitor.cur_AR.regno.eq(dmi_x1_regno)
-        yield dmi_monitor.cur_AR.write.eq(1)
-        yield dmi_monitor.cur_AR.transfer.eq(1)
-        yield dmi_monitor.cur_AR.aarsize.eq(AccessRegisterLayout.AARSIZE.BIT32)
+        
+        acc_reg = dmi_monitor.cur_COMMAND.control.ar
+        yield acc_reg.regno.eq(grp_to_dmi_access_register_regno(1))
+        yield acc_reg.write.eq(1)
+        yield acc_reg.transfer.eq(1)
+        yield acc_reg.aarsize.eq(AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32)
+        
+        # Start the transaction.
+        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
-
-        # TODO - set DMI bits low when success found...
 
         # Read CPU GPR.
         gpr_value = yield cpu.regs._array[1]
@@ -152,11 +156,9 @@ def test_dmi(
     simulator.add_sync_process(process)
 
     vcd_traces = [
-        *dmi_monitor.cur_COMMAND_r.fields.values(),
+        # *dmi_monitor.cur_COMMAND_r.fields.values(),
         cpu.debug.jtag.BAR,
-        *dmi_monitor.cur_AR_r.fields.values(),
-        cpu.debug.jtag.BAR,
-        *dmi_monitor.cur_ABSTRACTCS_r.fields.values(),
+        *dmi_monitor.cur_ABSTRACTCS_latched_r.fields.values(),
         cpu.debug.jtag.BAR,
     ]
     

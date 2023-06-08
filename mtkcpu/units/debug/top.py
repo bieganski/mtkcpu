@@ -235,7 +235,7 @@ class HandlerCOMMAND(HandlerDMI):
 
             acc_reg : AbstractCommandControl.AccessRegisterLayout = write_value.control.ar
 
-            with m.If(acc_reg.control.aarsize != AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32):
+            with m.If(acc_reg.aarsize != AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
                 comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                 comb += self.controller.command_finished.eq(1)
