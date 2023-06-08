@@ -62,10 +62,7 @@ class ABSTRACTCS_Layout(data.Struct):
         HALT_OR_RESUME = 4 # The abstract command couldn’t execute because the hart wasn’t in the required state (running/halted), or unavailable.
         BUS_ERROR = 5
         OTHER = 7
-
-
-    # TODO
-    # all '_zeroX' were renamed to 'zeroX', but it can be reverted after 
+    # TODO all '_zeroX' were renamed to 'zeroX', but it can be reverted after 
     # https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
     # The reason is that otherwise it would complicate view->record mapping code.
     datacount : unsigned(4)
