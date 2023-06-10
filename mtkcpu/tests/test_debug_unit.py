@@ -105,30 +105,30 @@ def test_dmi(
         # Warmup.
         yield_few_ticks()
 
-        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
-        yield
-        yield
+        # yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
+        # yield
+        # yield
 
-        # Write pattern to DATA0, so that it becomes a payload for further register write.
-        pattern = 0xdeadbeef
+        # # Write pattern to DATA0, so that it becomes a payload for further register write.
+        # pattern = 0xdeadbeef
 
-        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
-        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
-        yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
+        # yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
+        # yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        # yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
         
-        # Start the transaction.
-        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
+        # # Start the transaction.
+        # yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
-        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+        # yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
-        # Note that we assume 'update' bit to go down after a single cycle.
-        # The relevant logic is inside Debug Module.
-        assert not (yield dmi_monitor.jtag_tap_dmi_bus.update)
+        # # Note that we assume 'update' bit to go down after a single cycle.
+        # # The relevant logic is inside Debug Module.
+        # assert not (yield dmi_monitor.jtag_tap_dmi_bus.update)
 
-        # Make sure that DATA0 does contain 'pattern'.
-        data0 = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
-        if data0 != pattern:
-            raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
+        # # Make sure that DATA0 does contain 'pattern'.
+        # data0 = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
+        # if data0 != pattern:
+        #     raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
 
         # Make the Debug Module write DATA0 content to some CPU GPR, using 'Access Register' abstract command.
         yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
@@ -141,24 +141,29 @@ def test_dmi(
         yield acc_reg.write.eq(1)
         yield acc_reg.transfer.eq(1)
         yield acc_reg.aarsize.eq(AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32)
+
+        for _ in range(5):
+            yield
         
         # Start the transaction.
         yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
         for i in range(20):
-            xd = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].xd
             addr = yield cpu.debug.jtag.regs[JtagIR.DMI].w.address
             data = yield cpu.debug.jtag.regs[JtagIR.DMI].w.data
             addr2 = yield dmi_monitor.cur_dmi_bus.address
             op = yield dmi_monitor.jtag_tap_dmi_bus.w.op
             update = yield dmi_monitor.jtag_tap_dmi_bus.update
-            fsm_state = yield cpu.debug.fsm.state
-            wtf = yield cpu.debug.wtf
-            print(f"data: {data}")
-            print(f"\t\t\t\top: {op}, update: {update}")
-            # print(hex(addr), hex(addr2), hex(xd), hex(fsm_state))
-            # print(hex(fsm_state), hex(wtf), hex(xd))
-            print("xd", hex(xd))
+            # fsm_state = yield cpu.debug.fsm.state
+            fsm_state = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].fsmxd.state
+            wtf = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].controller.command_finished
+            # wtf = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].fsmxd.state
+            # print(f"data: {data}")
+            # print(f"\t\t\t\top: {op}, update: {update}")
+            # print(hex(addr), hex(addr2), hex(fsm_state))
+            regno = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].acc_reg.regno
+            regno = yield acc_reg.regno
+            print(hex(fsm_state), hex(wtf), hex(regno))
             yield
 
         raise ValueError("DONE")

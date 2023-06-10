@@ -224,20 +224,23 @@ class HandlerDMCONTROL(HandlerDMI):
 class HandlerCOMMAND(HandlerDMI):
     def handle_write(self):
         m = self.debug_unit.m
-        sync = self.sync
-        comb = self.comb
-        # raise ValueError(self.write_value)
+        sync = m.d.sync
+        comb = m.d.comb
+        
         write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.write_value)
 
         access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
 
-        self.xd = Signal(32) # write_value.as_value() # Signal(32)
-        sync += self.xd.eq(~self.xd)  # .as_value()
+        with m.FSM() as self.fsmxd:
+            with m.State("X"):
+                m.next = "D"
+            with m.State("D"):
+                m.next = "X"
 
         with m.If(write_value.cmdtype == access_register):
 
-            acc_reg : AbstractCommandControl.AccessRegisterLayout = write_value.control.ar
-
+            acc_reg = self.acc_reg = write_value.control.ar
+            # : AbstractCommandControl.AccessRegisterLayout 
             with m.If(acc_reg.aarsize != AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
                 comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
@@ -249,34 +252,39 @@ class HandlerCOMMAND(HandlerDMI):
                     # decode register address, as it might be either CSR or GPR
                     with m.If(acc_reg.regno <= 0x0fff):
                         # CSR
-                        with m.If(acc_reg.write):
-                            self.controller.command_finished.eq(1)
-                            self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                        with m.Switch(acc_reg.regno):
-                            for addr, _ in self.debug_unit.csr_regs.items():
-                                with m.Case(addr):
-                                    if addr in self.debug_unit.const_csr_values:
-                                        with m.If(acc_reg.write):
-                                            self.controller.command_finished.eq(1)
-                                            self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                                        with m.Else():
-                                            cls = self.debug_unit.const_csr_values[addr]
-                                            layout = self.debug_unit.csr_regs[addr]
-                                            sync += dst.eq(cls(layout).to_value())
-                                    else:
-                                        with m.If(acc_reg.write):
-                                            self.debug_unit.nonconst_csr_values[addr].eq(write_value)
-                                        with m.Else():
-                                            sync += dst.eq(self.debug_unit.nonconst_csr_values[addr])                                    
-                                    
-                            with m.Case(DMI_CSR.DPC):
-                                sync += dst.eq(self.debug_unit.cpu.pc)
+                        pass
                         comb += self.controller.command_finished.eq(1)
+                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                        # TODO - actualy we don't have to support it...
+                        # with m.If(acc_reg.write):
+                        #     self.controller.command_finished.eq(1)
+                        #     self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+                        # with m.Switch(acc_reg.regno):
+                        #     for addr, _ in self.debug_unit.csr_regs.items():
+                        #         with m.Case(addr):
+                        #             if addr in self.debug_unit.const_csr_values:
+                        #                 with m.If(acc_reg.write):
+                        #                     self.controller.command_finished.eq(1)
+                        #                     self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+                        #                 with m.Else():
+                        #                     cls = self.debug_unit.const_csr_values[addr]
+                        #                     layout = self.debug_unit.csr_regs[addr]
+                        #                     sync += dst.eq(cls(layout).to_value())
+                        #             else:
+                        #                 with m.If(acc_reg.write):
+                        #                     self.debug_unit.nonconst_csr_values[addr].eq(write_value)
+                        #                 with m.Else():
+                        #                     sync += dst.eq(self.debug_unit.nonconst_csr_values[addr])                                    
+                                    
+                        #     with m.Case(DMI_CSR.DPC):
+                        #         sync += dst.eq(self.debug_unit.cpu.pc)
+                        # comb += self.controller.command_finished.eq(1)
                     with m.Elif(acc_reg.regno <= 0x101f):
                         # GPR
-                        with m.FSM() as self.fsm:
+                        with m.FSM(): #  as self.fsmxd:
                             with m.State("A"):
-                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF),
+                                # comb += self.controller.command_finished.eq(1)
+                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
                                 comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
                                 comb += self.debug_unit.cpu.gprf_debug_data.eq(write_value)
                                 m.next = "B"
@@ -295,6 +303,17 @@ class HandlerCOMMAND(HandlerDMI):
                     with m.Else():
                         self.controller.command_finished.eq(1)
                         self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+                with m.Else():
+                    with m.If(~acc_reg.postexec):
+                        # no transfer and no postexect bits - not sure what should I do?
+                        comb += self.controller.command_finished.eq(1)
+                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                    with m.Else():
+                        # TODO execute Program Buffer
+                        # not yet supported.
+                        # TODO - make `dmi_watchdog` cathc CMDERR.OTHER, as its equaivalent of NotImplementedError
+                        comb += self.controller.command_finished.eq(1)
+                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
 
 
 class HandlerPROGBUF(HandlerDMI):
