@@ -52,9 +52,8 @@ class JTAGTap(Elaboratable):
         self.ir = Signal(JtagIR)
         assert self.ir.width == 5 # Spike
 
-        # Only to delegate signal width calculation.
+        # Use 'UnionLayout' only to delegate signal width calculation.
         _dr_layout = data.UnionLayout({str(k): v for k, v in ir_regs.items()})
-        
         self.dr = Signal(_dr_layout.size)
 
 
@@ -89,20 +88,22 @@ class JTAGTap(Elaboratable):
             falling_tck.eq(prev_tck & (~tck)),
         ]
 
-
         self.tck_ctr = Signal(32)
 
         with m.If(rising_tck):
             sync += self.tck_ctr.eq(self.tck_ctr + 1)
 
-        self.DATA_WRITE = Signal(IR_DMI_Layout)
-        self.DATA_READ = Signal.like(self.DATA_WRITE)
-        self.DMI_WRITE = Signal(32)
+        sync += self.jtag_fsm_update_dr.eq(0)
 
-        # TODO
+        # Make 'update' bit high only for a single cycle.
+        # TODO - move it to combinatorial domain.
+        # TODO - without embracing ifs statements it produces undefined behavior in simulation,
+        # when driven also from process.
         for ir, record in self.regs.items():
-            sync += record.update.eq(0)
-            sync += record.capture.eq(0)
+            with m.If(record.update):
+                sync += record.update.eq(0)
+            with m.If(record.capture):
+                sync += record.capture.eq(0)
 
         with m.FSM() as jtag_fsm:
             with m.State("TEST-LOGIC-RESET"):
@@ -126,7 +127,6 @@ class JTAGTap(Elaboratable):
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
-                            sync += self.DATA_READ.eq(record.r)
                             sync += self.dr.eq(record.r)
                             sync += record.capture.eq(rising_tck)
                 with m.If(rising_tck):
@@ -168,15 +168,13 @@ class JTAGTap(Elaboratable):
                         m.next = "SHIFT-DR"
 
             with m.State("UPDATE-DR"):
-                comb += self.jtag_fsm_update_dr.eq(1)
                 with m.Switch(self.ir):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
-                            sync += self.DATA_WRITE.eq(self.dr)
-                            with m.If(ir == JtagIR.DMI):
-                                sync += self.DMI_WRITE.eq(self.dr[2:34])
                             sync += record.w.eq(self.dr)
-                            sync += record.update.eq(falling_tck)
+                            with m.If(falling_tck):
+                                sync += record.update.eq(1)
+                                sync += self.jtag_fsm_update_dr.eq(1)
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "SELECT-DR-SCAN"

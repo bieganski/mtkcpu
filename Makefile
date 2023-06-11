@@ -29,5 +29,5 @@ test-docker:
 	docker run docker.io/library/mtkcpu:1.0.0 tests cpu
 
 test:
-	poetry run pytest -n 4
+	poetry run pytest -n 12
 

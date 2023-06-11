@@ -1,5 +1,4 @@
 from typing import Dict
-import logging
 
 from amaranth import Signal, Module
 from amaranth.hdl.rec import Record
@@ -23,10 +22,7 @@ class RegisterResetValue:
         for name, sig in rec.fields.items():
             if isinstance(sig, Signal):
                 reset_val = fields.get(name, None)
-                if reset_val is None:
-                    logging.debug(f"set_reset: could not find signal with name '{name}' among {fields.keys()}. Default value (0) will be used")
-                else:
-                    logging.debug(f"setting reset val {hex(reset_val)} to signal {name}")
+                if reset_val is not None:
                     sig.reset = reset_val
             elif isinstance(sig, Record):
                 assert False

@@ -40,7 +40,7 @@ class DMCONTROL_Layout(data.Struct):
     ackhavereset : unsigned(1)
     hartreset : unsigned(1)
     resumereq : unsigned(1)
-    haltreq : unsigned( 1)
+    haltreq : unsigned(1)
 
 class HARTINFO_Layout(data.Struct):
     dataaddr : unsigned(12)
@@ -62,30 +62,45 @@ class ABSTRACTCS_Layout(data.Struct):
         HALT_OR_RESUME = 4 # The abstract command couldn’t execute because the hart wasn’t in the required state (running/halted), or unavailable.
         BUS_ERROR = 5
         OTHER = 7
-
-
+    # TODO all '_zeroX' were renamed to 'zeroX', but it can be reverted after 
+    # https://github.com/amaranth-lang/amaranth/issues/790 is resolved.
+    # The reason is that otherwise it would complicate view->record mapping code.
     datacount : unsigned(4)
-    _zero1 : unsigned(4)
+    zero1 : unsigned(4)
     cmderr : CMDERR
-    _zero2 : unsigned(1)
+    zero2 : unsigned(1)
     busy : unsigned(1)
-    _zero3 : unsigned(11)
+    zero3 : unsigned(11)
     progbufsize : unsigned(5)
-    _zero4 : unsigned(3)
+    zero4 : unsigned(3)
 
+
+class AbstractCommandControl(data.Union):
+    class AccessRegisterLayout(data.Struct):
+        class AARSIZE(enum.IntEnum, shape=unsigned(3)):
+            NOT_SET = 0
+            BIT32   = 2
+            BIT64   = 3
+            BIT128  = 4
+        regno : unsigned(16)
+        write : unsigned(1)
+        transfer : unsigned(1)
+        postexec : unsigned(1)
+        zero1_ : unsigned(1)
+        aarsize : AARSIZE
+        zero2_ : unsigned(1)
+    
+    # For now we only implement 'Access Register' (ar) Abstract Command.
+    # If 'Access Memory' or 'Quick Access' are implemented, append it to the list below.
+    ar : AccessRegisterLayout
 
 class COMMAND_Layout(data.Struct):
     class AbstractCommandCmdtype(enum.IntEnum, shape=unsigned(8)):
         AccessRegister = 0x0  # the only one required by specs to be (at least partially) implemented.
         Not_Implemented_QuickAccess = 0x1
         Not_Implemented_AccessMemory = 0x2
-    control : unsigned(24)
+    control : AbstractCommandControl
     cmdtype : AbstractCommandCmdtype
-
-class ABSTRACTAUTO_Layout(data.Struct):
-    autoexecdata : unsigned(12)
-    _zero : unsigned(4)
-    autoexecprogbuf : unsigned(16)
 
 
 def flat_layout_factory(size: int):
@@ -94,23 +109,8 @@ def flat_layout_factory(size: int):
     })
 
 
-class AccessRegisterLayout(data.Struct):
-    class AARSIZE(enum.IntEnum, shape=unsigned(3)):
-        NOT_SET = 0
-        BIT32   = 2
-        BIT64   = 3
-        BIT128  = 4
-    regno : unsigned(16)
-    write : unsigned(1)
-    transfer : unsigned(1)
-    postexec : unsigned(1)
-    zero1_ : unsigned(1)
-    aarsize : AARSIZE
-    zero2_ : unsigned(1)
-
-
 DMI_COMMAND_reg_kinds = {
-    COMMAND_Layout.AbstractCommandCmdtype.AccessRegister: AccessRegisterLayout,
+    COMMAND_Layout.AbstractCommandCmdtype.AccessRegister: AbstractCommandControl.AccessRegisterLayout,
     # TODO - for now there are only implemented ones.
 }
 
@@ -119,8 +119,11 @@ class DMIOp(enum.IntEnum, shape=unsigned(2)):
     READ    = 1
     WRITE   = 2
 
-# Spike's irlen == 5
-class JtagIR(IntEnum):
+
+# 6.1.2: JTAG TAPs used as a DTM must have an IR of at least 5 bits.
+JTAG_IR_WIDTH = 5
+
+class JtagIR(enum.IntEnum, shape=unsigned(JTAG_IR_WIDTH)):
     BYPASS      = 0x00
     IDCODE      = 0x01
     DTMCS       = 0x10
@@ -151,18 +154,18 @@ class IR_DTMCS_Layout(data.Struct):
     _zero1 : unsigned(1)
 
 class DMIReg(enum.IntEnum, shape=unsigned(JtagIRValue.DM_ABITS)):
-    UNDEFINED = 0x0
-    DMSTATUS = 0x11
-    DMCONTROL = 0x10
-    HARTINFO = 0x12
-    ABSTRACTCS = 0x16
-    COMMAND = 0x17
-    SBCS = 0x38
-    DATA0 = 0x4
-    DATA1 = 0x5
-    PROGBUF0 = 0x20
-    PROGBUF1 = 0x21
-    PROGBUF2 = 0x22
+    _UNDEFINED    = 0x0
+    DMSTATUS     = 0x11
+    DMCONTROL    = 0x10
+    HARTINFO     = 0x12
+    ABSTRACTCS   = 0x16
+    COMMAND      = 0x17
+    SBCS         = 0x38
+    DATA0        = 0x4
+    DATA1        = 0x5
+    PROGBUF0     = 0x20
+    PROGBUF1     = 0x21
+    PROGBUF2     = 0x22
     ABSTRACTAUTO = 0x18
 
 
@@ -176,13 +179,13 @@ JTAG_IR_regs = {
     JtagIR.DTMCS: IR_DTMCS_Layout,
     JtagIR.DMI: IR_DMI_Layout,
 }
+
 DMI_reg_kinds = {
     DMIReg.DMSTATUS: DMSTATUS_Layout,
     DMIReg.DMCONTROL: DMCONTROL_Layout,
     DMIReg.HARTINFO: HARTINFO_Layout,
     DMIReg.ABSTRACTCS: ABSTRACTCS_Layout,
     DMIReg.COMMAND: COMMAND_Layout,
-    DMIReg.ABSTRACTAUTO: ABSTRACTAUTO_Layout,
 
     DMIReg.DATA0: flat_layout_factory(32),
     DMIReg.DATA1: flat_layout_factory(32),
