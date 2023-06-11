@@ -102,11 +102,6 @@ class COMMAND_Layout(data.Struct):
     control : AbstractCommandControl
     cmdtype : AbstractCommandCmdtype
 
-class ABSTRACTAUTO_Layout(data.Struct):
-    autoexecdata : unsigned(12)
-    _zero : unsigned(4)
-    autoexecprogbuf : unsigned(16)
-
 
 def flat_layout_factory(size: int):
     return data.StructLayout({
@@ -191,7 +186,6 @@ DMI_reg_kinds = {
     DMIReg.HARTINFO: HARTINFO_Layout,
     DMIReg.ABSTRACTCS: ABSTRACTCS_Layout,
     DMIReg.COMMAND: COMMAND_Layout,
-    DMIReg.ABSTRACTAUTO: ABSTRACTAUTO_Layout,
 
     DMIReg.DATA0: flat_layout_factory(32),
     DMIReg.DATA1: flat_layout_factory(32),
