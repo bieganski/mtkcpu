@@ -136,3 +136,30 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                     
             yield
     return aux
+
+def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
+    """
+    Check 'busy' and 'cmderr' fields in 'abstractcs'.
+    Raises if 'cmderr' is nonzero, or if 'busy' is never high/is high for too long.
+    """
+    for i in range(timeout):
+        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
+        if busy:
+            break
+        yield
+    else:
+        raise ValueError(f"abstractcs.busy wasn't asserted during {timeout} cycles!")
+    
+    for i in range(i, timeout):
+        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
+        cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
+
+        if cmderr:
+            raise ValueError(f"abstractcs.cmderr detected high, while expecting it to be low!")
+
+        if not busy:
+            logging.info(f"DMI OP finished in {i} ticks.")
+            break
+        yield   
+    else:
+        raise ValueError("abstractcs.busy high for too long!")

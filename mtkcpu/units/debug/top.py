@@ -129,7 +129,6 @@ class HandlerDMI():
         self.reg_dmcontrol      = self.dmi_regs[DMIReg.DMCONTROL]
         self.reg_dmstatus       = self.dmi_regs[DMIReg.DMSTATUS]
         self.reg_command        = self.dmi_regs[DMIReg.COMMAND]
-        self.reg_abstractauto   = self.dmi_regs[DMIReg.ABSTRACTAUTO]
         self.reg_data0          = self.dmi_regs[DMIReg.DATA0]
 
         assert write_value.shape() == unsigned(32)
@@ -165,25 +164,13 @@ class HandlerDATA(HandlerDMI):
 
         with m.If(self.debug_unit.autoexecdata & (1 << num)):
             # trigger COMMAND handler manually and let it mark command handle finished.
-            self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
+            comb += [
+                self.controller.command_finished.eq(1),
+                self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER),
+            ]
+            # self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
         with m.Else():
             self.default_handle_write()
-
-class HandlerABSTRACTAUTO(HandlerDMI):
-    def handle_write(self):
-        return # TODO
-        m = self.debug_unit.m
-        write_value : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, Signal(32)) # XXX
-
-        # TODO FSM here is probably an overkill?
-        with m.FSM():
-            with m.State("A"):
-                self.sync += self.debug_unit.autoexecdata.eq(write_value.autoexecdata)
-                m.next = "B"
-            with m.State("B"):
-                m.next = "A"
-                self.comb += self.controller.command_finished.eq(1)
-
 
 class HandlerDMCONTROL(HandlerDMI):
 
@@ -231,12 +218,6 @@ class HandlerCOMMAND(HandlerDMI):
 
         access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
 
-        with m.FSM() as self.fsmxd:
-            with m.State("X"):
-                m.next = "D"
-            with m.State("D"):
-                m.next = "X"
-
         with m.If(write_value.cmdtype == access_register):
 
             acc_reg = self.acc_reg = write_value.control.ar
@@ -255,7 +236,9 @@ class HandlerCOMMAND(HandlerDMI):
                         pass
                         comb += self.controller.command_finished.eq(1)
                         self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
-                        # TODO - actualy we don't have to support it...
+                        # TODO - I implemented it at some point, but due to the specs it doesn't 
+                        # have to be implemented - since we support arbitrary instruction execution via
+                        # program buffer, the debugger implementation can read CSRs via csrr instruction.
                         # with m.If(acc_reg.write):
                         #     self.controller.command_finished.eq(1)
                         #     self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
@@ -281,15 +264,18 @@ class HandlerCOMMAND(HandlerDMI):
                         # comb += self.controller.command_finished.eq(1)
                     with m.Elif(acc_reg.regno <= 0x101f):
                         # GPR
-                        with m.FSM(): #  as self.fsmxd:
+                        with m.FSM():
                             with m.State("A"):
-                                # comb += self.controller.command_finished.eq(1)
+                                arg0 = self.reg_data0
                                 comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
                                 comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
-                                comb += self.debug_unit.cpu.gprf_debug_data.eq(write_value)
+                                comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
                                 m.next = "B"
                             with m.State("B"):
-                                with m.If(~acc_reg.write):
+                                with m.If(~acc_reg.write.bool()):
+                                    # TODO
+                                    # TODO!!!!
+                                    # TODO self.reg_data0 r/w conflict.
                                     sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
                                 m.next = "C"
                             with m.State("C"):
@@ -297,6 +283,8 @@ class HandlerCOMMAND(HandlerDMI):
                                     comb += self.controller.command_finished.eq(1)
                                     m.next = "A"
                                 with m.Else():
+                                    comb += self.controller.command_finished.eq(1)
+                                    comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
                                     # execute Program Buffer
                                     # sync += self.debug_unit.cpu.pc.eq(PROGBUF_MMIO_ADDR)
                                     pass
@@ -362,7 +350,6 @@ handlers : dict[int, Type[HandlerDMI]]= {
     DMIReg.PROGBUF2: HandlerPROGBUF,
     DMIReg.DATA0: HandlerDATA,
     DMIReg.DATA1: HandlerDATA,
-    DMIReg.ABSTRACTAUTO: HandlerABSTRACTAUTO,
 }
 
 # Jtag FSM described here:
@@ -485,13 +472,14 @@ class DebugUnit(Elaboratable):
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)
                 with m.Switch(jtag_tap_dmi_bus.w.address):
-                    self.wtf = Signal(20)
-                    comb += self.wtf.eq(jtag_tap_dmi_bus.w.address)
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
                             h.handle_write()
                     with m.Default():
-                        comb += self.wtf.eq(0x123)
+                        comb += [
+                            self.controller.command_finished.eq(1),
+                            self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED),
+                        ]
                 with m.If(self.controller.command_finished):
                     m.next = "IDLE"
                     sync += abstractcs.busy.eq(0)
