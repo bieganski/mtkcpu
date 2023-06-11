@@ -106,7 +106,7 @@ def read_elf(elf_path, verbose=False):
 
 # TODO pass additional param
 def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
-    COMPILER = "riscv-none-embed-gcc"
+    COMPILER = "riscv-none-elf-gcc"
     assert which(COMPILER)
     
     with NamedTemporaryFile(suffix=".S", delete=False, mode="w+") as asm_file:
