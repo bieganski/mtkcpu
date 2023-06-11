@@ -158,8 +158,44 @@ def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
             raise ValueError(f"abstractcs.cmderr detected high, while expecting it to be low!")
 
         if not busy:
-            logging.info(f"DMI OP finished in {i} ticks.")
+            logging.debug(f"DMI OP finished in {i} ticks.")
             break
         yield   
     else:
         raise ValueError("abstractcs.busy high for too long!")
+
+
+def dmi_bus_reset(dmi_monitor: DMI_Monitor):
+    yield dmi_monitor.cur_dmi_bus.as_value().eq(0)
+
+def dmi_bus_trigger_transaction(dmi_monitor: DMI_Monitor):
+    yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
+
+def grp_to_dmi_access_register_regno(reg: int) -> int:
+    assert reg in range(32)
+    return 0x1000 + reg
+
+def dmi_write_access_register_command(
+        dmi_monitor: DMI_Monitor,
+        write: bool,
+        regno: int,
+        ):
+    yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
+    yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+    yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
+
+    regno = grp_to_dmi_access_register_regno(regno)
+    acc_reg = dmi_monitor.cur_COMMAND.control.ar
+
+    yield acc_reg.regno.eq(regno)
+    yield acc_reg.write.eq(int(write))
+    yield acc_reg.transfer.eq(1)
+    yield acc_reg.aarsize.eq(AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32)
+
+def dmi_write_data0(
+        dmi_monitor: DMI_Monitor,
+        value: int
+        ):
+    yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
+    yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+    yield dmi_monitor.cur_dmi_bus.data.eq(value)

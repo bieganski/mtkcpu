@@ -264,28 +264,27 @@ class HandlerCOMMAND(HandlerDMI):
                         # comb += self.controller.command_finished.eq(1)
                     with m.Elif(acc_reg.regno <= 0x101f):
                         # GPR
-                        with m.FSM():
+                        with m.FSM() as self.fsmxd:
                             with m.State("A"):
                                 arg0 = self.reg_data0
                                 comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
                                 comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
-                                comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
+                                with m.If(acc_reg.write):
+                                    comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
                                 m.next = "B"
                             with m.State("B"):
-                                with m.If(~acc_reg.write.bool()):
-                                    # TODO
-                                    # TODO!!!!
-                                    # TODO self.reg_data0 r/w conflict.
+                                with m.If(~acc_reg.write):
                                     sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
                                 m.next = "C"
                             with m.State("C"):
+                                m.next = "A"
                                 with m.If(~acc_reg.postexec):
                                     comb += self.controller.command_finished.eq(1)
-                                    m.next = "A"
                                 with m.Else():
                                     comb += self.controller.command_finished.eq(1)
                                     comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
                                     # execute Program Buffer
+                                    # TODO not supported yet.
                                     # sync += self.debug_unit.cpu.pc.eq(PROGBUF_MMIO_ADDR)
                                     pass
                     with m.Else():

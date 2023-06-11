@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from amaranth.sim import Simulator
 
 from mtkcpu.cpu.cpu import MtkCpu, EBRMemConfig
-from mtkcpu.utils.tests.dmi_utils import DMI_Monitor, dmi_op_wait_for_success
+from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.units.debug.types import *
 from mtkcpu.utils.misc import get_color_logging_object
 
@@ -57,13 +57,9 @@ def dmi_simulator(f):
     return aux
 
 
-def yield_few_ticks():
-    for _ in range(10):
+def few_ticks(n=10):
+    for _ in range(n):
         yield
-
-def grp_to_dmi_access_register_regno(reg: int) -> int:
-    assert reg in range(32)
-    return 0x1000 + reg
 
 @dmi_simulator
 def test_dmi(
@@ -76,33 +72,38 @@ def test_dmi(
     simulator = context.simulator
     cpu = context.cpu
     dmi_monitor = context.dmi_monitor
+
+    def cmderr_monitor():
+        yield Passive()
+        while True:
+            cmderr = yield cpu.debug.controller.command_err
+            if cmderr == ABSTRACTCS_Layout.CMDERR.OTHER:
+                raise ValueError("XXX")
+            if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
+                logging.warn(f"cmderr == {cmderr}")
+            yield
     
-    def process():
+    def main_process():
         """
         Write some value to x1, wait, and read x1. Expect to read exactly initial value.
         """
-        # Warmup.
-        yield_few_ticks()
-
+        # Warmup, initial setup.
+        yield from few_ticks()
         yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
         yield cpu.debug.HALT.eq(1)
-        
-        yield_few_ticks()
+        yield from few_ticks()
 
         # Write pattern to DATA0, so that it becomes a payload for further register write.
-        pattern = 0xdeadbeef
-
-        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
-        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
-        yield dmi_monitor.cur_dmi_bus.data.eq(pattern)
+        # As a result, 'pattern' will be written to 'x1' GPR.
+        pattern, regno = 0xdeadbeef, 1
         
-        # Start the transaction.
-        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
-
+        logging.info(f"DMI: Writing {hex(pattern)} to DATA0..")
+        yield from dmi_write_data0(dmi_monitor=dmi_monitor, value=pattern)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
         # Note that we assume 'update' bit to go down after a single cycle.
-        # The relevant logic is inside Debug Module.
+        # The relevant logic is expected to be inside Debug Module.
         assert not (yield dmi_monitor.jtag_tap_dmi_bus.update)
 
         # Make sure that DATA0 does contain 'pattern'.
@@ -111,40 +112,54 @@ def test_dmi(
             raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
         
         # Reset the bus value.
-        yield dmi_monitor.cur_dmi_bus.as_value().eq(0)
+        yield from dmi_bus_reset(dmi_monitor=dmi_monitor)
 
         # Make the Debug Module write DATA0 content to some CPU GPR, using 'Access Register' abstract command.
-        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
-        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
-        yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
-        
-        # Fill the 'Access Register'-specific params.
-        acc_reg = dmi_monitor.cur_COMMAND.control.ar
-        yield acc_reg.regno.eq(grp_to_dmi_access_register_regno(1))
-        yield acc_reg.write.eq(1)
-        yield acc_reg.transfer.eq(1)
-        yield acc_reg.aarsize.eq(AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32)
-
-        for _ in range(5):
-            yield
-        
-        # Start the transaction.
-        yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
-
+        logging.info(f"DMI: Writing DATA0 to x{regno}..")
+        yield from dmi_write_access_register_command(dmi_monitor=dmi_monitor, write=True, regno=regno)
+        yield from few_ticks(5)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
-
-        yield_few_ticks()
+        yield from few_ticks()
 
         # Read GPR directly from CPU.
         # TODO - in future CPU should be abstract away, like "DMI_Monitor" abstracts away DM implementation.
         gpr_value = yield cpu.regs._array[1]
-        
         if gpr_value != pattern:
             raise ValueError(f"GRP read: expected {hex(pattern)}, got {hex(gpr_value)}!")
         
-        logging.info("GPR register write verified!")
+        logging.info(f"{hex(pattern)} found in x{regno}!")
+        logging.info("Trying to read it via DMI as well..")
 
-    simulator.add_sync_process(process)
+        # Make sure that the 'pattern' that we will try to read in a moment
+        # is not a remnant after previous op.
+        antipattern = pattern // 2
+        logging.info(f"DMI: Clobbering DATA0 with {hex(antipattern)}..")
+        yield from dmi_bus_reset(dmi_monitor=dmi_monitor)
+        yield from dmi_write_data0(dmi_monitor=dmi_monitor, value=antipattern)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+        data0 = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
+        if data0 != antipattern:
+            raise ValueError(f"DATA0 Clobbering failed: Written {antipattern}, detected {data0} instead!")
+
+        # Now when we clobbered DATA0, read 'x1' to DATA0 and compare with 'pattern'.
+        logging.info(f"DMI: Reading x{regno} to DATA0..")
+        yield from dmi_bus_reset(dmi_monitor=dmi_monitor)
+        yield from dmi_write_access_register_command(dmi_monitor=dmi_monitor, write=False, regno=regno)
+        yield from few_ticks(5)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        data0 = yield cpu.debug.dmi_regs[DMIReg.DATA0].as_value()
+        if data0 != pattern:
+            raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
+
+        logging.info(f"Value read via DMI from DATA0 matches x{regno} content!")
+
+    for p in [main_process, cmderr_monitor]:
+        simulator.add_sync_process(p)
 
     vcd_traces = [
         # *dmi_monitor.cur_COMMAND_r.fields.values(),

@@ -183,7 +183,7 @@ class MtkCpu(Elaboratable):
 
         # Register file. Contains two read ports (for rs1, rs2) and one write port.
         regs = self.regs
-        reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
+        reg_read_port1 = self.reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
         reg_read_port2 = m.submodules.reg_read_port2 = regs.read_port()
         reg_write_port = (
             self.reg_write_port
@@ -195,22 +195,18 @@ class MtkCpu(Elaboratable):
         comb += csr_unit.mtime.eq(mtime)
 
         self.halt = Signal()
-        with m.If(csr_unit.mstatus.mie & csr_unit.mie.mtie):
-            with m.If(mtime == csr_unit.mtimecmp):
-                # 'halt' signal needs to be cleared when CPU jumps to trap handler.
-                sync += [
-                    self.halt.eq(1),
-                ]
-
+        # with m.If(csr_unit.mstatus.mie & csr_unit.mie.mtie):
+        #     with m.If(mtime == csr_unit.mtimecmp):
+        #         # 'halt' signal needs to be cleared when CPU jumps to trap handler.
+        #         sync += [
+        #             self.halt.eq(1),
+        #         ]
 
         comb += [
             exception_unit.m_instruction.eq(instr),
             exception_unit.m_pc.eq(pc),
-            # TODO more
         ]
 
-
-        # CPU is never halted if Debug Unit doesn't exist.
         if self.with_debug:
             sync += self.halt.eq(self.debug.HALT)
 
@@ -235,7 +231,6 @@ class MtkCpu(Elaboratable):
                 
                 reg_write_port.addr.eq(rd),
                 reg_write_port.data.eq(rdval),
-                # reg_write_port.en set later
 
                 rs1val.eq(reg_read_port1.data),
                 rs2val.eq(reg_read_port2.data),
@@ -348,8 +343,13 @@ class MtkCpu(Elaboratable):
         with m.FSM():
             with m.State("FETCH"):
                 with m.If(self.halt):
-                    sync += self.halt.eq(0)
-                    trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
+                    """
+                    TODO
+                    Timer interrupts are disbled for now, as whole CPU halting mechainsm
+                    needs rethinking.
+                    """
+                    # sync += self.halt.eq(0)
+                    # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                 with m.Else():
                     with m.If(pc & 0b11):
                         trap(TrapCause.FETCH_MISALIGNED)
