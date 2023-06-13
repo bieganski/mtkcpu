@@ -88,16 +88,16 @@ class DMI_Monitor(Elaboratable):
             
         return m
 
-
 def monitor_cmderr(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
 
         while True:
             cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
+            if cmderr == ABSTRACTCS_Layout.CMDERR.OTHER:
+                raise ValueError("cmderror OTHER detected! Probably not implemented scenario happened")
             if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
-                cmderr = ABSTRACTCS_Layout.CMDERR(cmderr)
-                raise ValueError(cmderr)
+                logging.warn(f"cmderr == {cmderr}")
             yield
     return aux
 
