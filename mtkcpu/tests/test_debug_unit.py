@@ -62,7 +62,7 @@ def few_ticks(n=10):
         yield
 
 @dmi_simulator
-def test_dmi(
+def test_dmi_abstract_command_read_write_gpr(
     simulator: Simulator,
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
@@ -72,16 +72,6 @@ def test_dmi(
     simulator = context.simulator
     cpu = context.cpu
     dmi_monitor = context.dmi_monitor
-
-    def cmderr_monitor():
-        yield Passive()
-        while True:
-            cmderr = yield cpu.debug.controller.command_err
-            if cmderr == ABSTRACTCS_Layout.CMDERR.OTHER:
-                raise ValueError("XXX")
-            if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
-                logging.warn(f"cmderr == {cmderr}")
-            yield
     
     def main_process():
         """
@@ -158,7 +148,7 @@ def test_dmi(
 
         logging.info(f"Value read via DMI from DATA0 matches x{regno} content!")
 
-    for p in [main_process, cmderr_monitor]:
+    for p in [main_process, monitor_cmderr(dmi_monitor)]:
         simulator.add_sync_process(p)
 
     vcd_traces = [
@@ -175,4 +165,4 @@ def test_dmi(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_dmi()
+    test_dmi_abstract_command_read_write_gpr()
