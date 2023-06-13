@@ -162,7 +162,63 @@ def test_dmi_abstract_command_read_write_gpr(
         simulator.run()
 
 
+@dmi_simulator
+def test_dmi_try_read_not_implemented_register(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    context = create_simulator()
+
+    simulator = context.simulator
+    cpu = context.cpu
+    dmi_monitor = context.dmi_monitor
+
+
+    def main_process():
+        """
+        RV Debug Specs 1.0-STABLE
+        3.15 Debug Module Registers
+
+        When read, unimplemented or non-existent Debug Module DMI Registers return 0.
+        Writing them has no effect.
+        """
+
+        # Warmup, initial setup.
+        yield from few_ticks()
+        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
+        yield cpu.debug.HALT.eq(1)
+        yield from few_ticks()
+
+        from mtkcpu.units.debug.top import handlers as implemented_dmi_regs
+        not_implemented_dmi_regs = [x for x in range(1 << JtagIRValue.DM_ABITS) if x not in implemented_dmi_regs]
+        assert not_implemented_dmi_regs
+
+
+        for dmi_reg in not_implemented_dmi_regs:
+            logging.debug(f"Writing dummy value to non-existing DMI register at address {hex(dmi_reg)}")
+            yield dmi_monitor.cur_dmi_bus.address.eq(dmi_reg)
+            yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+            yield dmi_monitor.cur_dmi_bus.data.eq(0xdeadbeef)
+            dmi_op_wait_for_success(dmi_monitor)
+
+        for dmi_reg in not_implemented_dmi_regs:
+            logging.debug(f"Reading value from non-existing DMI register at address {hex(dmi_reg)}")
+            yield dmi_monitor.cur_dmi_bus.address.eq(dmi_reg)
+            yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+            dmi_op_wait_for_success(dmi_monitor)
+            data = yield dmi_monitor.cur_dmi_bus.data
+            assert data == 0x0
+
+
+    for p in [main_process, monitor_cmderr(dmi_monitor)]:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+    
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
+    test_dmi_try_read_not_implemented_register()
     test_dmi_abstract_command_read_write_gpr()
