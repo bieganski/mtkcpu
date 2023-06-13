@@ -200,12 +200,16 @@ def test_dmi_try_read_not_implemented_register(
             yield dmi_monitor.cur_dmi_bus.address.eq(dmi_reg)
             yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
             yield dmi_monitor.cur_dmi_bus.data.eq(0xdeadbeef)
+            yield from few_ticks(5)
+            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
             dmi_op_wait_for_success(dmi_monitor)
 
         for dmi_reg in not_implemented_dmi_regs:
             logging.debug(f"Reading value from non-existing DMI register at address {hex(dmi_reg)}")
             yield dmi_monitor.cur_dmi_bus.address.eq(dmi_reg)
             yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+            yield from few_ticks(5)
+            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
             dmi_op_wait_for_success(dmi_monitor)
             data = yield dmi_monitor.cur_dmi_bus.data
             assert data == 0x0
@@ -215,10 +219,98 @@ def test_dmi_try_read_not_implemented_register(
         simulator.add_sync_process(p)
         
     simulator.run()
-    
+
+
+
+
+@dmi_simulator
+def test_core_halt_resume(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    context = create_simulator()
+
+    simulator = context.simulator
+    cpu = context.cpu
+    dmi_monitor = context.dmi_monitor
+
+    def cpu_core_is_halted():
+        return (yield cpu.halt)
+
+    def main_process():
+        """
+        RV Debug specs 1.0-STABLE
+
+        3.5 Run Control
+
+        When a debugger writes 1 to haltreq, each selected hart's halt request bit is set. 
+        When a running hart, or a hart just coming out of reset, sees its halt request bit high, 
+        it responds by halting, deasserting its running signal, and asserting its halted signal. 
+        Halted harts ignore their halt request bit.
+
+        When a debugger writes 1 to resumereq, each selected hart's resume ack bit is cleared 
+        and each selected, halted hart is sent a resume request. Harts respond by resuming, 
+        clearing their halted signal, and asserting their running signal. At the end of this process
+        the resume ack bit is set. These status signals of all selected harts are reflected in 
+        allresumeack, anyresumeack, allrunning, and anyrunning. Resume requests are ignored by running harts.
+        """
+        from amaranth.sim import Settle
+        yield Settle()
+
+        halted = yield from cpu_core_is_halted()
+
+        if halted:
+            raise ValueError("Core halted from the very beginning!")
+
+        # Warmup, initial setup.
+        yield from few_ticks()
+        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
+        yield cpu.debug.HALT.eq(1)
+        yield from few_ticks(100)
+
+        halted = yield from cpu_core_is_halted()
+        if not halted:
+            raise ValueError("Pre-DMI check failed: Core hasn't halted after explicit drive of DM signal!")
+
+        yield cpu.debug.HALT.eq(0)
+        yield from few_ticks(100)
+
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+
+        yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
+        yield dmi_monitor.cur_DMCONTROL.hartsello.eq(1)
+        yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
+
+        yield from few_ticks(5)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks(100)
+        
+        # Check CPU signal directly first..
+        halted = yield cpu.halt
+        if not halted:
+            raise ValueError("CPU was not halted after haltreq set!")
+
+        raise ValueError("XXX why i don't have to poll dmactive??")
+        # .. and via DMI
+        assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
+        data_read_via_dmi = data.View(DMCONTROL_Layout, dmi_monitor.cur_dmi_read_data)
+        
+        val = yield data_read_via_dmi.as_value()
+        raise ValueError(val)
+
+        yield dmi_monitor.cur_dmi_read_data
+
+
+    for p in [main_process, monitor_cmderr(dmi_monitor)]:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
 
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()

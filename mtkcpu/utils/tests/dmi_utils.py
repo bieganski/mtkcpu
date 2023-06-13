@@ -32,9 +32,12 @@ class DMI_Monitor(Elaboratable):
         # TODO - typing annotations below are wrong, but IDE is happy.
 
         # JTAG tap's DMI bus, not yet latched by DM.
-        self.cur_dmi_bus : IR_DMI_Layout   = data.View(IR_DMI_Layout,   jtag_tap_dmi_bus.w)
-        self.cur_COMMAND : COMMAND_Layout  = data.View(COMMAND_Layout,  self.cur_dmi_bus.data)
-        
+        self.cur_dmi_bus   : IR_DMI_Layout     = data.View(IR_DMI_Layout,   jtag_tap_dmi_bus.w)
+        self.cur_COMMAND   : COMMAND_Layout    = data.View(COMMAND_Layout,  self.cur_dmi_bus.data)
+        self.cur_DMCONTROL : DMCONTROL_Layout  = data.View(DMCONTROL_Layout,  self.cur_dmi_bus.data)
+
+        self.cur_dmi_read_data : Signal = jtag_tap_dmi_bus.r.data
+
         # latched by DM.
         self.cur_ABSTRACTCS_latched : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS])
 

@@ -179,14 +179,14 @@ class HandlerDMCONTROL(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        write_value : DMCONTROL_Layout = data.View(DMCONTROL_Layout, Signal(32)) # XXX
-
-
-        # Everything needed latched in a single cycle.
-        comb += self.controller.command_finished.eq(1)
+        write_value = data.View(DMCONTROL_Layout, self.write_value)
 
         with m.If(write_value.dmactive):
             sync += self.reg_dmcontrol.dmactive.eq(1)
+            comb += self.controller.command_finished.eq(1)
+        
+        with m.If(self.reg_dmcontrol.dmactive):
+            comb += self.controller.command_finished.eq(1)
 
             with m.If(write_value.haltreq):
                 sync += self.debug_unit.HALT.eq(1)
@@ -194,8 +194,6 @@ class HandlerDMCONTROL(HandlerDMI):
                 sync += self.reg_dmstatus.anyhalted.eq(1)
             
             with m.If(write_value.resumereq):
-                # with m.If(write_value.step): # TODO step does not exist yet.
-                #     pass # TODO auto-halt after single instruction
                 sync += self.debug_unit.HALT.eq(0)
                 sync += self.reg_dmstatus.allresumeack.eq(1)
                 sync += self.reg_dmstatus.anyresumeack.eq(1)
@@ -205,7 +203,9 @@ class HandlerDMCONTROL(HandlerDMI):
             # Only hart 0 exists.
             sync += self.reg_dmstatus.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
         with m.Else():
-            pass # TODO - reset the DM!
+            # TODO - reset the DM!
+            comb += self.controller.command_finished.eq(1)
+            comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
         
 
 class HandlerCOMMAND(HandlerDMI):
