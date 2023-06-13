@@ -11,7 +11,7 @@ def get_color_logging_object():
 
     import logging
 
-    LOG_LEVEL = logging.DEBUG
+    LOG_LEVEL = logging.INFO
     LOGFORMAT = (
         "  %(log_color)s%(levelname)-8s%(reset)s | %(log_color)s%(message)s%(reset)s"
     )
