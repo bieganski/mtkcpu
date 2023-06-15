@@ -186,15 +186,17 @@ class HandlerDMCONTROL(HandlerDMI):
             comb += self.controller.command_finished.eq(1)
         
         with m.If(self.reg_dmcontrol.dmactive):
+            """
+            Note that that logic won't be executed when 'dmactive' asserted first time, in the same transaction.
+            The proper way is that debugger first writes dmcontrol.dmactive high, then polls dmcontrol until it reads high dmactive.
+            """
             comb += self.controller.command_finished.eq(1)
 
             with m.If(write_value.haltreq):
-                sync += self.debug_unit.HALT.eq(1)
                 sync += self.reg_dmstatus.allhalted.eq(1)
                 sync += self.reg_dmstatus.anyhalted.eq(1)
             
             with m.If(write_value.resumereq):
-                sync += self.debug_unit.HALT.eq(0)
                 sync += self.reg_dmstatus.allresumeack.eq(1)
                 sync += self.reg_dmstatus.anyresumeack.eq(1)
                 sync += self.reg_dmstatus.allhalted.eq(0)
@@ -357,8 +359,6 @@ class DebugUnit(Elaboratable):
     def __init__(self, cpu):
         self.cpu = cpu
         self.jtag = JTAGTap()
-        self.HALT = Signal()
-
         self.dmi_regs = dict([(k, data.Signal(v)) for k, v in DMI_reg_kinds.items()])
 
     def elaborate(self, platform):

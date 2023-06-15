@@ -236,7 +236,7 @@ def test_core_halt_resume(
     dmi_monitor = context.dmi_monitor
 
     def cpu_core_is_halted():
-        return (yield cpu.halt)
+        return (yield cpu.running_state.halted)
 
     def main_process():
         """
@@ -266,15 +266,19 @@ def test_core_halt_resume(
         # Warmup, initial setup.
         yield from few_ticks()
         yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
-        yield cpu.debug.HALT.eq(1)
+        yield cpu.running_state_interface.haltreq.eq(1)
         yield from few_ticks(100)
 
         halted = yield from cpu_core_is_halted()
         if not halted:
-            raise ValueError("Pre-DMI check failed: Core hasn't halted after explicit drive of DM signal!")
+            raise ValueError("Pre-DMI check failed: Core hasn't halted!")
 
-        yield cpu.debug.HALT.eq(0)
+        yield cpu.running_state_interface.resumereq.eq(1)
         yield from few_ticks(100)
+
+        halted = yield from cpu_core_is_halted()
+        if halted:
+            raise ValueError("Pre-DMI check failed: Core hasn't resumed!")
 
         yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
@@ -288,7 +292,7 @@ def test_core_halt_resume(
         yield from few_ticks(100)
         
         # Check CPU signal directly first..
-        halted = yield cpu.halt
+        halted = yield from cpu_core_is_halted()
         if not halted:
             raise ValueError("CPU was not halted after haltreq set!")
 
