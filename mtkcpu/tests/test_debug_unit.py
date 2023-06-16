@@ -272,6 +272,13 @@ def test_core_halt_resume(
         halted = yield from cpu_core_is_halted()
         if not halted:
             raise ValueError("Pre-DMI check failed: Core hasn't halted!")
+        
+        yield cpu.running_state_interface.haltreq.eq(0)
+        yield from few_ticks(3)
+
+        halted = yield from cpu_core_is_halted()
+        if not halted:
+            raise ValueError("Pre-DMI check failed: Core resumed after deasserting 'haltreq', without yet 'resumereq' asserted!")
 
         yield cpu.running_state_interface.resumereq.eq(1)
         yield from few_ticks(100)

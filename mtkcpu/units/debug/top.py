@@ -180,10 +180,6 @@ class HandlerDMCONTROL(HandlerDMI):
         comb = self.comb
 
         write_value = data.View(DMCONTROL_Layout, self.write_value)
-
-        with m.If(write_value.dmactive):
-            sync += self.reg_dmcontrol.dmactive.eq(1)
-            comb += self.controller.command_finished.eq(1)
         
         with m.If(self.reg_dmcontrol.dmactive):
             """
@@ -192,9 +188,13 @@ class HandlerDMCONTROL(HandlerDMI):
             """
             comb += self.controller.command_finished.eq(1)
 
+            # TODO it doesn't take 'hartsel' into account.
+
             with m.If(write_value.haltreq):
                 sync += self.reg_dmstatus.allhalted.eq(1)
                 sync += self.reg_dmstatus.anyhalted.eq(1)
+
+                sync += self.cpu.running_state_interface.haltreq.eq(1)
             
             with m.If(write_value.resumereq):
                 sync += self.reg_dmstatus.allresumeack.eq(1)
@@ -204,6 +204,9 @@ class HandlerDMCONTROL(HandlerDMI):
             
             # Only hart 0 exists.
             sync += self.reg_dmstatus.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
+        with m.Elif(write_value.dmactive):
+            sync += self.reg_dmcontrol.dmactive.eq(1)
+            comb += self.controller.command_finished.eq(1)
         with m.Else():
             # TODO - reset the DM!
             comb += self.controller.command_finished.eq(1)
