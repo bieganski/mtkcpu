@@ -263,25 +263,30 @@ def test_core_halt_resume(
         if halted:
             raise ValueError("Core halted from the very beginning!")
 
-        # Warmup, initial setup.
-        yield from few_ticks()
-        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
-        yield cpu.running_state_interface.haltreq.eq(1)
-        yield from few_ticks(100)
+        ####################################################################################
 
-        halted = yield from cpu_core_is_halted()
-        if not halted:
-            raise ValueError("Pre-DMI check failed: Core hasn't halted!")
+        # # Warmup, initial setup.
+        # yield from few_ticks()
+        # yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
+        # yield cpu.running_state_interface.haltreq.eq(1)
+        # yield from few_ticks(100)
+
+        # halted = yield from cpu_core_is_halted()
+        # if not halted:
+        #     raise ValueError("Pre-DMI check failed: Core hasn't halted!")
         
-        yield cpu.running_state_interface.haltreq.eq(0)
-        yield from few_ticks(3)
+        # yield cpu.running_state_interface.haltreq.eq(0)
+        # yield from few_ticks(3)
 
-        halted = yield from cpu_core_is_halted()
-        if not halted:
-            raise ValueError("Pre-DMI check failed: Core resumed after deasserting 'haltreq', without yet 'resumereq' asserted!")
+        # halted = yield from cpu_core_is_halted()
+        # if not halted:
+        #     raise ValueError("Pre-DMI check failed: Core resumed after deasserting 'haltreq', without yet 'resumereq' asserted!")
 
-        yield cpu.running_state_interface.resumereq.eq(1)
-        yield from few_ticks(100)
+        # yield cpu.running_state_interface.resumereq.eq(1)
+        # yield from few_ticks(100)
+
+        ####################################################################################
+
 
         halted = yield from cpu_core_is_halted()
         if halted:
@@ -303,7 +308,9 @@ def test_core_halt_resume(
         if not halted:
             raise ValueError("CPU was not halted after haltreq set!")
 
-        raise ValueError("XXX why i don't have to poll dmactive??")
+        kkk = yield cpu.kkk
+        raise ValueError(kkk)
+
         # .. and via DMI
         assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
         data_read_via_dmi = data.View(DMCONTROL_Layout, dmi_monitor.cur_dmi_read_data)
