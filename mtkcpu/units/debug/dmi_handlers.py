@@ -88,10 +88,6 @@ class HandlerDMCONTROL(HandlerDMI):
 
         write_value = data.View(DMCONTROL_Layout, self.write_value)
 
-        kkk = self.debug_unit.cpu.kkk = Signal()
-        sync += kkk.eq(self.reg_dmcontrol.dmactive)
-
-        
         with m.If(self.reg_dmcontrol.dmactive):
             """
             Note that that logic won't be executed when 'dmactive' asserted first time, in the same transaction.
@@ -101,18 +97,17 @@ class HandlerDMCONTROL(HandlerDMI):
 
             # TODO it doesn't take 'hartsel' into account.
 
-            with m.If(write_value.haltreq):
-                sync += self.reg_dmstatus.allhalted.eq(1)
-                sync += self.reg_dmstatus.anyhalted.eq(1)
+            from mtkcpu.units.debug.cpu_dm_if import CpuRunningStateExternalInterface
+            cpu_state_if : CpuRunningStateExternalInterface = self.debug_unit.cpu.running_state_interface
 
-                sync += self.debug_unit.cpu.running_state_interface.haltreq.eq(1)
-            
-            with m.If(write_value.resumereq):
-                sync += self.reg_dmstatus.allresumeack.eq(1)
-                sync += self.reg_dmstatus.anyresumeack.eq(1)
-                sync += self.reg_dmstatus.allhalted.eq(0)
-                sync += self.reg_dmstatus.anyhalted.eq(0)
-            
+            with m.If(write_value.haltreq):
+                sync += cpu_state_if.haltreq.eq(1)
+            with m.Elif(write_value.resumereq): # Elif, because specs says: 'resumereq is ignored if haltreq is set'
+                sync += [
+                    cpu_state_if.resumeack.eq(0),
+                    cpu_state_if.resumereq.eq(1),
+                ]
+                
             # Only hart 0 exists.
             hart_different_than_0_was_selected = Cat(write_value.hartselhi, write_value.hartsello).bool()
             sync += [

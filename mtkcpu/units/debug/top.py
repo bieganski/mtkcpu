@@ -1,12 +1,13 @@
 from typing import overload, Dict
-from amaranth import *
 from enum import IntEnum
 
 from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.debug.impl_config import DATASIZE, PROGBUFSIZE
 from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
+from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
 
+from amaranth import *
 from amaranth.lib import data
 
 # * The Debug Module’s own state and registers should only 
@@ -187,6 +188,17 @@ class DebugUnit(Elaboratable):
             ]
 
         reset()
+
+        cpu_state : CpuRunningState = self.cpu.running_state
+        cpu_state_if : CpuRunningStateExternalInterface = self.cpu.running_state_interface
+        sync += [
+            self.dmi_regs[DMIReg.DMSTATUS].allhalted.eq(cpu_state.halted),
+            self.dmi_regs[DMIReg.DMSTATUS].anyhalted.eq(cpu_state.halted),
+            self.dmi_regs[DMIReg.DMSTATUS].anyrunning.eq(~cpu_state.halted),
+            self.dmi_regs[DMIReg.DMSTATUS].allrunning.eq(~cpu_state.halted),
+            self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(cpu_state_if.resumeack),
+            self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(cpu_state_if.resumeack),
+        ]
 
         def on_read(addr):
             sync = self.m.d.sync

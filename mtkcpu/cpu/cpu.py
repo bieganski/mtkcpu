@@ -23,6 +23,7 @@ from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
+from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
 
 match_jal = matcher(
     [
@@ -83,24 +84,6 @@ class ActiveUnitLayout(Layout):
 class ActiveUnit(Record):
     def __init__(self):
         super().__init__(ActiveUnitLayout(), name="active_unit")
-
-        
-class CpuRunningState:
-    def __init__(self):
-        self.halted      = Signal()
-        self.running     = Signal()
-
-        self.havereset   = Const(0)
-        self.nonexistent = Const(0)
-        self.unavail     = Const(0)
-
-class CpuRunningStateExternalInterface:
-    def __init__(self):
-        # In.
-        self.haltreq = Signal()
-        self.resumereq = Signal()
-        # Out.
-        self.resumeack = Signal()
 
 
 class MtkCpu(Elaboratable):
@@ -224,16 +207,11 @@ class MtkCpu(Elaboratable):
         #             self.halt.eq(1),
         #         ]
 
-        comb += [
-            self.running_state.running.eq(~self.running_state.halted),
-        ]
-
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
-            # TODO: assert 'resumeack' == 0.
-            # it's up to Debug Module, due to the specs:
+            # from specs:
             # 
-            # When a debugger writes 1 to resumereq, each selected hart’s resume ack bit is cleared and each
-            # selected, halted hart is sent a resume request. 
+            # When a debugger writes 1 to resumereq, each selected hart’s resume ack bit 
+            # is cleared and each selected, halted hart is sent a resume request. 
             sync += [
                 self.running_state.halted.eq(0),
                 self.running_state_interface.resumeack.eq(1),

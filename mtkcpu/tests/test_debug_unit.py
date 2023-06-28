@@ -263,46 +263,25 @@ def test_core_halt_resume(
         if halted:
             raise ValueError("Core halted from the very beginning!")
 
-        ####################################################################################
-
-        # # Warmup, initial setup.
-        # yield from few_ticks()
-        # yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
-        # yield cpu.running_state_interface.haltreq.eq(1)
-        # yield from few_ticks(100)
-
-        # halted = yield from cpu_core_is_halted()
-        # if not halted:
-        #     raise ValueError("Pre-DMI check failed: Core hasn't halted!")
-        
-        # yield cpu.running_state_interface.haltreq.eq(0)
-        # yield from few_ticks(3)
-
-        # halted = yield from cpu_core_is_halted()
-        # if not halted:
-        #     raise ValueError("Pre-DMI check failed: Core resumed after deasserting 'haltreq', without yet 'resumereq' asserted!")
-
-        # yield cpu.running_state_interface.resumereq.eq(1)
-        # yield from few_ticks(100)
-
-        # halted = yield from cpu_core_is_halted()
-        # if halted:
-        #     raise ValueError("Pre-DMI check failed: Core hasn't resumed!")
-
-        ####################################################################################
-
-        def dmcontrol_setup_basic_write_fields():
+        def DMCONTROL_setup_basic_fields(dmi_op: DMIOp):
+            assert dmi_op in [DMIOp.READ, DMIOp.WRITE]
             yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
-            yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+            yield dmi_monitor.cur_dmi_bus.op.eq(dmi_op)
             yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
         
+        def DMSTATUS_read():
+            yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMSTATUS)
+            yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+            yield from few_ticks(100)
+        
         # Only assert 'dmactive'.
-        yield from dmcontrol_setup_basic_write_fields()
+        yield from DMCONTROL_setup_basic_fields(DMIOp.WRITE)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from few_ticks(100)
 
         # Once 'dmactive' is hight, select hart 0 and halt it.
-        yield from dmcontrol_setup_basic_write_fields()
+        yield from DMCONTROL_setup_basic_fields(DMIOp.WRITE)
         yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from few_ticks(100)
@@ -313,30 +292,51 @@ def test_core_halt_resume(
             raise ValueError("CPU was not halted after haltreq set!")
 
         # .. and via DMI
-        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMSTATUS)
-        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
-        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-        yield from few_ticks(100)
+        yield from DMSTATUS_read()
         
         assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
         data_read_via_dmi = data.View(DMSTATUS_Layout, dmi_monitor.cur_dmi_read_data)
+        def check_dmstatus_field_values(fields: Sequence[str], expected: int):
+            for x in fields:
+                val = yield getattr(data_read_via_dmi, x)
+                if val != expected:
+                    raise ValueError(f"dmstatus.{x}=={val}, expected {expected}")
         
-        for x in ["allrunning", "anyrunning"]:
-            val = yield getattr(data_read_via_dmi, x)
-            if val:
-                raise ValueError(f"dmstatus.{x}=={val}, despite CPU is halted!")
+        halted_expected_low = ["allrunning", "anyrunning", "allresumeack", "anyresumeack"]
+        halted_expected_high = ["allhalted", "anyhalted"]
         
-        for x in ["allhalted", "anyhalted"]:
-            val = yield getattr(data_read_via_dmi, x)
-            if not val:
-                raise ValueError(f"dmstatus.{x}=={val}, despite CPU is halted!")
+        yield from check_dmstatus_field_values(halted_expected_low, 0)
+        yield from check_dmstatus_field_values(halted_expected_high, 1)
+        
+        yield from DMCONTROL_setup_basic_fields(DMIOp.WRITE)
+        yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
+        yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks(100)
 
-        yield dmi_monitor.cur_dmi_read_data
+        yield from DMSTATUS_read()
+
+        yield from check_dmstatus_field_values(halted_expected_low, 1)
+        yield from check_dmstatus_field_values(halted_expected_high, 0)
     
+    def wtf(dmi_monitor: DMI_Monitor):
+        def aux():
+            yield Passive()
+            while True:
+                val = yield dmi_monitor.cpu.running_state.halted # _interface.resumeack
+                print(val)
+                # if val:
+                #     while True:
+                #         x = yield dmi_monitor.cpu.running_state.halted
+                #         raise ValueError(x)
+                #         yield
+                yield
+        return aux
+        
     processes = [
         main_process,
         monitor_cmderr(dmi_monitor),
-        monitor_cmderr(dmi_monitor),
+        wtf(dmi_monitor),
     ]
 
     for p in processes:
