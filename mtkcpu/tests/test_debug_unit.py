@@ -285,43 +285,61 @@ def test_core_halt_resume(
         # yield cpu.running_state_interface.resumereq.eq(1)
         # yield from few_ticks(100)
 
+        # halted = yield from cpu_core_is_halted()
+        # if halted:
+        #     raise ValueError("Pre-DMI check failed: Core hasn't resumed!")
+
         ####################################################################################
 
-
-        halted = yield from cpu_core_is_halted()
-        if halted:
-            raise ValueError("Pre-DMI check failed: Core hasn't resumed!")
-
-        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
-        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
-
-        yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
-        yield dmi_monitor.cur_DMCONTROL.hartsello.eq(1)
-        yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
-
-        yield from few_ticks(5)
+        def dmcontrol_setup_basic_write_fields():
+            yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
+            yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+            yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
+        
+        # Only assert 'dmactive'.
+        yield from dmcontrol_setup_basic_write_fields()
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from few_ticks(100)
-        
+
+        # Once 'dmactive' is hight, select hart 0 and halt it.
+        yield from dmcontrol_setup_basic_write_fields()
+        yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks(100)
+
         # Check CPU signal directly first..
         halted = yield from cpu_core_is_halted()
         if not halted:
             raise ValueError("CPU was not halted after haltreq set!")
 
-        kkk = yield cpu.kkk
-        raise ValueError(kkk)
-
         # .. and via DMI
-        assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
-        data_read_via_dmi = data.View(DMCONTROL_Layout, dmi_monitor.cur_dmi_read_data)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMSTATUS)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks(100)
         
-        val = yield data_read_via_dmi.as_value()
-        raise ValueError(val)
+        assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
+        data_read_via_dmi = data.View(DMSTATUS_Layout, dmi_monitor.cur_dmi_read_data)
+        
+        for x in ["allrunning", "anyrunning"]:
+            val = yield getattr(data_read_via_dmi, x)
+            if val:
+                raise ValueError(f"dmstatus.{x}=={val}, despite CPU is halted!")
+        
+        for x in ["allhalted", "anyhalted"]:
+            val = yield getattr(data_read_via_dmi, x)
+            if not val:
+                raise ValueError(f"dmstatus.{x}=={val}, despite CPU is halted!")
 
         yield dmi_monitor.cur_dmi_read_data
+    
+    processes = [
+        main_process,
+        monitor_cmderr(dmi_monitor),
+        monitor_cmderr(dmi_monitor),
+    ]
 
-
-    for p in [main_process, monitor_cmderr(dmi_monitor)]:
+    for p in processes:
         simulator.add_sync_process(p)
         
     simulator.run()

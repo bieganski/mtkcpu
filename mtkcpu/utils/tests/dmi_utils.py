@@ -172,6 +172,10 @@ def dmi_bus_reset(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_dmi_bus.as_value().eq(0)
 
 def dmi_bus_trigger_transaction(dmi_monitor: DMI_Monitor):
+    """
+    Note that in jtag.py there is some logic that deasserts 'update' bit in every single cycle,
+    So that we don't have to take care of deasserting it in simulation.
+    """
     yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
 def grp_to_dmi_access_register_regno(reg: int) -> int:

@@ -88,8 +88,9 @@ class HandlerDMCONTROL(HandlerDMI):
 
         write_value = data.View(DMCONTROL_Layout, self.write_value)
 
-        kkk = self.debug_unit.cpu.kkk = Signal(2)
-        sync += kkk.eq(kkk + 1)
+        kkk = self.debug_unit.cpu.kkk = Signal()
+        sync += kkk.eq(self.reg_dmcontrol.dmactive)
+
         
         with m.If(self.reg_dmcontrol.dmactive):
             """
@@ -113,7 +114,11 @@ class HandlerDMCONTROL(HandlerDMI):
                 sync += self.reg_dmstatus.anyhalted.eq(0)
             
             # Only hart 0 exists.
-            sync += self.reg_dmstatus.anynonexistent.eq(Cat(write_value.hartselhi, write_value.hartsello).bool())
+            hart_different_than_0_was_selected = Cat(write_value.hartselhi, write_value.hartsello).bool()
+            sync += [
+                self.reg_dmstatus.anynonexistent.eq(hart_different_than_0_was_selected),
+                self.reg_dmstatus.allnonexistent.eq(hart_different_than_0_was_selected),
+            ]
         with m.Elif(write_value.dmactive):
             sync += self.reg_dmcontrol.dmactive.eq(1)
             comb += self.controller.command_finished.eq(1)
@@ -243,17 +248,6 @@ class HandlerPROGBUF(HandlerDMI):
 
         with m.If(bus.ack):
             self.comb += self.controller.command_finished.eq(1)
-
-
-class HandlerABSTRACTCS(HandlerDMI):
-    def handle_write(self):
-        m = self.debug_unit.m
-        sync = self.sync
-        comb = self.comb
-
-        # TODO
-        # does openocd even tries to write it?
-        return # TODO
 
 
 DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {

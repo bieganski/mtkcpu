@@ -177,10 +177,7 @@ class DebugUnit(Elaboratable):
                 self.dmi_regs[DMIReg.DMSTATUS].version.eq(2),
                 self.dmi_regs[DMIReg.DMSTATUS].authenticated.eq(1),
 
-                self.dmi_regs[DMIReg.DMCONTROL].hartsello.eq(1),
-                self.dmi_regs[DMIReg.DMCONTROL].hartselhi.eq(0),
-
-                self.dmi_regs[DMIReg.ABSTRACTCS].datacount.eq(1),
+                self.dmi_regs[DMIReg.ABSTRACTCS].datacount.eq(DATASIZE),
                 self.dmi_regs[DMIReg.ABSTRACTCS].progbufsize.eq(PROGBUFSIZE),
             ]
 
@@ -218,7 +215,7 @@ class DebugUnit(Elaboratable):
                         with m.Case(DMIOp.READ):
                             on_read(jtag_tap_dmi_bus.w.address)
                         with m.Case(DMIOp.WRITE):
-                            on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
+                            # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
                             m.next = "WAIT"
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)
