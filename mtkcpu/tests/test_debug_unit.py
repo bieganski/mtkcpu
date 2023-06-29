@@ -141,8 +141,13 @@ def test_dmi_abstract_command_read_write_gpr(
             raise ValueError(f"DATA0 read: expected {hex(pattern)}, got {hex(data0)}")
 
         logging.info(f"Value read via DMI from DATA0 matches x{regno} content!")
+    
+    processes = [
+        main_process,
+        *error_monitors(dmi_monitor),
+    ]
 
-    for p in [main_process, *error_monitors(dmi_monitor)]:
+    for p in processes:
         simulator.add_sync_process(p)
 
     vcd_traces = [
@@ -206,8 +211,12 @@ def test_dmi_try_read_not_implemented_register(
             if data != 0x0:
                 raise ValueError(f"Expected data=0x0, got {hex(data)}")
 
-
-    for p in [main_process, *error_monitors(dmi_monitor)]:
+    processes = [
+        main_process,
+        *error_monitors(dmi_monitor),
+    ]
+    
+    for p in processes:
         simulator.add_sync_process(p)
         
     simulator.run()
@@ -291,6 +300,7 @@ def test_core_halt_resume(
     processes = [
         main_process,
         *error_monitors(dmi_monitor),
+        *informative_monitors(dmi_monitor),
     ]
 
     for p in processes:
@@ -304,6 +314,7 @@ if __name__ == "__main__":
     test_dmi_try_read_not_implemented_register()
     test_dmi_abstract_command_read_write_gpr()
     test_core_halt_resume()
+    logging.critical("ALL TESTS PASSED!")
 
 
 
