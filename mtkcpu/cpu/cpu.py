@@ -160,6 +160,7 @@ class MtkCpu(Elaboratable):
 
         if self.with_debug:
             m.submodules.debug = self.debug
+            m.submodules.dm_cpu_if = self.running_state_interface
             self.debug_bus = arbiter.port(priority=1)
 
         mem_unit = m.submodules.mem_unit = MemoryUnit(
@@ -214,6 +215,7 @@ class MtkCpu(Elaboratable):
             # is cleared and each selected, halted hart is sent a resume request. 
             sync += [
                 self.running_state.halted.eq(0),
+                self.running_state_interface.resumereq.eq(0),
                 self.running_state_interface.resumeack.eq(1),
             ]
 
@@ -363,7 +365,11 @@ class MtkCpu(Elaboratable):
                     """
                     # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                     with m.If(self.running_state_interface.haltreq):
-                        sync += self.running_state.halted.eq(1)
+                        sync += [
+                            self.running_state.halted.eq(1),
+                            self.running_state_interface.haltreq.eq(0),
+                            self.running_state_interface.haltack.eq(1),
+                        ]
                     with m.Else():
                         with m.If(pc & 0b11):
                             trap(TrapCause.FETCH_MISALIGNED)

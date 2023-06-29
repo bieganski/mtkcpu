@@ -101,7 +101,10 @@ class HandlerDMCONTROL(HandlerDMI):
             cpu_state_if : CpuRunningStateExternalInterface = self.debug_unit.cpu.running_state_interface
 
             with m.If(write_value.haltreq):
-                sync += cpu_state_if.haltreq.eq(1)
+                sync += [
+                    cpu_state_if.haltreq.eq(1),
+                    cpu_state_if.haltack.eq(0),
+                ]
             with m.Elif(write_value.resumereq): # Elif, because specs says: 'resumereq is ignored if haltreq is set'
                 sync += [
                     cpu_state_if.resumeack.eq(0),

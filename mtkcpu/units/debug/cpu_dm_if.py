@@ -15,21 +15,23 @@ class CpuRunningStateExternalInterface(Elaboratable):
         self.resumereq = Signal()
         # Out.
         self.resumeack = Signal()
+        self.haltack = Signal()
 
-        """
-        Interface specifications:
-
-            haltreq: dm_out
-            haltack: cpu_out, in at least next cycle after 'haltreq'
-            
-            resumereq: dm_out
-            resumeack: cpu_out, in at least next cycle after 'haltreq'
-
-
-        
-        """
+        # Points that module was misused.
+        self.error_sticky = Signal()
 
     def elaborate(self, _):
         m = Module()
+
+        with m.If(self.resumeack):
+            m.d.sync += self.resumereq.eq(0)
+        
+        with m.If(self.haltack):
+            m.d.sync += self.haltreq.eq(0)
+        
+        with m.If(
+            (self.haltreq & self.haltack) | (self.resumereq & self.resumeack)
+        ):
+            m.d.sync += self.error_sticky.eq(1)
 
         return m

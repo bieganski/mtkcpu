@@ -196,9 +196,12 @@ class DebugUnit(Elaboratable):
             self.dmi_regs[DMIReg.DMSTATUS].anyhalted.eq(cpu_state.halted),
             self.dmi_regs[DMIReg.DMSTATUS].anyrunning.eq(~cpu_state.halted),
             self.dmi_regs[DMIReg.DMSTATUS].allrunning.eq(~cpu_state.halted),
-            self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(cpu_state_if.resumeack),
-            self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(cpu_state_if.resumeack),
         ]
+        with m.If(cpu_state_if.resumeack):
+            sync += [
+                self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(1),
+                self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(1),
+            ]
 
         def on_read(addr):
             sync = self.m.d.sync
@@ -227,6 +230,13 @@ class DebugUnit(Elaboratable):
                         with m.Case(DMIOp.READ):
                             on_read(jtag_tap_dmi_bus.w.address)
                         with m.Case(DMIOp.WRITE):
+                            # TODO - in legacy code for each DMI register we had 'r' and 'w' copy.
+                            # Current implementation has only one 'w' register (called 'write_value' in dmi_handlers),
+                            # and 'r' for each register. In particular 'on_write' is no longer relevant.
+                            # 
+                            # That FSM needs to be refactored, but also the way that we automate
+                            # the W1/WARL/.../ thing from specs - currently all 'r' fields are set manually.
+                            # I postpone that task till the time I better understand system constraints
                             # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
                             m.next = "WAIT"
             with m.State("WAIT"):

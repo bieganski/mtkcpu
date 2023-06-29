@@ -12,6 +12,7 @@ from mtkcpu.utils.misc import get_color_logging_object
 
 logging = get_color_logging_object()
 
+
 @dataclass
 class DebugUnitSimulationContext:
     cpu: MtkCpu
@@ -57,10 +58,6 @@ def dmi_simulator(f):
     return aux
 
 
-def few_ticks(n=10):
-    for _ in range(n):
-        yield
-
 @dmi_simulator
 def test_dmi_abstract_command_read_write_gpr(
     simulator: Simulator,
@@ -78,10 +75,7 @@ def test_dmi_abstract_command_read_write_gpr(
         Write some value to x1, wait, and read x1. Expect to read exactly initial value.
         """
         # Warmup, initial setup.
-        yield from few_ticks()
-        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
-        yield cpu.debug.HALT.eq(1)
-        yield from few_ticks()
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
 
         # Write pattern to DATA0, so that it becomes a payload for further register write.
         # As a result, 'pattern' will be written to 'x1' GPR.
@@ -148,7 +142,7 @@ def test_dmi_abstract_command_read_write_gpr(
 
         logging.info(f"Value read via DMI from DATA0 matches x{regno} content!")
 
-    for p in [main_process, monitor_cmderr(dmi_monitor)]:
+    for p in [main_process, *error_monitors(dmi_monitor)]:
         simulator.add_sync_process(p)
 
     vcd_traces = [
@@ -186,14 +180,11 @@ def test_dmi_try_read_not_implemented_register(
 
         # Warmup, initial setup.
         yield from few_ticks()
-        yield cpu.debug.jtag.ir.eq(JtagIR.DMI)
-        yield cpu.debug.HALT.eq(1)
-        yield from few_ticks()
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
 
-        from mtkcpu.units.debug.top import handlers as implemented_dmi_regs
-        not_implemented_dmi_regs = [x for x in range(1 << JtagIRValue.DM_ABITS) if x not in implemented_dmi_regs]
-        assert not_implemented_dmi_regs
-
+        from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
+        not_implemented_dmi_regs = [0x1, 0x2, 0x3]
+        assert not [x for x in not_implemented_dmi_regs if x in DMI_HANDLERS_MAP]
 
         for dmi_reg in not_implemented_dmi_regs:
             logging.debug(f"Writing dummy value to non-existing DMI register at address {hex(dmi_reg)}")
@@ -211,16 +202,15 @@ def test_dmi_try_read_not_implemented_register(
             yield from few_ticks(5)
             yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
             dmi_op_wait_for_success(dmi_monitor)
-            data = yield dmi_monitor.cur_dmi_bus.data
-            assert data == 0x0
+            data = yield dmi_monitor.cur_dmi_read_data
+            if data != 0x0:
+                raise ValueError(f"Expected data=0x0, got {hex(data)}")
 
 
-    for p in [main_process, monitor_cmderr(dmi_monitor)]:
+    for p in [main_process, *error_monitors(dmi_monitor)]:
         simulator.add_sync_process(p)
         
     simulator.run()
-
-
 
 
 @dmi_simulator
@@ -263,28 +253,7 @@ def test_core_halt_resume(
         if halted:
             raise ValueError("Core halted from the very beginning!")
 
-        def DMCONTROL_setup_basic_fields(dmi_op: DMIOp):
-            assert dmi_op in [DMIOp.READ, DMIOp.WRITE]
-            yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
-            yield dmi_monitor.cur_dmi_bus.op.eq(dmi_op)
-            yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
-        
-        def DMSTATUS_read():
-            yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMSTATUS)
-            yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
-            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-            yield from few_ticks(100)
-        
-        # Only assert 'dmactive'.
-        yield from DMCONTROL_setup_basic_fields(DMIOp.WRITE)
-        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-        yield from few_ticks(100)
-
-        # Once 'dmactive' is hight, select hart 0 and halt it.
-        yield from DMCONTROL_setup_basic_fields(DMIOp.WRITE)
-        yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
-        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-        yield from few_ticks(100)
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
 
         # Check CPU signal directly first..
         halted = yield from cpu_core_is_halted()
@@ -292,7 +261,7 @@ def test_core_halt_resume(
             raise ValueError("CPU was not halted after haltreq set!")
 
         # .. and via DMI
-        yield from DMSTATUS_read()
+        yield from DMSTATUS_read(dmi_monitor=dmi_monitor)
         
         assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
         data_read_via_dmi = data.View(DMSTATUS_Layout, dmi_monitor.cur_dmi_read_data)
@@ -308,35 +277,20 @@ def test_core_halt_resume(
         yield from check_dmstatus_field_values(halted_expected_low, 0)
         yield from check_dmstatus_field_values(halted_expected_high, 1)
         
-        yield from DMCONTROL_setup_basic_fields(DMIOp.WRITE)
+        yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
         yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
         yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from few_ticks(100)
 
-        yield from DMSTATUS_read()
+        yield from DMSTATUS_read(dmi_monitor=dmi_monitor)
 
         yield from check_dmstatus_field_values(halted_expected_low, 1)
         yield from check_dmstatus_field_values(halted_expected_high, 0)
     
-    def wtf(dmi_monitor: DMI_Monitor):
-        def aux():
-            yield Passive()
-            while True:
-                val = yield dmi_monitor.cpu.running_state.halted # _interface.resumeack
-                print(val)
-                # if val:
-                #     while True:
-                #         x = yield dmi_monitor.cpu.running_state.halted
-                #         raise ValueError(x)
-                #         yield
-                yield
-        return aux
-        
     processes = [
         main_process,
-        monitor_cmderr(dmi_monitor),
-        wtf(dmi_monitor),
+        *error_monitors(dmi_monitor),
     ]
 
     for p in processes:
@@ -347,6 +301,9 @@ def test_core_halt_resume(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
     test_core_halt_resume()
+
+
+

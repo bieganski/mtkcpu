@@ -95,12 +95,25 @@ def monitor_cmderr(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
 
+        prev_cmderr = None
         while True:
             cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
             if cmderr == ABSTRACTCS_Layout.CMDERR.OTHER:
                 raise ValueError("cmderror OTHER detected! Probably not implemented scenario happened")
-            if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
+            if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR and prev_cmderr != cmderr:
                 logging.warn(f"cmderr == {cmderr}")
+            prev_cmderr = cmderr
+            yield
+    return aux
+
+def monitor_cpu_dm_if_error(dmi_monitor: DMI_Monitor):
+    def aux():
+        yield Passive()
+
+        while True:
+            err = yield dmi_monitor.cpu.running_state_interface.error_sticky
+            if err:
+                raise ValueError("CpuRunningStateExternalInterface misuse detected!")
             yield
     return aux
 
@@ -206,3 +219,38 @@ def dmi_write_data0(
     yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
     yield dmi_monitor.cur_dmi_bus.data.eq(value)
+
+def error_monitors(dmi_monitor: DMI_Monitor):
+    return [
+        monitor_cmderr(dmi_monitor),
+        monitor_cpu_dm_if_error(dmi_monitor),
+    ]
+
+def few_ticks(n=10):
+    for _ in range(n):
+        yield
+
+def DMCONTROL_setup_basic_fields(dmi_monitor: DMI_Monitor, dmi_op: DMIOp):
+    assert dmi_op in [DMIOp.READ, DMIOp.WRITE]
+    yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
+    yield dmi_monitor.cur_dmi_bus.op.eq(dmi_op)
+    yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
+
+def DMSTATUS_read(dmi_monitor: DMI_Monitor):
+    yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMSTATUS)
+    yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+    yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+    yield from few_ticks(100)
+
+
+def activate_DM_and_halt_via_dmi(dmi_monitor: DMI_Monitor):
+    # Only assert 'dmactive'.
+    yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+    yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+    yield from few_ticks(100)
+
+    # Once 'dmactive' is hight, select hart 0 and halt it.
+    yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+    yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
+    yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+    yield from few_ticks(100)
