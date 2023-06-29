@@ -32,9 +32,12 @@ class DMI_Monitor(Elaboratable):
         # TODO - typing annotations below are wrong, but IDE is happy.
 
         # JTAG tap's DMI bus, not yet latched by DM.
-        self.cur_dmi_bus : IR_DMI_Layout   = data.View(IR_DMI_Layout,   jtag_tap_dmi_bus.w)
-        self.cur_COMMAND : COMMAND_Layout  = data.View(COMMAND_Layout,  self.cur_dmi_bus.data)
-        
+        self.cur_dmi_bus   : IR_DMI_Layout     = data.View(IR_DMI_Layout,   jtag_tap_dmi_bus.w)
+        self.cur_COMMAND   : COMMAND_Layout    = data.View(COMMAND_Layout,  self.cur_dmi_bus.data)
+        self.cur_DMCONTROL : DMCONTROL_Layout  = data.View(DMCONTROL_Layout,  self.cur_dmi_bus.data)
+
+        self.cur_dmi_read_data : Signal = jtag_tap_dmi_bus.r.data
+
         # latched by DM.
         self.cur_ABSTRACTCS_latched : ABSTRACTCS_Layout = data.View(ABSTRACTCS_Layout, cpu.debug.dmi_regs[DMIReg.ABSTRACTCS])
 
@@ -92,12 +95,25 @@ def monitor_cmderr(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
 
+        prev_cmderr = None
         while True:
             cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
             if cmderr == ABSTRACTCS_Layout.CMDERR.OTHER:
                 raise ValueError("cmderror OTHER detected! Probably not implemented scenario happened")
-            if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
+            if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR and prev_cmderr != cmderr:
                 logging.warn(f"cmderr == {cmderr}")
+            prev_cmderr = cmderr
+            yield
+    return aux
+
+def monitor_cpu_dm_if_error(dmi_monitor: DMI_Monitor):
+    def aux():
+        yield Passive()
+
+        while True:
+            err = yield dmi_monitor.cpu.running_state_interface.error_sticky
+            if err:
+                raise ValueError("CpuRunningStateExternalInterface misuse detected!")
             yield
     return aux
 
@@ -169,6 +185,10 @@ def dmi_bus_reset(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_dmi_bus.as_value().eq(0)
 
 def dmi_bus_trigger_transaction(dmi_monitor: DMI_Monitor):
+    """
+    Note that in jtag.py there is some logic that deasserts 'update' bit in every single cycle,
+    So that we don't have to take care of deasserting it in simulation.
+    """
     yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
 def grp_to_dmi_access_register_regno(reg: int) -> int:
@@ -199,3 +219,38 @@ def dmi_write_data0(
     yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
     yield dmi_monitor.cur_dmi_bus.data.eq(value)
+
+def error_monitors(dmi_monitor: DMI_Monitor):
+    return [
+        monitor_cmderr(dmi_monitor),
+        monitor_cpu_dm_if_error(dmi_monitor),
+    ]
+
+def few_ticks(n=10):
+    for _ in range(n):
+        yield
+
+def DMCONTROL_setup_basic_fields(dmi_monitor: DMI_Monitor, dmi_op: DMIOp):
+    assert dmi_op in [DMIOp.READ, DMIOp.WRITE]
+    yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMCONTROL)
+    yield dmi_monitor.cur_dmi_bus.op.eq(dmi_op)
+    yield dmi_monitor.cur_DMCONTROL.dmactive.eq(1)
+
+def DMSTATUS_read(dmi_monitor: DMI_Monitor):
+    yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DMSTATUS)
+    yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+    yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+    yield from few_ticks(100)
+
+
+def activate_DM_and_halt_via_dmi(dmi_monitor: DMI_Monitor):
+    # Only assert 'dmactive'.
+    yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+    yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+    yield from few_ticks(100)
+
+    # Once 'dmactive' is hight, select hart 0 and halt it.
+    yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+    yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
+    yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+    yield from few_ticks(100)

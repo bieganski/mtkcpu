@@ -193,3 +193,8 @@ DMI_reg_kinds = {
     DMIReg.PROGBUF1: flat_layout_factory(32),
     DMIReg.PROGBUF2: flat_layout_factory(32),
 }
+
+for k, v in DMI_reg_kinds.items():
+    layout_obj = data.Layout.cast(v)
+    if layout_obj.size != 32:
+        raise ValueError(f"Width of '{k}' DMI register ({v}) is {layout_obj.size}, not 32!")
