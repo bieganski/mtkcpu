@@ -10,6 +10,8 @@ from typing import Type
 class ControllerInterfaceDuplicated():
     """
     Duplicated to avoid cyclic import.
+
+    Used only for IDE autocompletion.
     """
     def __init__(self):
         self.halted             = Signal()

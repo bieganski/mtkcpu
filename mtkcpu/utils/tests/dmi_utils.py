@@ -226,6 +226,11 @@ def error_monitors(dmi_monitor: DMI_Monitor):
         monitor_cpu_dm_if_error(dmi_monitor),
     ]
 
+def informative_monitors(dmi_monitor: DMI_Monitor):
+    return [
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+    ]
+
 def few_ticks(n=10):
     for _ in range(n):
         yield
@@ -254,3 +259,27 @@ def activate_DM_and_halt_via_dmi(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
     yield from few_ticks(100)
+
+def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
+    def aux():
+        yield Passive()
+
+        prev_cpu_state = None
+        prev_dmactive = None
+        while True:
+            dmactive = yield dmi_monitor.cpu.debug.dmi_regs[DMIReg.DMCONTROL].dmactive
+            if dmactive != prev_dmactive:
+                repr = "active" if dmactive else "inactive"
+                note = "from initial" if prev_dmactive is None else ""
+                logging.info(f"DM changed state {note} to {repr}")
+            prev_dmactive = dmactive
+            
+            cpu_state = yield dmi_monitor.cpu.running_state.halted
+            if cpu_state != prev_cpu_state:
+                repr = "halted" if cpu_state else "running"
+                note = "from initial" if prev_cpu_state is None else ""
+                logging.info(f"CPU changed state {note} to {repr}")
+            prev_cpu_state = cpu_state
+
+            yield
+    return aux
