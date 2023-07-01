@@ -7,6 +7,7 @@ from amaranth.sim import Passive
 from mtkcpu.units.debug.types import *
 from mtkcpu.utils.misc import get_color_logging_object, get_members
 from mtkcpu.cpu.cpu import MtkCpu
+from mtkcpu.units.debug.types import DMI_reg_kinds
 
 logging = get_color_logging_object()
 
@@ -117,6 +118,63 @@ def monitor_cpu_dm_if_error(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
+def _bin(value: int) -> str:
+    return '_'.join(format((value << i & 0xff00_0000) >> 24, '08b') for i in range(0, 25, 8))
+
+def debug_inspect_applied_struct(struct: data.Struct, val: int) -> str:
+    """
+    It has some limitations:
+
+    * only data.Struct supported (no data.Union)
+    * works only with unsigned or amaranth.lib.enum.Enum.
+    * ... but it does support recursive layouts.
+    """
+    from amaranth import Shape
+    from amaranth.lib import enum, data
+
+    if hasattr(struct, "_AggregateMeta__layout"):
+        # TODO Idon't feel like I understand logic between layouts/views, so that
+        # if statement is probably redundant.
+        assert struct._AggregateMeta__layout == struct._View__layout
+        layout = struct._AggregateMeta__layout
+    else:
+        if isinstance(struct, data.View):
+            layout = data.Layout.of(struct)
+        elif isinstance(struct, data._AggregateMeta):
+            layout = data.Layout.of(struct)
+        elif isinstance(struct, data.StructLayout):
+            layout = struct
+        else:
+            raise ValueError(f"type of @param struct={struct} <{type(struct)}> not supported!")
+
+    if not hasattr(layout, "members"):
+        raise ValueError(f"{struct}, {layout}, {type(struct)}, {type(layout)}")
+
+    lst = []
+    for name, shape in layout.members.items():
+        if isinstance(shape, Shape):
+            pass
+        elif isinstance(shape, enum.EnumMeta):
+            shape = shape.as_shape()
+        elif isinstance(shape, data._AggregateMeta):
+            # nested data.Struct - do a recursive call.
+            recursive_struct = shape.as_shape()
+            recursive_res = debug_inspect_applied_struct(struct=recursive_struct, val=val)
+            lst.append(f"[ {recursive_res} ]")
+            val >>= recursive_struct.size
+            continue
+        else:
+            raise ValueError(f"Unknown shape {shape} (of type {type(shape)} )")
+
+        assert isinstance(shape, Shape)
+        assert not shape.signed
+        chunk = val & ((1 << shape.width) - 1)
+        val >>= shape.width
+        lst.append(f"{name}={hex(chunk)}")
+
+    res = f"{struct.__class__}: {', '.join(reversed(lst))}"
+    return res
+
 def print_dmi_transactions(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
@@ -129,26 +187,33 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
             if new_dmi_transaction:
                 op   = yield dmi_monitor.cur_dmi_bus.op
                 addr = yield dmi_monitor.cur_dmi_bus.address
+                value = yield dmi_monitor.cur_dmi_bus.data
                 if op in [DMIOp.READ, DMIOp.WRITE]:
                     action = "reading" if op == DMIOp.READ else "writing"
                     try:
+                        struct, reg_dump = None, None
                         addr = DMIReg(addr)
-                    except:
-                        pass
-                    print_fn(f"DMI: {action}, address: {addr!r}")
+                        struct = dmi_monitor.cpu.debug.dmi_regs[addr]
+                    except Exception as e:
+                        print_fn(f"Either unknown DMI reg {addr} or not registered in DMI_reg_kinds.")
+                    
+                    if struct is not None:
+                        reg_dump = debug_inspect_applied_struct(struct, value)
 
-                    # if op == DMIOp.WRITE:  # XXX NOT YET TESTED.
-                    acc_reg = dmi_monitor.cur_COMMAND.control.ar
-                    regno = yield acc_reg.regno
-                    write = yield acc_reg.write
-                    transfer = yield acc_reg.transfer
-                    aarsize = yield acc_reg.aarsize
-                    if transfer:
-                        action = "REG write" if write else "REG read"
-                        logging.critical("shit detected")
-                        for _ in range(50):
-                            yield
-                        raise ValueError(f"{action}, addr: {hex(regno)}")
+                    print_fn(f"DMI: {action}, address: {addr!r}, value: {hex(value)} aka {_bin(value)}, dump {reg_dump}")
+
+                    if addr == DMIReg.COMMAND:
+                        assert op == DMIOp.WRITE
+                        acc_reg = dmi_monitor.cur_COMMAND.control
+                        regno = yield acc_reg.regno
+                        write = yield acc_reg.write
+                        transfer = yield acc_reg.transfer
+                        aarsize = yield acc_reg.aarsize
+                        if transfer:
+                            action = "reg write" if write else "REG read"
+                            # for _ in range(50):
+                            #     yield
+                            logging.critical(f"DMI {action}, addr: {hex(regno)}")
                     
             yield
     return aux
@@ -205,12 +270,12 @@ def dmi_write_access_register_command(
     yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
 
     regno = grp_to_dmi_access_register_regno(regno)
-    acc_reg = dmi_monitor.cur_COMMAND.control.ar
+    acc_reg = dmi_monitor.cur_COMMAND.control
 
     yield acc_reg.regno.eq(regno)
     yield acc_reg.write.eq(int(write))
     yield acc_reg.transfer.eq(1)
-    yield acc_reg.aarsize.eq(AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32)
+    yield acc_reg.aarsize.eq(AccessRegisterLayout.AARSIZE.BIT32)
 
 def dmi_write_data0(
         dmi_monitor: DMI_Monitor,

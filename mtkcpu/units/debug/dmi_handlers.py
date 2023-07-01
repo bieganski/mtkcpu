@@ -119,13 +119,9 @@ class HandlerDMCONTROL(HandlerDMI):
                 self.reg_dmstatus.anynonexistent.eq(hart_different_than_0_was_selected),
                 self.reg_dmstatus.allnonexistent.eq(hart_different_than_0_was_selected),
             ]
-        with m.Elif(write_value.dmactive):
-            sync += self.reg_dmcontrol.dmactive.eq(1)
-            comb += self.controller.command_finished.eq(1)
         with m.Else():
-            # TODO - reset the DM!
             comb += self.controller.command_finished.eq(1)
-            comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+            sync += self.reg_dmcontrol.dmactive.eq(write_value.dmactive)
         
 
 class HandlerCOMMAND(HandlerDMI):
@@ -140,9 +136,9 @@ class HandlerCOMMAND(HandlerDMI):
 
         with m.If(write_value.cmdtype == access_register):
 
-            acc_reg = self.acc_reg = write_value.control.ar
+            acc_reg = self.acc_reg = write_value.control
             # : AbstractCommandControl.AccessRegisterLayout 
-            with m.If(acc_reg.aarsize != AbstractCommandControl.AccessRegisterLayout.AARSIZE.BIT32):
+            with m.If(acc_reg.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
                 # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
                 comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                 comb += self.controller.command_finished.eq(1)
