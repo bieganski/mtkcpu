@@ -197,10 +197,31 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                     except Exception as e:
                         print_fn(f"Either unknown DMI reg {addr} or not registered in DMI_reg_kinds.")
                     
-                    if struct is not None:
+                    if op == DMIOp.WRITE and struct is not None:
                         reg_dump = debug_inspect_applied_struct(struct, value)
 
                     print_fn(f"DMI: {action}, address: {addr!r}, value: {hex(value)} aka {_bin(value)}, dump {reg_dump}")
+
+                    if op == DMIOp.READ:
+                        if struct is None:
+                            print_fn(f"Skipping waiting for DMI READ to complete "
+                                     "as DMI REG {addr} is not implemented, so no dump can be created.")
+                            yield
+                            continue
+                        timeout = 1000
+                        for _ in range(timeout):
+                            dr_capture = yield dmi_monitor.cpu.debug.jtag.jtag_fsm_capture_dr
+                            if dr_capture:
+                                break
+                            else:
+                                yield
+                        else:
+                            raise ValueError(f"After DMI READ testbenched expected DR capture to happen in {timeout} cycles, but it didn't happen.")
+
+                        # TODO - the 2 bits offset is because 'dr' is 41 bits (7 addr, 32 data, 2 op_type)
+                        dr = (yield dmi_monitor.cpu.debug.jtag.dr) >> 2
+                        reg_dump = debug_inspect_applied_struct(struct, dr)
+                        print_fn(f"DMI READ RESPONSE to address: {addr!r}, value: {hex(dr)} aka {_bin(dr)}, dump {reg_dump}")
 
                     if addr == DMIReg.COMMAND:
                         assert op == DMIOp.WRITE
