@@ -555,7 +555,6 @@ def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
 
         cpu.gprf_debug_data,
         cpu.gprf_debug_addr,
-        cpu.halt,
     ]
     return {
         "sim": sim,
