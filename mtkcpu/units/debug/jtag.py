@@ -48,6 +48,7 @@ class JTAGTap(Elaboratable):
         self.ir_reset = ir_reset
 
         self.jtag_fsm_update_dr = Signal()
+        self.jtag_fsm_capture_dr = Signal()
 
         self.ir = Signal(JtagIR)
         assert self.ir.width == 5 # Spike
@@ -93,7 +94,9 @@ class JTAGTap(Elaboratable):
         with m.If(rising_tck):
             sync += self.tck_ctr.eq(self.tck_ctr + 1)
 
+        # in simulation it's easier to have it in same domain as 'dr' is written, thus 'sync'.
         sync += self.jtag_fsm_update_dr.eq(0)
+        sync += self.jtag_fsm_capture_dr.eq(0)
 
         # Make 'update' bit high only for a single cycle.
         # TODO - move it to combinatorial domain.
@@ -128,7 +131,9 @@ class JTAGTap(Elaboratable):
                     for ir, record in self.regs.items():
                         with m.Case(ir):
                             sync += self.dr.eq(record.r)
-                            sync += record.capture.eq(rising_tck)
+                            with m.If(rising_tck):
+                                sync += record.capture.eq(1)
+                                sync += self.jtag_fsm_capture_dr.eq(1)
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "EXIT1-DR"
