@@ -32,7 +32,7 @@ from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
-from mtkcpu.utils.tests.dmi_utils import DMI_Monitor, monitor_cmderr, print_dmi_transactions
+from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
 
 logging = get_color_logging_object()
@@ -720,6 +720,8 @@ def assert_jtag_test(
 
     processes = [
         monitor_cmderr(dmi_monitor),
+        monitor_cpu_dm_if_error(dmi_monitor),
+        monitor_cpu_and_dm_state(dmi_monitor),
         print_dmi_transactions(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
