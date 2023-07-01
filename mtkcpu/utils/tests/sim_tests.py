@@ -1,11 +1,7 @@
-from cmath import exp
 from dataclasses import dataclass
 
-from mtkcpu.units.debug.top import DebugCSR
 import socket
 from functools import reduce
-from subprocess import TimeoutExpired
-from time import time
 from typing import Callable, Optional, Any
 from enum import Enum
 from amaranth.hdl.ast import Signal
@@ -15,7 +11,8 @@ from amaranth.hdl.ir import Elaboratable, Fragment
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.utils.tests.memory import MemoryContents, MemState
-from mtkcpu.units.debug.top import DMIReg, PROGBUF_MMIO_ADDR
+from mtkcpu.units.debug.top import DMIReg
+from mtkcpu.units.debug.impl_config import PROGBUF_MMIO_ADDR
 
 def find_fsm(top, *path):
     assert isinstance(top, Elaboratable)
