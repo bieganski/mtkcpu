@@ -571,6 +571,7 @@ def run_gdb(
 ):
 
     gdb_cmd = f"""
+set verbose on
 set arch riscv:rv32
 target extended-remote localhost:3333
 set mem inaccessible-by-default off
@@ -706,6 +707,8 @@ def assert_jtag_test(
                 run_gdb(
                     gdb_executable=gdb_executable,
                     elf_file=elf_path,
+                    stdout=Path("GDB_STDOUT"),
+                    stderr=Path("GDB_STDERR"),
                 )
     
     from multiprocessing import Process

@@ -236,6 +236,22 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                             #     yield
                             logging.critical(f"DMI {action}, addr: {hex(regno)}")
                     
+                    if addr == DMIReg.DMCONTROL and op == DMIOp.WRITE:
+                        haltreq = yield dmi_monitor.cur_DMCONTROL.haltreq
+                        resumereq = yield dmi_monitor.cur_DMCONTROL.resumereq
+                        cpu_dmactive = yield dmi_monitor.cpu.debug.dmi_regs[DMIReg.DMCONTROL].dmactive
+                        if (not cpu_dmactive) and (haltreq or resumereq):
+                            raise ValueError(f"Likely a bug in CPU implementation: Attempt to (haltreq={haltreq}, resumereq={resumereq}) when cpu's dmactive=0!")
+                        cpu_halted = yield dmi_monitor.cpu.running_state.halted
+                        if haltreq:
+                            if not cpu_dmactive or cpu_halted:
+                                raise ValueError(f"Likely a bug in CPU implementation: Attempt to haltreq when cpu's dmactive={cpu_dmactive}, cpu_running_state.halted={cpu_halted}!")
+                        yield
+                        yield
+                        if_haltreq = yield dmi_monitor.cpu.running_state_interface.haltreq
+                        if haltreq and not if_haltreq:
+                            raise ValueError(f"Likely a bug in CPU implementation: haltreq=1, if_haltreq=0, cpu_halt={(yield dmi_monitor.cpu.running_state.halted)}")
+                    
             yield
     return aux
 
