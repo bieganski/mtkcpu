@@ -100,8 +100,6 @@ const_csr_values = {
 
 class ControllerInterface():
     def __init__(self):
-        self.halted             = Signal()
-        self.resumed            = Signal()
         self.command_err        = Signal(3) # of shape 'cmderr'
         self.command_finished   = Signal()
 
@@ -134,8 +132,6 @@ class DebugUnit(Elaboratable):
             jtag_dtmcs.r.idle.eq(2), # TODO
         ]
 
-        self.HANDLER = Signal()
-
         self.autoexecdata = Signal(DATASIZE)
 
         HANDLE_ME_PLZ = 0
@@ -161,18 +157,6 @@ class DebugUnit(Elaboratable):
             ]
         )
 
-        self.ONREAD = Signal()
-        self.ONWRITE = Signal()
-
-        self.WTF = Signal(2)
-        sync += self.WTF.eq(0)
-
-        sync += [
-            self.ONWRITE.eq(0),
-            self.ONREAD.eq(0),
-            self.HANDLER.eq(0),
-        ]
-
         def reset():
             self.m.d.sync += [
                 self.dmi_regs[DMIReg.DMSTATUS].version.eq(2),
@@ -180,11 +164,6 @@ class DebugUnit(Elaboratable):
 
                 self.dmi_regs[DMIReg.ABSTRACTCS].datacount.eq(DATASIZE),
                 self.dmi_regs[DMIReg.ABSTRACTCS].progbufsize.eq(PROGBUFSIZE),
-            ]
-
-            self.m.d.comb += [
-                self.controller.command_err.eq(0),
-                self.controller.command_finished.eq(0),
             ]
 
         reset()
@@ -205,21 +184,12 @@ class DebugUnit(Elaboratable):
 
         def on_read(addr):
             sync = self.m.d.sync
-            sync += self.ONREAD.eq(1)
             with m.Switch(addr):
                 for addr2, record in self.dmi_regs.items():
                     with m.Case(addr2):
-                        sync += jtag_tap_dmi_bus.r.data.eq(record),
-                        sync += jtag_tap_dmi_bus.r.op.eq(0), # TODO        
+                        sync += jtag_tap_dmi_bus.r.data.eq(record)
+                        sync += jtag_tap_dmi_bus.r.op.eq(0) # TODO        
 
-        def on_write(addr, data):
-            sync = self.m.d.sync
-            sync += self.ONWRITE.eq(1)
-            with m.Switch(addr):
-                for addr2, record in self.dmi_regs.items():
-                    with m.Case(addr2):
-                        sync += record.eq(data)
-        
         abstractcs : ABSTRACTCS_Layout = self.dmi_regs[DMIReg.ABSTRACTCS]
 
         with m.FSM() as self.fsm:

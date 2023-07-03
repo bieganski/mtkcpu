@@ -208,6 +208,19 @@ class MtkCpu(Elaboratable):
         #             self.halt.eq(1),
         #         ]
 
+        def prev(sig: Signal) -> Signal:
+            res = Signal()
+            m.d.sync += res.eq(sig)
+            return res
+
+        just_resumed = self.just_resumed = Signal()
+        just_halted  = self.just_halted  = Signal()
+
+        comb += [
+            just_resumed.eq(prev(self.running_state.halted) & ~self.running_state.halted),
+            just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
+        ]
+
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
             # from specs:
             # 
@@ -215,9 +228,11 @@ class MtkCpu(Elaboratable):
             # is cleared and each selected, halted hart is sent a resume request. 
             sync += [
                 self.running_state.halted.eq(0),
-                self.running_state_interface.resumereq.eq(0),
-                self.running_state_interface.resumeack.eq(1),
             ]
+        with m.If(just_resumed):
+            comb += self.running_state_interface.resumeack.eq(1)
+        with m.If(just_halted):
+            comb += self.running_state_interface.haltack.eq(1)
 
         comb += [
             exception_unit.m_instruction.eq(instr),
@@ -367,8 +382,6 @@ class MtkCpu(Elaboratable):
                     with m.If(self.running_state_interface.haltreq):
                         sync += [
                             self.running_state.halted.eq(1),
-                            self.running_state_interface.haltreq.eq(0),
-                            self.running_state_interface.haltack.eq(1),
                         ]
                     with m.Else():
                         with m.If(pc & 0b11):

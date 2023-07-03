@@ -522,8 +522,6 @@ def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
         # jtag_loc.DATA_READ,
         # jtag_loc.DMI_WRITE,
         cpu.mtime,
-        cpu.debug.ONWRITE,
-        cpu.debug.ONREAD,
         # cpu.debug.HANDLER,
 
         jtag_loc.BAR,
@@ -726,8 +724,12 @@ def assert_jtag_test(
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
         print_dmi_transactions(dmi_monitor),
+        monitor_dmi_write_complete(dmi_monitor),
+        monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
+
+        monitor_jtag_tap_dmi_bus(dmi_monitor=dmi_monitor),
     ]
 
     with_checkpoints = False # XXX

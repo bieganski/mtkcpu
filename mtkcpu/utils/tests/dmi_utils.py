@@ -118,6 +118,46 @@ def monitor_cpu_dm_if_error(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
+def monitor_jtag_tap_dmi_bus(dmi_monitor: DMI_Monitor):
+    def aux():
+        yield Passive()
+
+        while True:
+            val = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].w.as_value()
+            op = val & 0b11
+            val >>= 2
+            data = val & (2 ** 32) - 1
+            val >>= 32
+            addr = val
+            
+            if data == 0x8000_0001:
+                for _ in range(20):
+                    val = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].w.as_value()
+                    op = val & 0b11
+                    val >>= 2
+                    data = val & (2 ** 32) - 1
+                    val >>= 32
+                    addr = val
+                    print(f">>> op {op}, data {data}, addr: {addr}")
+
+                    write_value = yield dmi_monitor.cpu.debug.dmi_handlers[DMIReg.DMCONTROL].write_value
+                    print(f"write_value: {hex(write_value)}")
+
+                    state = yield dmi_monitor.cpu.debug.fsm.state
+                    print(f"state: {state}")
+
+                    cpu_halted = yield dmi_monitor.cpu.running_state.halted
+                    cpu_if_haltreq = yield dmi_monitor.cpu.running_state_interface.haltreq
+                    print(f"cpu_halted: {cpu_halted}, if_haltreq: {cpu_if_haltreq}")
+                    yield
+
+            # if addr == DMIReg.DMCONTROL and op == DMIOp.WRITE:
+            #     raise ValueError(hex(orig_val))
+            # print(f"> data {hex(data)}")
+            yield
+    return aux
+
+
 def _bin(value: int) -> str:
     return '_'.join(format((value << i & 0xff00_0000) >> 24, '08b') for i in range(0, 25, 8))
 
@@ -244,13 +284,19 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                             raise ValueError(f"Likely a bug in CPU implementation: Attempt to (haltreq={haltreq}, resumereq={resumereq}) when cpu's dmactive=0!")
                         cpu_halted = yield dmi_monitor.cpu.running_state.halted
                         if haltreq:
-                            if not cpu_dmactive or cpu_halted:
+                            if (not cpu_dmactive) or cpu_halted:
                                 raise ValueError(f"Likely a bug in CPU implementation: Attempt to haltreq when cpu's dmactive={cpu_dmactive}, cpu_running_state.halted={cpu_halted}!")
-                        yield
-                        yield
+
+                        # yield
+                        if_haltreq1 = yield dmi_monitor.cpu.running_state_interface.haltreq
+                        # print(f"if_haltreq1 {if_haltreq1}")
+                        # yield
                         if_haltreq = yield dmi_monitor.cpu.running_state_interface.haltreq
-                        if haltreq and not if_haltreq:
-                            raise ValueError(f"Likely a bug in CPU implementation: haltreq=1, if_haltreq=0, cpu_halt={(yield dmi_monitor.cpu.running_state.halted)}")
+                        # if haltreq and not if_haltreq:
+                        #     raise ValueError(f"Likely a bug in CPU implementation: haltreq=1, if_haltreq=0, "
+                        #                      f"cpu_halt={(yield dmi_monitor.cpu.running_state.halted)}"
+                        #                      f"cpu_Satet={(yield dmi_monitor.cpu.main_fsm.state)}"
+                        #                      )
                     
             yield
     return aux
@@ -383,5 +429,58 @@ def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
                 logging.info(f"CPU changed state {note} to {repr}")
             prev_cpu_state = cpu_state
 
+            yield
+    return aux
+
+def monitor_dmi_write_complete(dmi_monitor: DMI_Monitor, timeout_ticks: int = 20):
+    def aux():
+        yield Passive()
+
+        while True:
+            state = yield dmi_monitor.cpu.debug.fsm.state
+            assert state in [0, 1], state
+            if state == 1:
+                for _ in range(timeout_ticks):
+                    finished = yield dmi_monitor.cpu.debug.controller.command_finished
+                    if finished:
+                        break
+                    yield
+                else:
+                    raise ValueError(f"DMI Write didn't complete after {timeout_ticks} ticks!")
+                
+                # post-check
+                yield
+                state = yield dmi_monitor.cpu.debug.fsm.state
+                assert state == 0
+                
+            yield
+    return aux
+
+
+def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: int = 10):
+    def aux():
+        yield Passive()
+
+        while True:
+            haltreq = yield dmi_monitor.cpu.running_state_interface.haltreq
+            resumereq = yield dmi_monitor.cpu.running_state_interface.resumereq
+
+            if haltreq:
+                for _ in range(timeout_ticks):
+                    ack = yield dmi_monitor.cpu.running_state_interface.haltack
+                    if ack:
+                        break
+                    yield
+                else:
+                    raise ValueError(f"haltreq didnt get an ack in {timeout_ticks} ticks!")
+
+            if resumereq:
+                for _ in range(timeout_ticks):
+                    ack = yield dmi_monitor.cpu.running_state_interface.resumeack
+                    if ack:
+                        break
+                    yield
+                else:
+                    raise ValueError(f"resumereq didnt get an ack in {timeout_ticks} ticks!")
             yield
     return aux

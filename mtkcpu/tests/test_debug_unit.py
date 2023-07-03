@@ -305,8 +305,21 @@ def test_core_halt_resume(
 
     for p in processes:
         simulator.add_sync_process(p)
+
+    vcd_traces = [
+        cpu.just_halted,
+        cpu.just_resumed,
+
+        cpu.running_state_interface.haltreq,
+        cpu.running_state_interface.haltack,
+        cpu.running_state_interface.resumereq,
+        cpu.running_state_interface.resumeack,
+
+        cpu.running_state.halted,
+    ]
         
-    simulator.run()
+    with simulator.write_vcd("halt.vcd", "halt.gtkw", traces=vcd_traces):
+        simulator.run()
 
 if __name__ == "__main__":
     # import pytest
