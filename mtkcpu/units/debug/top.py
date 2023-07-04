@@ -195,7 +195,6 @@ class DebugUnit(Elaboratable):
         with m.FSM() as self.fsm:
             with m.State("IDLE"):
                 with m.If(jtag_tap_dmi_bus.update & ~sticky):
-                    sync += abstractcs.busy.eq(jtag_tap_dmi_bus.w.op != DMIOp.NOP)
                     with m.Switch(jtag_tap_dmi_bus.w.op):
                         with m.Case(DMIOp.READ):
                             on_read(jtag_tap_dmi_bus.w.address)
@@ -208,6 +207,7 @@ class DebugUnit(Elaboratable):
                             # the W1/WARL/.../ thing from specs - currently all 'r' fields are set manually.
                             # I postpone that task till the time I better understand system constraints
                             # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
+                            sync += abstractcs.busy.eq(jtag_tap_dmi_bus.w.op != DMIOp.NOP)
                             m.next = "WAIT"
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)

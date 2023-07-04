@@ -109,6 +109,8 @@ class HandlerDMCONTROL(HandlerDMI):
                 ]
                 with m.If(cpu_state_if.resumeack):
                     comb += self.controller.command_finished.eq(1)
+            with m.Else():
+                comb += self.controller.command_finished.eq(1)
                 
             # Only hart 0 exists.
             hart_different_than_0_was_selected = Cat(write_value.hartselhi, write_value.hartsello).bool()
@@ -152,7 +154,7 @@ class HandlerCOMMAND(HandlerDMI):
                         # CSR
                         pass
                         comb += self.controller.command_finished.eq(1)
-                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                        comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                         # TODO - I implemented it at some point, but due to the specs it doesn't 
                         # have to be implemented - since we support arbitrary instruction execution via
                         # program buffer, the debugger implementation can read CSRs via csrr instruction.

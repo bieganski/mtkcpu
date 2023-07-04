@@ -699,7 +699,7 @@ def assert_jtag_test(
             #  /* Some regression suites rely on seeing 'Examined RISC-V core' to know
             # * when they can connect with gdb/telnet.
             # * We will need to update those suites if we want to change that text. */
-            logging.warn(line)
+            # logging.warn(line)
             if "Examined RISC-V core" in line:
                 logging.info("Detected that openOCD successfully finished CPU examination! Running GDB..")
                 run_gdb(
@@ -728,8 +728,6 @@ def assert_jtag_test(
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
-
-        monitor_jtag_tap_dmi_bus(dmi_monitor=dmi_monitor),
     ]
 
     with_checkpoints = False # XXX
