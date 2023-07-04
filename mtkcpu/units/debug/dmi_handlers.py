@@ -69,15 +69,12 @@ class HandlerDATA(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        write_value = Signal(32) # XXX
-
         with m.If(self.debug_unit.autoexecdata & (1 << num)):
             # trigger COMMAND handler manually and let it mark command handle finished.
             comb += [
                 self.controller.command_finished.eq(1),
                 self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER),
             ]
-            # self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
         with m.Else():
             self.default_handle_write()
 
@@ -95,23 +92,25 @@ class HandlerDMCONTROL(HandlerDMI):
             Note that that logic won't be executed when 'dmactive' asserted first time, in the same transaction.
             The proper way is that debugger first writes dmcontrol.dmactive high, then polls dmcontrol until it reads high dmactive.
             """
-            comb += self.controller.command_finished.eq(1)
-
             # TODO it doesn't take 'hartsel' into account.
 
             from mtkcpu.units.debug.cpu_dm_if import CpuRunningStateExternalInterface
             cpu_state_if : CpuRunningStateExternalInterface = self.debug_unit.cpu.running_state_interface
 
             with m.If(write_value.haltreq):
-                sync += [
+                comb += [
                     cpu_state_if.haltreq.eq(1),
-                    cpu_state_if.haltack.eq(0),
                 ]
+                with m.If(cpu_state_if.haltack):
+                    comb += self.controller.command_finished.eq(1)
             with m.Elif(write_value.resumereq): # Elif, because specs says: 'resumereq is ignored if haltreq is set'
-                sync += [
-                    cpu_state_if.resumeack.eq(0),
+                comb += [
                     cpu_state_if.resumereq.eq(1),
                 ]
+                with m.If(cpu_state_if.resumeack):
+                    comb += self.controller.command_finished.eq(1)
+            with m.Else():
+                comb += self.controller.command_finished.eq(1)
                 
             # Only hart 0 exists.
             hart_different_than_0_was_selected = Cat(write_value.hartselhi, write_value.hartsello).bool()
@@ -121,6 +120,10 @@ class HandlerDMCONTROL(HandlerDMI):
             ]
         with m.Else():
             comb += self.controller.command_finished.eq(1)
+        
+        # Note that we wait few cycles for req to complete, propagate 'dmactive' to be 
+        # available for next DMI WRITE, but not affect current DMI WRITE handling.
+        with m.If(self.controller.command_finished):
             sync += self.reg_dmcontrol.dmactive.eq(write_value.dmactive)
         
 
@@ -151,7 +154,7 @@ class HandlerCOMMAND(HandlerDMI):
                         # CSR
                         pass
                         comb += self.controller.command_finished.eq(1)
-                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                        comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                         # TODO - I implemented it at some point, but due to the specs it doesn't 
                         # have to be implemented - since we support arbitrary instruction execution via
                         # program buffer, the debugger implementation can read CSRs via csrr instruction.
@@ -228,22 +231,24 @@ class HandlerPROGBUF(HandlerDMI):
         my_idx = self.my_reg_addr - DMIReg.PROGBUF0
         my_mmio_addr = PROGBUF_MMIO_ADDR + 4 * my_idx
 
-        write_value = Signal(32) # XXX
+        write_value = self.write_value
 
-        bus = self.debug_unit.cpu.debug_bus
+        self.comb += self.controller.command_finished.eq(1)
+        self.comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+        # bus = self.debug_unit.cpu.debug_bus
 
-        assert write_value.shape() == bus.write_data.shape()
+        # assert write_value.shape() == bus.write_data.shape()
 
-        comb += [
-            bus.en.eq(1),
-            bus.store.eq(1),
-            bus.write_data.eq(write_value),
-            bus.addr.eq(my_mmio_addr),
-            bus.mask.eq(0b1111),
-        ]
+        # comb += [
+        #     bus.en.eq(1),
+        #     bus.store.eq(1),
+        #     bus.write_data.eq(write_value),
+        #     bus.addr.eq(my_mmio_addr),
+        #     bus.mask.eq(0b1111),
+        # ]
 
-        with m.If(bus.ack):
-            self.comb += self.controller.command_finished.eq(1)
+        # with m.If(bus.ack):
+        #     self.comb += self.controller.command_finished.eq(1)
 
 
 DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {

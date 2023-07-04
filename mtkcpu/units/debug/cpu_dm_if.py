@@ -23,14 +23,26 @@ class CpuRunningStateExternalInterface(Elaboratable):
     def elaborate(self, _):
         m = Module()
 
-        with m.If(self.resumeack):
-            m.d.sync += self.resumereq.eq(0)
+        def prev(sig: Signal) -> Signal:
+            res = Signal()
+            m.d.sync += res.eq(sig)
+            return res
+
+        # Only correctness checking for simulation purposes.
+
+        resumeack_takes_two = prev(self.resumeack) & self.resumeack
+        haltack_takes_two   = prev(self.haltack)   & self.haltack
         
-        with m.If(self.haltack):
-            m.d.sync += self.haltreq.eq(0)
-        
+        haltack_with_no_delay = ~prev(self.haltreq) & self.haltreq & self.haltack
+        resumeack_with_no_delay = ~prev(self.resumereq) & self.resumereq & self.resumeack
+
         with m.If(
-            (self.haltreq & self.haltack) | (self.resumereq & self.resumeack)
+            resumeack_takes_two |
+            haltack_takes_two |
+            haltack_with_no_delay |
+            resumeack_with_no_delay |
+            (~self.haltreq & self.haltack) |
+            (~self.resumereq & self.resumeack)
         ):
             m.d.sync += self.error_sticky.eq(1)
 
