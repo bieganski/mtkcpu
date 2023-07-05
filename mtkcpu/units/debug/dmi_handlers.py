@@ -38,6 +38,7 @@ class HandlerDMI():
         self.reg_dmcontrol      = self.dmi_regs[DMIReg.DMCONTROL]
         self.reg_dmstatus       = self.dmi_regs[DMIReg.DMSTATUS]
         self.reg_command        = self.dmi_regs[DMIReg.COMMAND]
+        self.reg_abstractcs     = self.dmi_regs[DMIReg.ABSTRACTCS]
         self.reg_data0          = self.dmi_regs[DMIReg.DATA0]
 
         assert write_value.shape() == unsigned(32)
@@ -77,6 +78,21 @@ class HandlerDATA(HandlerDMI):
             ]
         with m.Else():
             self.default_handle_write()
+
+class HandlerABSTRACTCS(HandlerDMI):
+    def handle_write(self):
+        num = self.my_reg_addr - DMIReg.DATA0
+        m = self.debug_unit.m
+        sync = self.sync
+        comb = self.comb
+
+        write_value = data.View(ABSTRACTCS_Layout, self.write_value)
+
+        # Related issue: https://github.com/bieganski/mtkcpu/issues/23
+        comb += self.controller.command_finished.eq(1)
+        sync += self.reg_abstractcs.cmderr.eq(
+            self.reg_abstractcs.cmderr & (~write_value.cmderr)
+        )
 
 class HandlerDMCONTROL(HandlerDMI):
 
@@ -135,9 +151,7 @@ class HandlerCOMMAND(HandlerDMI):
         
         write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.write_value)
 
-        access_register = COMMAND_Layout.AbstractCommandCmdtype.AccessRegister
-
-        with m.If(write_value.cmdtype == access_register):
+        with m.If(write_value.cmdtype == COMMAND_Layout.AbstractCommandCmdtype.AccessRegister):
 
             acc_reg = self.acc_reg = write_value.control
             # : AbstractCommandControl.AccessRegisterLayout 
@@ -259,4 +273,6 @@ DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {
     DMIReg.PROGBUF2: HandlerPROGBUF,
     DMIReg.DATA0: HandlerDATA,
     DMIReg.DATA1: HandlerDATA,
+
+    DMIReg.ABSTRACTCS: HandlerABSTRACTCS,
 }
