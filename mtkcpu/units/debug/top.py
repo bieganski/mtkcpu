@@ -4,7 +4,7 @@ from enum import IntEnum
 from mtkcpu.units.debug.jtag import JTAGTap
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.debug.impl_config import DATASIZE, PROGBUFSIZE
-from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
+from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP, HandlerPROGBUF
 from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
 
 from amaranth import *
@@ -153,9 +153,22 @@ class DebugUnit(Elaboratable):
                     debug_unit=self,
                     dmi_regs=self.dmi_regs,
                     controller=self.controller,
-                    write_value=jtag_tap_dmi_bus.w.data) ) for k, v in DMI_HANDLERS_MAP.items()
+                    dmi_write_value=jtag_tap_dmi_bus.w.data,
+                    dmi_write_address=jtag_tap_dmi_bus.w.address,) ) for k, v in DMI_HANDLERS_MAP.items()
             ]
         )
+
+        progbuf_handler = HandlerPROGBUF(
+            my_reg_addr=-1,
+            debug_unit=self,
+            dmi_regs=self.dmi_regs,
+            controller=self.controller,
+            dmi_write_value=jtag_tap_dmi_bus.w.data,
+            dmi_write_address=jtag_tap_dmi_bus.w.address,
+        )
+
+        for i in range(PROGBUFSIZE):
+            self.dmi_handlers[DMIReg.PROGBUF0 + i] = progbuf_handler
 
         def reset():
             self.m.d.sync += [

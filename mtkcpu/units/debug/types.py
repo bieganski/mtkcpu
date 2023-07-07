@@ -172,11 +172,11 @@ class DMIReg(enum.IntEnum, shape=unsigned(JtagIRValue.DM_ABITS)):
     SBCS         = 0x38
     DATA0        = 0x4
     DATA1        = 0x5
-    PROGBUF0     = 0x20
-    PROGBUF1     = 0x21
-    PROGBUF2     = 0x22
     ABSTRACTAUTO = 0x18
 
+    # Note that there are at most 0x10 PROGBUF registers.
+    PROGBUF0     = 0x20
+    
 
 class IR_DMI_Layout(data.Struct):
     op : DMIOp
@@ -198,9 +198,10 @@ DMI_reg_kinds = {
 
     DMIReg.DATA0: flat_layout_factory(32),
     DMIReg.DATA1: flat_layout_factory(32),
-    DMIReg.PROGBUF0: flat_layout_factory(32),
-    DMIReg.PROGBUF1: flat_layout_factory(32),
-    DMIReg.PROGBUF2: flat_layout_factory(32),
+    
+    # NOTE:
+    # We don't allocate registers for PROGBUF, as they are memory mapped, 
+    # thus stored in different location, as a part of RAM space.
 }
 
 for k, v in DMI_reg_kinds.items():

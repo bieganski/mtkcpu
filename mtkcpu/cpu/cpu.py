@@ -167,7 +167,7 @@ class MtkCpu(Elaboratable):
             mem_port=arbiter.port(priority=0)
         )
 
-        ibus = arbiter.port(priority=2)
+        ibus = self.ibus = arbiter.port(priority=2)
 
         # Current decoding state signals.
         instr = self.instr = Signal(32)
