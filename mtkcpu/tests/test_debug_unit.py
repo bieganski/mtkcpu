@@ -376,7 +376,6 @@ def test_cmderr_clear(
     simulator.run()
 
 
-
 # TODO
 # Almost-duplicate of mtkcpu.utils.tests.utils.capture_write_transactions, that captures only EBR transactions,
 # but heavily used, so cannot easily change it.
@@ -388,6 +387,7 @@ def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
         while(True):
             en = yield gb.en
             store = yield gb.store
+            addr = yield gb.addr
             if en and store:
                 data = yield gb.write_data
                 addr = yield gb.addr
@@ -402,7 +402,7 @@ def test_progbus_writes_to_bus(
     dmi_monitor: DMI_Monitor,
 ):
     from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
-    assert PROGBUFSIZE > 0
+    assert PROGBUFSIZE >= 2
 
     memory = dict()
 
@@ -411,31 +411,20 @@ def test_progbus_writes_to_bus(
 
         # Make sure that writing 0x0 won't clear the cmderr.
         # NOTE that 'cmderr' is the only writable field in 'abstractcs', so don't care about other fields.
-        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.PROGBUF0)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.PROGBUF0 + 1)
         yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
         yield dmi_monitor.cur_dmi_bus.data.eq(0xdeadbeef)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-        yield from few_ticks(1000)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=1000)
 
         assert len(memory) == 1
         (addr, val), = memory.items()
-        assert addr == PROGBUF_MMIO_ADDR
-        assert val == 0xdeadbeef
-        
-    
-    def wtf():
-        yield Passive()
-
-        while True:
-            val = yield cpu.debug_bus.ack
-            if val:
-                raise ValueError("ACK!")
-            yield
+        assert addr == PROGBUF_MMIO_ADDR + 4, hex(addr)
+        assert val == 0xdeadbeef, hex(val)
 
     processes = [
         main_process,   
         bus_capture_write_transactions(cpu=cpu, output_dict=memory),
-        wtf,
     ]
     
     for p in processes:
@@ -447,10 +436,10 @@ def test_progbus_writes_to_bus(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_cmderr_clear()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_cmderr_clear()
     test_progbus_writes_to_bus()
     logging.critical("ALL TESTS PASSED!")
 

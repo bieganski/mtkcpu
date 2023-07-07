@@ -68,6 +68,7 @@ class RegisterCSR():
         assert bits == 32
         self.rec = Record(__class__.reg_make_rw(layout))
         self._reset_value.set_reset(self.rec.r)
+        self._reset_value.set_reset(self.rec.w)
         self.csr_idx = csr_idx
         self.controller = None
         self.csr_unit = None

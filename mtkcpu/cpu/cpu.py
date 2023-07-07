@@ -161,10 +161,11 @@ class MtkCpu(Elaboratable):
         if self.with_debug:
             m.submodules.debug = self.debug
             m.submodules.dm_cpu_if = self.running_state_interface
-            self.debug_bus = arbiter.port(priority=1)
+            self.debug_bus = arbiter.port(priority=0)
 
+        self.dbus = arbiter.port(priority=1)
         mem_unit = m.submodules.mem_unit = MemoryUnit(
-            mem_port=arbiter.port(priority=0)
+            mem_port=self.dbus
         )
 
         ibus = self.ibus = arbiter.port(priority=2)
@@ -351,14 +352,10 @@ class MtkCpu(Elaboratable):
             funct7.eq(instr[25:32]),
         ]
 
-        def fetch_with_new_pc(pc : Signal):
-            m.next = "FETCH"
-            m.d.sync += active_unit.eq(0)
-            m.d.sync += self.pc.eq(pc)
-
-
         def trap(cause: Optional[Union[TrapCause, IrqCause]], interrupt=False):
-            fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+            m.d.sync += active_unit.eq(0)
+            m.next = "TRAP"
+
             if cause is None:
                 return
             assert isinstance(cause, TrapCause) or isinstance(cause, IrqCause) 
@@ -367,8 +364,17 @@ class MtkCpu(Elaboratable):
             m.d.comb += notifiers[cause].eq(1)
 
         self.fetch = Signal()
-        interconnect_error = Signal()
-        comb += interconnect_error.eq(exception_unit.m_store_error | exception_unit.m_fetch_error | exception_unit.m_load_error)
+        interconnect_error = self.interconnect_error = Signal()
+        comb += interconnect_error.eq(
+            exception_unit.m_store_error
+            | exception_unit.m_fetch_error
+            | exception_unit.m_load_error
+        )
+
+        def fetch_with_new_pc(pc : Signal):
+            m.next = "FETCH"
+            m.d.sync += self.pc.eq(pc)
+            m.d.sync += active_unit.eq(0)
 
         with m.If(~self.running_state.halted):
             with m.FSM() as self.main_fsm:
@@ -612,4 +618,12 @@ class MtkCpu(Elaboratable):
                         comb += reg_write_port.en.eq(True)
                     m.next = "FETCH"
 
+                with m.State("TRAP"):
+                    """
+                    NOTE: First implementation didn't have TRAP state. It was added to fix ibus issue,
+                    as there were situations that the ibus.en was high 100% time (e.g. trap and fetch from non-existing mtvec),
+                    so that the debug bus couldn't own the bus.
+                    """
+                    fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+            
         return m

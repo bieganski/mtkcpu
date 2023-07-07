@@ -253,7 +253,7 @@ class HandlerPROGBUF(HandlerDMI):
 
         bus = self.debug_unit.cpu.debug_bus
         assert self.write_value.shape() == bus.write_data.shape()
-        
+
         comb += [
             bus.en.eq(1),
             bus.store.eq(1),

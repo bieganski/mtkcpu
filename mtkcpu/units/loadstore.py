@@ -242,6 +242,8 @@ class MemoryArbiter(Elaboratable, AddressManager):
             self.serial = serial # TODO this is obfuscated, but we need those signals for simulation testbench
             
             return serial
+        
+        from mtkcpu.units.debug.impl_config import PROGBUF_MMIO_ADDR, PROGBUFSIZE
 
         self.mmio_cfg = [
             (
@@ -270,7 +272,16 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     first_valid_addr_incl=0x9000_0000,
                     last_valid_addr_excl=0x9000_1000,
                 )
-            )
+            ),
+            (
+                EBR_Wishbone(self.mem_config),
+                MMIOAddressSpace(
+                    ws=self.word_size,
+                    basename="debug_ebr",
+                    first_valid_addr_incl=PROGBUF_MMIO_ADDR,
+                    last_valid_addr_excl=PROGBUF_MMIO_ADDR + PROGBUFSIZE * 4, # NOTE: no support for impebreak yet.
+                )
+            ),
         ]
 
     def get_mmio_devices_config(self) -> List[Tuple[BusSlaveOwnerInterface, MMIOAddressSpace]]:
