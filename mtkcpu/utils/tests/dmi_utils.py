@@ -288,7 +288,7 @@ def dmi_bus_trigger_transaction(dmi_monitor: DMI_Monitor):
     """
     yield dmi_monitor.jtag_tap_dmi_bus.update.eq(1)
 
-def grp_to_dmi_access_register_regno(reg: int) -> int:
+def gpr_to_dmi_access_register_regno(reg: int) -> int:
     assert reg in range(32)
     return 0x1000 + reg
 
@@ -300,8 +300,7 @@ def dmi_write_access_register_command(
     yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
     yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
-
-    regno = grp_to_dmi_access_register_regno(regno)
+    
     acc_reg = dmi_monitor.cur_COMMAND.control
 
     yield acc_reg.regno.eq(regno)

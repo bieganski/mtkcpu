@@ -100,7 +100,11 @@ def test_dmi_abstract_command_read_write_gpr(
 
         # Make the Debug Module write DATA0 content to some CPU GPR, using 'Access Register' abstract command.
         logging.info(f"DMI: Writing DATA0 to x{regno}..")
-        yield from dmi_write_access_register_command(dmi_monitor=dmi_monitor, write=True, regno=regno)
+        yield from dmi_write_access_register_command(
+            dmi_monitor=dmi_monitor,
+            write=True,
+            regno=gpr_to_dmi_access_register_regno(regno),
+        )
         yield from few_ticks(5)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
@@ -131,7 +135,11 @@ def test_dmi_abstract_command_read_write_gpr(
         # Now when we clobbered DATA0, read 'x1' to DATA0 and compare with 'pattern'.
         logging.info(f"DMI: Reading x{regno} to DATA0..")
         yield from dmi_bus_reset(dmi_monitor=dmi_monitor)
-        yield from dmi_write_access_register_command(dmi_monitor=dmi_monitor, write=False, regno=regno)
+        yield from dmi_write_access_register_command(
+            dmi_monitor=dmi_monitor,
+            write=False,
+            regno=gpr_to_dmi_access_register_regno(regno),
+        )
         yield from few_ticks(5)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
@@ -321,12 +329,82 @@ def test_core_halt_resume(
     with simulator.write_vcd("halt.vcd", "halt.gtkw", traces=vcd_traces):
         simulator.run()
 
+@dmi_simulator
+def test_cmderr_clear(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    context = create_simulator()
+
+    simulator = context.simulator
+    cpu = context.cpu
+    dmi_monitor = context.dmi_monitor
+
+    def main_process():
+        yield from few_ticks()
+
+        # NOTE: Below line is implementation specific!
+        unimplemented_reg = 0x301
+
+        # Try reading some unsupported CSR.
+        yield from dmi_write_access_register_command(
+            dmi_monitor=dmi_monitor,
+            write=True,
+            regno=unimplemented_reg,
+        )
+        yield from few_ticks(5)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        # Make sure CMDERR is 2 (meaning 'not supported').
+        cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
+        if cmderr != ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED:
+            raise ValueError(f"Expected cmderr to be {ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED}, got {cmderr} instead!")
+    
+        # Make sure that writing 0x0 won't clear the cmderr.
+        # NOTE that 'cmderr' is the only writable field in 'abstractcs', so don't care about other fields.
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.ABSTRACTCS)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        yield dmi_monitor.cur_dmi_bus.data.eq(0)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        new_cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
+
+        if new_cmderr != cmderr:
+            raise ValueError(f"cmderr was expected not to change after 0x0 write (W1C), but it changed from {cmderr} to {new_cmderr}!")
+    
+        # Finally properly clear it.
+        # Once again note that other fields are read-only.
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.ABSTRACTCS)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        yield dmi_monitor.cur_dmi_bus.data.eq(0xFFFF_FFFF)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
+        if cmderr != ABSTRACTCS_Layout.CMDERR.NO_ERR:
+            raise ValueError(f"'cmderr' that is W1C field was not cleared after writing ones! It holds {cmderr} value instead.")
+        
+
+    processes = [
+        main_process,
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
-    test_core_halt_resume()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    # test_core_halt_resume()
+    test_cmderr_clear()
     logging.critical("ALL TESTS PASSED!")
 
 
