@@ -64,12 +64,7 @@ def test_dmi_abstract_command_read_write_gpr(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    context = create_simulator()
 
-    simulator = context.simulator
-    cpu = context.cpu
-    dmi_monitor = context.dmi_monitor
-    
     def main_process():
         """
         Write some value to x1, wait, and read x1. Expect to read exactly initial value.
@@ -175,12 +170,6 @@ def test_dmi_try_read_not_implemented_register(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    context = create_simulator()
-
-    simulator = context.simulator
-    cpu = context.cpu
-    dmi_monitor = context.dmi_monitor
-
 
     def main_process():
         """
@@ -236,11 +225,6 @@ def test_core_halt_resume(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    context = create_simulator()
-
-    simulator = context.simulator
-    cpu = context.cpu
-    dmi_monitor = context.dmi_monitor
 
     def cpu_core_is_halted():
         return (yield cpu.running_state.halted)
@@ -335,12 +319,6 @@ def test_cmderr_clear(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    context = create_simulator()
-
-    simulator = context.simulator
-    cpu = context.cpu
-    dmi_monitor = context.dmi_monitor
-
     def main_process():
         yield from few_ticks()
 
@@ -398,13 +376,71 @@ def test_cmderr_clear(
     simulator.run()
 
 
+# TODO
+# Almost-duplicate of mtkcpu.utils.tests.utils.capture_write_transactions, that captures only EBR transactions,
+# but heavily used, so cannot easily change it.
+def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
+    def f():
+        yield Passive()
+        gb = cpu.arbiter.generic_bus
+        
+        while(True):
+            en = yield gb.en
+            store = yield gb.store
+            addr = yield gb.addr
+            if en and store:
+                data = yield gb.write_data
+                addr = yield gb.addr
+                output_dict[addr] = data
+            yield
+    return f
+
+@dmi_simulator
+def test_progbus_writes_to_bus(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
+    assert PROGBUFSIZE >= 2
+
+    memory = dict()
+
+    def main_process():
+        yield from few_ticks()
+
+        # Make sure that writing 0x0 won't clear the cmderr.
+        # NOTE that 'cmderr' is the only writable field in 'abstractcs', so don't care about other fields.
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.PROGBUF0 + 1)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        yield dmi_monitor.cur_dmi_bus.data.eq(0xdeadbeef)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=1000)
+
+        assert len(memory) == 1
+        (addr, val), = memory.items()
+        assert addr == PROGBUF_MMIO_ADDR + 4, hex(addr)
+        assert val == 0xdeadbeef, hex(val)
+
+    processes = [
+        main_process,   
+        bus_capture_write_transactions(cpu=cpu, output_dict=memory),
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
     test_cmderr_clear()
+    test_progbus_writes_to_bus()
     logging.critical("ALL TESTS PASSED!")
 
 

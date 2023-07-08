@@ -23,17 +23,22 @@ class ControllerInterfaceDuplicated():
 # controller.command_finished = 1 (in comb domain).
 # In same clock cycle it can drive any sync signal, it will be executed too (e.g. FSM state transition).
 class HandlerDMI():
-    def __init__(self, 
-                 my_reg_addr: int, # TODO rename so that it contains 'dmi_addr'.
+    def __init__(self,
+                 my_reg_addr: int,
                  debug_unit,
                  dmi_regs: dict,
                  controller: ControllerInterfaceDuplicated,
-                 write_value: Signal,
+                 dmi_write_value: Signal,
+                 dmi_write_address: Signal,
             ):
         self.debug_unit = debug_unit
         self.dmi_regs = dmi_regs
         self.controller = controller
+
+        # TODO
+        # https://github.com/bieganski/mtkcpu/issues/25
         self.my_reg_addr = my_reg_addr
+        self.dmi_write_address = dmi_write_address
 
         self.reg_dmcontrol      = self.dmi_regs[DMIReg.DMCONTROL]
         self.reg_dmstatus       = self.dmi_regs[DMIReg.DMSTATUS]
@@ -41,8 +46,8 @@ class HandlerDMI():
         self.reg_abstractcs     = self.dmi_regs[DMIReg.ABSTRACTCS]
         self.reg_data0          = self.dmi_regs[DMIReg.DATA0]
 
-        assert write_value.shape() == unsigned(32)
-        self.write_value = write_value
+        assert dmi_write_value.shape() == unsigned(32)
+        self.write_value = dmi_write_value
     
         m = self.debug_unit.m
         self.sync = m.d.sync
@@ -81,8 +86,6 @@ class HandlerDATA(HandlerDMI):
 
 class HandlerABSTRACTCS(HandlerDMI):
     def handle_write(self):
-        num = self.my_reg_addr - DMIReg.DATA0
-        m = self.debug_unit.m
         sync = self.sync
         comb = self.comb
 
@@ -242,37 +245,34 @@ class HandlerPROGBUF(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        my_idx = self.my_reg_addr - DMIReg.PROGBUF0
-        my_mmio_addr = PROGBUF_MMIO_ADDR + 4 * my_idx
+        # https://github.com/bieganski/mtkcpu/issues/25
+        assert self.my_reg_addr < 0  # make sure we won't use it here, as it would be invalid.
 
-        write_value = self.write_value
+        my_mmio_addr = Signal(32)
+        comb += my_mmio_addr.eq(PROGBUF_MMIO_ADDR + ((self.dmi_write_address - DMIReg.PROGBUF0) << 2))
 
-        self.comb += self.controller.command_finished.eq(1)
-        self.comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
-        # bus = self.debug_unit.cpu.debug_bus
+        bus = self.debug_unit.cpu.debug_bus
+        assert self.write_value.shape() == bus.write_data.shape()
 
-        # assert write_value.shape() == bus.write_data.shape()
+        comb += [
+            bus.en.eq(1),
+            bus.store.eq(1),
+            bus.write_data.eq(self.write_value),
+            bus.addr.eq(my_mmio_addr),
+            bus.mask.eq(0b1111),
+        ]
 
-        # comb += [
-        #     bus.en.eq(1),
-        #     bus.store.eq(1),
-        #     bus.write_data.eq(write_value),
-        #     bus.addr.eq(my_mmio_addr),
-        #     bus.mask.eq(0b1111),
-        # ]
-
-        # with m.If(bus.ack):
-        #     self.comb += self.controller.command_finished.eq(1)
+        with m.If(bus.ack):
+            self.comb += self.controller.command_finished.eq(1)
 
 
 DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {
     DMIReg.DMCONTROL: HandlerDMCONTROL,
     DMIReg.COMMAND: HandlerCOMMAND,
-    DMIReg.PROGBUF0: HandlerPROGBUF,
-    DMIReg.PROGBUF1: HandlerPROGBUF,
-    DMIReg.PROGBUF2: HandlerPROGBUF,
     DMIReg.DATA0: HandlerDATA,
     DMIReg.DATA1: HandlerDATA,
-
     DMIReg.ABSTRACTCS: HandlerABSTRACTCS,
+
+    # NOTE:
+    # HandlerPROGBUFx is not stated here.
 }
