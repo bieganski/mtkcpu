@@ -473,7 +473,7 @@ class MtkCpu(Elaboratable):
                     with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
                         pass # sfence.vma
                     with m.Elif(opcode == 0b0001111):
-                        pass # fence
+                        pass # fence - do nothing, as we are a simple implementation.
                     with m.Else():
                         trap(TrapCause.ILLEGAL_INSTRUCTION)
                 with m.State("EXECUTE"):

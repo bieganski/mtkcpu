@@ -699,7 +699,7 @@ def assert_jtag_test(
             #  /* Some regression suites rely on seeing 'Examined RISC-V core' to know
             # * when they can connect with gdb/telnet.
             # * We will need to update those suites if we want to change that text. */
-            # logging.warn(line)
+            logging.warn(line)
             if "Examined RISC-V core" in line:
                 logging.info("Detected that openOCD successfully finished CPU examination! Running GDB..")
                 run_gdb(

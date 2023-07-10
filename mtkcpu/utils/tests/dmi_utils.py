@@ -267,6 +267,34 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
+def dmi_op_wait_for_cmderr(dmi_monitor: DMI_Monitor, expected_cmderr: int, timeout: int = 40):
+    """
+    Check 'busy' and 'cmderr' fields in 'abstractcs'.
+    Raises if 'cmderr' is nonzero, or if 'busy' is never high/is high for too long.
+    """
+    for i in range(timeout):
+        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
+        if busy:
+            break
+        yield
+    else:
+        raise ValueError(f"dmi_op_wait_for_cmderr: abstractcs.busy wasn't asserted during {timeout} cycles!")
+    
+    for i in range(i, timeout):
+        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
+        cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
+
+        if not busy:
+            logging.debug(f"DMI OP finished in {i} ticks.")
+
+            if cmderr != expected_cmderr:
+                raise ValueError(f"Expected cmderr {expected_cmderr}, got {cmderr}")
+            break
+        yield   
+    else:
+        raise ValueError("dmi_op_wait_for_cmderr: abstractcs.busy high for too long!")
+
+
 def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
     """
     Check 'busy' and 'cmderr' fields in 'abstractcs'.
@@ -285,7 +313,7 @@ def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
         cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
 
         if cmderr:
-            raise ValueError(f"dmi_op_wait_for_success: abstractcs.cmderr detected high, while expecting it to be low!")
+            raise ValueError(f"dmi_op_wait_for_success: detected nonzero0 abstractcs.cmderr ({cmderr})!")
 
         if not busy:
             logging.debug(f"DMI OP finished in {i} ticks.")
@@ -365,13 +393,13 @@ def activate_DM_and_halt_via_dmi(dmi_monitor: DMI_Monitor):
     # Only assert 'dmactive'.
     yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-    yield from few_ticks(100)
+    yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=20)
 
     # Once 'dmactive' is hight, select hart 0 and halt it.
     yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
     yield dmi_monitor.cur_DMCONTROL.haltreq.eq(1)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-    yield from few_ticks(100)
+    yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=20)
 
 def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
     def aux():

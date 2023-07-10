@@ -163,80 +163,49 @@ class HandlerCOMMAND(HandlerDMI):
                 comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
                 comb += self.controller.command_finished.eq(1)
             with m.Else():
-                with m.If(acc_reg.transfer):
+                with m.FSM() as self.main_fms:
+                    with m.State("TRANSFER"):
+                        
+                        next = self.next = Signal()
 
-                    dst = self.debug_unit.dmi_regs[DMIReg.DATA0] # XXX rename
-                    # decode register address, as it might be either CSR or GPR
-                    with m.If(acc_reg.regno <= 0x0fff):
-                        # CSR
-                        pass
+                        with m.If(acc_reg.transfer):
+                            # decode register address, as it might be either CSR or GPR
+                            # TODO inefficient logic.. use 'matches' instead.
+                            with m.If((acc_reg.regno >= 0x1000) & (acc_reg.regno <= 0x101f)):
+                                # GPR
+                                with m.FSM():
+                                    with m.State("A"):
+                                        arg0 = self.reg_data0
+                                        comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
+                                        comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
+                                        with m.If(acc_reg.write):
+                                            comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
+                                        m.next = "B"
+                                    with m.State("B"):
+                                        with m.If(~acc_reg.write):
+                                            sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
+                                        m.next = "A"
+                                        comb += next.eq(1)
+                            with m.Else():
+                                comb += [
+                                    self.controller.command_finished.eq(1),
+                                    self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+                                ]
+                        with m.Else():
+                            comb += next.eq(1)
+
+                        with m.If(next):
+                            m.next = "POSTEXEC"
+                    
+                    with m.State("POSTEXEC"):
+                        with m.If(acc_reg.postexec):
+                            with m.If(~self.debug_unit.cpu.running_state.halted):
+                                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)
+                            with m.Else():
+                                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+
                         comb += self.controller.command_finished.eq(1)
-                        comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                        # TODO - I implemented it at some point, but due to the specs it doesn't 
-                        # have to be implemented - since we support arbitrary instruction execution via
-                        # program buffer, the debugger implementation can read CSRs via csrr instruction.
-                        # with m.If(acc_reg.write):
-                        #     self.controller.command_finished.eq(1)
-                        #     self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                        # with m.Switch(acc_reg.regno):
-                        #     for addr, _ in self.debug_unit.csr_regs.items():
-                        #         with m.Case(addr):
-                        #             if addr in self.debug_unit.const_csr_values:
-                        #                 with m.If(acc_reg.write):
-                        #                     self.controller.command_finished.eq(1)
-                        #                     self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                        #                 with m.Else():
-                        #                     cls = self.debug_unit.const_csr_values[addr]
-                        #                     layout = self.debug_unit.csr_regs[addr]
-                        #                     sync += dst.eq(cls(layout).to_value())
-                        #             else:
-                        #                 with m.If(acc_reg.write):
-                        #                     self.debug_unit.nonconst_csr_values[addr].eq(write_value)
-                        #                 with m.Else():
-                        #                     sync += dst.eq(self.debug_unit.nonconst_csr_values[addr])                                    
-                                    
-                        #     with m.Case(DMI_CSR.DPC):
-                        #         sync += dst.eq(self.debug_unit.cpu.pc)
-                        # comb += self.controller.command_finished.eq(1)
-                    with m.Elif(acc_reg.regno <= 0x101f):
-                        # GPR
-                        with m.FSM() as self.fsmxd:
-                            with m.State("A"):
-                                arg0 = self.reg_data0
-                                comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
-                                comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
-                                with m.If(acc_reg.write):
-                                    comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
-                                m.next = "B"
-                            with m.State("B"):
-                                with m.If(~acc_reg.write):
-                                    sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
-                                m.next = "C"
-                            with m.State("C"):
-                                m.next = "A"
-                                with m.If(~acc_reg.postexec):
-                                    comb += self.controller.command_finished.eq(1)
-                                with m.Else():
-                                    comb += self.controller.command_finished.eq(1)
-                                    comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
-                                    # execute Program Buffer
-                                    # TODO not supported yet.
-                                    # sync += self.debug_unit.cpu.pc.eq(PROGBUF_MMIO_ADDR)
-                                    pass
-                    with m.Else():
-                        self.controller.command_finished.eq(1)
-                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                with m.Else():
-                    with m.If(~acc_reg.postexec):
-                        # no transfer and no postexect bits - not sure what should I do?
-                        comb += self.controller.command_finished.eq(1)
-                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
-                    with m.Else():
-                        # TODO execute Program Buffer
-                        # not yet supported.
-                        # TODO - make `dmi_watchdog` cathc CMDERR.OTHER, as its equaivalent of NotImplementedError
-                        comb += self.controller.command_finished.eq(1)
-                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                        m.next = "TRANSFER"
 
 
 class HandlerPROGBUF(HandlerDMI):
