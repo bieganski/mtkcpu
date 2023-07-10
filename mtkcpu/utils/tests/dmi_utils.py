@@ -183,6 +183,7 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
         def print_fn(s: str):
             logging.info(s)
         
+        last_data0 = None
         while True:
             new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
             if new_dmi_transaction:
@@ -222,7 +223,14 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         # TODO - the 2 bits offset is because 'dr' is 41 bits (7 addr, 32 data, 2 op_type)
                         dr = (yield dmi_monitor.cpu.debug.jtag.dr) >> 2
                         reg_dump = debug_inspect_applied_struct(struct, dr)
-                        print_fn(f"DMI READ RESPONSE to address: {addr!r}, value: {hex(dr)} aka {_bin(dr)}, dump {reg_dump}")
+                        logging.warn(f"DMI READ RESPONSE to address: {addr!r}, value: {hex(dr)} aka {_bin(dr)}, dump {reg_dump}")
+                        continue
+
+                    assert op != DMIOp.READ
+
+                    if addr == DMIReg.DATA0 and op == DMIOp.WRITE:
+                        last_data0 = value
+                        logging.critical(f">>>                                             SETTING DATA0 to {hex(last_data0)}")
 
                     if addr == DMIReg.COMMAND:
                         assert op == DMIOp.WRITE
@@ -232,10 +240,11 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         transfer = yield acc_reg.transfer
                         aarsize = yield acc_reg.aarsize
                         if transfer:
-                            action = "reg write" if write else "REG read"
-                            # for _ in range(50):
-                            #     yield
-                            logging.critical(f"DMI {action}, addr: {hex(regno)}")
+                            if write:
+                                logging.critical(f"DMI WRITE, addr: {hex(regno)}, DATA0: {hex(last_data0)}")
+                            else:
+                                logging.critical(f"DMI READ, addr: {hex(regno)}")
+                                
                     
                     if addr == DMIReg.DMCONTROL and op == DMIOp.WRITE:
                         haltreq = yield dmi_monitor.cur_DMCONTROL.haltreq
@@ -247,6 +256,14 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         if haltreq:
                             if (not cpu_dmactive) or cpu_halted:
                                 raise ValueError(f"Likely a bug in CPU implementation: Attempt to haltreq when cpu's dmactive={cpu_dmactive}, cpu_running_state.halted={cpu_halted}!")                    
+                    
+                    from riscvmodel.code import decode
+                    if addr in [DMIReg.PROGBUF0 + i for i in range(16)] and op == DMIOp.WRITE:
+                        try:
+                            ins_str = f"{decode(value)}  <{hex(value)}>"
+                        except Exception:
+                            ins_str = f"Unknown: {hex(value)}"
+                        logging.critical(f"PROGBUF{addr - DMIReg.PROGBUF0} write: {ins_str}")
             yield
     return aux
 
