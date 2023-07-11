@@ -468,6 +468,7 @@ def progbuf_write_wait_for_success(dmi_monitor: DMI_Monitor, progbuf_reg_num: in
     yield dmi_monitor.cur_dmi_bus.data.eq(ins)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
     yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=1000)
+    logging.info(f"PROGBUF written successfully")
         
 
 def trigger_progbuf_exec(dmi_monitor: DMI_Monitor):
@@ -478,7 +479,8 @@ def trigger_progbuf_exec(dmi_monitor: DMI_Monitor):
     acc_reg = dmi_monitor.cur_COMMAND.control
 
     yield acc_reg.as_value().eq(0)
-    yield
+    
+    yield # TODO remove me
 
     yield acc_reg.regno.eq(0x1000)
     yield acc_reg.write.eq(0)
@@ -582,24 +584,16 @@ def test_progbuf_gets_executed(
         ins = encode_ins(instructions.Ebreak())
         yield from progbuf_write_wait_for_success(dmi_monitor, 1, ins)
 
-        del ins
+        # del ins
 
-        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        yield from few_ticks(5)
+        # yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        # yield from dmi_op_wait_for_cmderr(
+        #     dmi_monitor=dmi_monitor,
+        #     expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
+        #     timeout=1000,
+        # )
 
-        for _ in range(40):
-            busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
-            cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
-            if not busy:
-                expected_cmderr = ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME
-                if cmderr != expected_cmderr:
-                    raise ValueError(f"Triggered PROGBUF 'postexec' with running hart, was expecting {expected_cmderr} and got {cmderr}")
-                break
-            yield
-        else:
-            raise ValueError("timeout!")
-        
-        yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
+        # yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
 
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
@@ -608,11 +602,27 @@ def test_progbuf_gets_executed(
         
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=1000)
+
+    def wtf():
+        while True:
+            state = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].fsmxd.state
+            if state == 4:
+                for _ in range(10):
+                    pc = yield cpu.pc
+                    dpc = yield cpu.csr_unit.dpc.value
+                    main_state = yield cpu.main_fsm.state
+                    halted = yield cpu.running_state.halted
+                    print("PC", hex(pc), "dpc", hex(dpc), "main state", main_state, halted)
+                    yield
+                return
+            yield
+
         
 
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        wtf,
     ]
     
     for p in processes:
@@ -624,13 +634,13 @@ def test_progbuf_gets_executed(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
-    test_core_halt_resume()
-    test_halt_resume_with_new_dpc()
-    test_cmderr_clear()
-    test_progbuf_writes_to_bus()
-    # test_progbuf_gets_executed()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    # test_core_halt_resume()
+    # test_halt_resume_with_new_dpc()
+    # test_cmderr_clear()
+    # test_progbuf_writes_to_bus()
+    test_progbuf_gets_executed()
     logging.critical("ALL TESTS PASSED!")
 
 

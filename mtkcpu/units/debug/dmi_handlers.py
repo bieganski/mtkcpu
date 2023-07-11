@@ -203,14 +203,50 @@ class HandlerCOMMAND(HandlerDMI):
                             m.next = "POSTEXEC"
                 
                 with m.State("POSTEXEC"):
-                    with m.If(acc_reg.postexec):
-                        with m.If(~self.debug_unit.cpu.running_state.halted):
-                            comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)
-                        with m.Else():
-                            comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                    done = Signal() # drive outer FSM state from inner FSM.
 
-                    comb += self.controller.command_finished.eq(1)
-                    m.next = "TRANSFER"
+                    with m.If(done):
+                        comb += self.controller.command_finished.eq(1)
+                        m.next = "TRANSFER"
+
+                    with m.If(~acc_reg.postexec):
+                        comb += done.eq(1)
+                    with m.Else():
+                        from mtkcpu.cpu.cpu import MtkCpu
+                        from mtkcpu.cpu.priv_isa import CSRIndex
+                        cpu : MtkCpu = self.debug_unit.cpu
+                        real_dpc = Signal(32)
+                        dpc = cpu.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
+                        with m.FSM() as self.fsmxd:
+                            with m.State("SANITY_CHECK"):
+                                with m.If(~self.debug_unit.cpu.running_state.halted):
+                                    comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)
+                                    comb += done.eq(1)
+                                with m.Else():
+                                    m.next = "A"
+                            with m.State("A"):
+                                sync += [
+                                    real_dpc.eq(dpc),
+                                    cpu.is_debug_mode.eq(1),
+                                ]
+                                m.next = "B"
+                            with m.State("B"):
+                                sync += [
+                                    # TODO: encapsulation - we shouldn't write to dpc directly from DM.
+                                    dpc.eq(PROGBUF_MMIO_ADDR)
+                                ]
+                                m.next = "C"
+                            with m.State("C"):
+                                comb += cpu.running_state_interface.resumereq.eq(1)
+                                with m.If(cpu.running_state_interface.resumeack):
+                                    m.next = "D"
+                            with m.State("D"):
+                                with m.If(cpu.running_state.halted):
+                                    # CPU executed ebreak.
+                                    comb += done.eq(1)
+                                    m.next = "SANITY_CHECK"
+                                    sync += cpu.is_debug_mode.eq(0)
+                    
 
 
 class HandlerPROGBUF(HandlerDMI):

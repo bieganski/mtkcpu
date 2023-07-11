@@ -142,12 +142,22 @@ class MtkCpu(Elaboratable):
         shifter = m.submodules.shifter = ShifterUnit()
         compare = m.submodules.compare = CompareUnit()
         
+        # This bit is read-only in cpu top - it's solely managed by exception unit.
         self.current_priv_mode = Signal(PrivModeBits, reset=PrivModeBits.MACHINE)
+
+        # For Program Buffer Execution flows (refer to Debug Specs), the CPU executes instructions
+        # like in normal flow, but subtle details (like the behavior on 'ebreak' ins.) differs.
+        # TODO - that bit is a part of a Debug Unit <-> CPU interface, let's make it more explicit.
+        self.is_debug_mode = Const(0) if not self.with_debug else Signal()
         
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
             # TODO does '==' below produces the same synth result as .all()?
             in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE
         )
+
+        halt_on_ebreak = self.halt_on_ebreak = Signal()
+        comb += halt_on_ebreak.eq(self.is_debug_mode) # TODO | csr_unit.dcsr.ebreakm)
+
         exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(
             csr_unit=csr_unit, 
             current_priv_mode=self.current_priv_mode
@@ -490,6 +500,16 @@ class MtkCpu(Elaboratable):
                         pass # sfence.vma
                     with m.Elif(opcode == 0b0001111):
                         pass # fence - do nothing, as we are a simple implementation.
+                    with m.Elif(opcode == 0b1110011):
+                        # ebreak
+                        with m.If(halt_on_ebreak):
+                            # enter Debug Mode.
+                            sync += self.running_state.halted.eq(1)
+                            m.next = "FETCH"
+                        with m.Else():
+                            # EBREAK description from Privileged specs:
+                            # It generates a breakpoint exception and performs no other operation.
+                            trap(TrapCause.BREAKPOINT)
                     with m.Else():
                         trap(TrapCause.ILLEGAL_INSTRUCTION)
                 with m.State("EXECUTE"):
