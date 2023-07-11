@@ -157,55 +157,60 @@ class HandlerCOMMAND(HandlerDMI):
         with m.If(write_value.cmdtype == COMMAND_Layout.AbstractCommandCmdtype.AccessRegister):
 
             acc_reg = self.acc_reg = write_value.control
-            # : AbstractCommandControl.AccessRegisterLayout 
-            with m.If(acc_reg.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
-                # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
-                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                comb += self.controller.command_finished.eq(1)
-            with m.Else():
-                with m.FSM() as self.main_fms:
-                    with m.State("TRANSFER"):
-                        
+            
+            with m.FSM() as self.main_fms:
+                with m.State("TRANSFER"):
+                    
                         next = self.next = Signal()
 
                         with m.If(acc_reg.transfer):
                             # decode register address, as it might be either CSR or GPR
                             # TODO inefficient logic.. use 'matches' instead.
-                            with m.If((acc_reg.regno >= 0x1000) & (acc_reg.regno <= 0x101f)):
-                                # GPR
-                                with m.FSM():
-                                    with m.State("A"):
-                                        arg0 = self.reg_data0
-                                        comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
-                                        comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
-                                        with m.If(acc_reg.write):
-                                            comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
-                                        m.next = "B"
-                                    with m.State("B"):
-                                        with m.If(~acc_reg.write):
-                                            sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
-                                        m.next = "A"
-                                        comb += next.eq(1)
+
+                            with m.If(acc_reg.aarsize != AccessRegisterLayout.AARSIZE.BIT32):
+                                # From specs:
+                                # This bit [transfer] can be used to just execute the Program Buffer without having to
+                                # worry about placing valid values into aarsize or regno.
+
+                                # with m.If(record.postexec | (record.aarsize != 2) | record.aarpostincrement):
+                                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+                                comb += self.controller.command_finished.eq(1)
                             with m.Else():
-                                comb += [
-                                    self.controller.command_finished.eq(1),
-                                    self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-                                ]
+                                with m.If((acc_reg.regno >= 0x1000) & (acc_reg.regno <= 0x101f)):
+                                    # GPR
+                                    with m.FSM():
+                                        with m.State("A"):
+                                            arg0 = self.reg_data0
+                                            comb += self.debug_unit.cpu.gprf_debug_addr.eq(acc_reg.regno & 0xFF)
+                                            comb += self.debug_unit.cpu.gprf_debug_write_en.eq(acc_reg.write)
+                                            with m.If(acc_reg.write):
+                                                comb += self.debug_unit.cpu.gprf_debug_data.eq(arg0.as_value())
+                                            m.next = "B"
+                                        with m.State("B"):
+                                            with m.If(~acc_reg.write):
+                                                sync += self.reg_data0.eq(self.debug_unit.cpu.gprf_debug_data)
+                                            m.next = "A"
+                                            comb += next.eq(1)
+                                with m.Else():
+                                    comb += [
+                                        self.controller.command_finished.eq(1),
+                                        self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+                                    ]
                         with m.Else():
                             comb += next.eq(1)
 
                         with m.If(next):
                             m.next = "POSTEXEC"
-                    
-                    with m.State("POSTEXEC"):
-                        with m.If(acc_reg.postexec):
-                            with m.If(~self.debug_unit.cpu.running_state.halted):
-                                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)
-                            with m.Else():
-                                comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
+                
+                with m.State("POSTEXEC"):
+                    with m.If(acc_reg.postexec):
+                        with m.If(~self.debug_unit.cpu.running_state.halted):
+                            comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)
+                        with m.Else():
+                            comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER)
 
-                        comb += self.controller.command_finished.eq(1)
-                        m.next = "TRANSFER"
+                    comb += self.controller.command_finished.eq(1)
+                    m.next = "TRANSFER"
 
 
 class HandlerPROGBUF(HandlerDMI):

@@ -397,6 +397,10 @@ class MtkCpu(Elaboratable):
                         # From specs:
                         # Upon entry to debug mode, dpc is updated with the virtual address of
                         # the next instruction to be executed.
+
+                        # TODO
+                        # From specs, we need to implement 'cause' write as well:
+                        # 'When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
                         sync += [
                             self.running_state.halted.eq(1),
                             self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(self.pc),
