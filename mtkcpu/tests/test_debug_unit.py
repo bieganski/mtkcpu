@@ -486,7 +486,81 @@ def trigger_progbuf_exec(dmi_monitor: DMI_Monitor):
     yield acc_reg.postexec.eq(1)
     yield acc_reg.aarsize.eq(AccessRegisterLayout.AARSIZE.BIT32)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+
+
+@dmi_simulator
+def test_halt_resume_with_new_dpc(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    
+    program_counters_seen : set[int] = set()
+
+    def pc_updater():
+        yield Passive()
+        while True:
+            pc = yield dmi_monitor.cpu.pc
+            program_counters_seen.add(pc)
+            yield
+
+    def main_process():
+        """
+        RV Debug specs 1.0-STABLE
+
+        3.5 Run Control
+
+        When a debugger writes 1 to haltreq, each selected hart's halt request bit is set. 
+        When a running hart, or a hart just coming out of reset, sees its halt request bit high, 
+        it responds by halting, deasserting its running signal, and asserting its halted signal. 
+        Halted harts ignore their halt request bit.
+
+        When a debugger writes 1 to resumereq, each selected hart's resume ack bit is cleared 
+        and each selected, halted hart is sent a resume request. Harts respond by resuming, 
+        clearing their halted signal, and asserting their running signal. At the end of this process
+        the resume ack bit is set. These status signals of all selected harts are reflected in 
+        allresumeack, anyresumeack, allrunning, and anyrunning. Resume requests are ignored by running harts.
+        """
+        from amaranth.sim import Settle
+        yield Settle()
+
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+
+        if halted:
+            raise ValueError("Core halted from the very beginning!")
+
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+        if not halted:
+            raise ValueError("CPU was not halted after haltreq set!")
         
+        pc = yield dmi_monitor.cpu.pc
+        new_pc = pc // 2 + 0x1000
+        assert new_pc != pc
+
+        from mtkcpu.cpu.priv_isa import CSRIndex
+        yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(new_pc)
+
+        yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+        yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
+        yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from few_ticks(100)
+
+        if new_pc not in program_counters_seen:
+            raise ValueError(f"Was expecting to see PC {hex(new_pc)}, but there were only: {[hex(x) for x in program_counters_seen]}")
+
+    processes = [
+        main_process,
+        pc_updater,
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 
 @dmi_simulator
 def test_progbuf_gets_executed(
@@ -553,6 +627,7 @@ if __name__ == "__main__":
     # test_dmi_try_read_not_implemented_register()
     # test_dmi_abstract_command_read_write_gpr()
     # test_core_halt_resume()
+    # test_halt_resume_with_new_dpc()
     # test_cmderr_clear()
     # test_progbuf_writes_to_bus()
     test_progbuf_gets_executed()

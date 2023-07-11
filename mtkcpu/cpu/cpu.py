@@ -24,6 +24,7 @@ from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
+from mtkcpu.cpu.priv_isa import CSRIndex
 
 match_jal = matcher(
     [
@@ -227,8 +228,15 @@ class MtkCpu(Elaboratable):
             # 
             # When a debugger writes 1 to resumereq, each selected hart’s resume ack bit 
             # is cleared and each selected, halted hart is sent a resume request. 
+
+            # From specs;
+            # When resuming, the hart’s PC is updated to the virtual address stored in dpc. 
+            # A debugger may write dpc to change where the hart resumes.
             sync += [
                 self.running_state.halted.eq(0),
+                self.pc.eq(
+                    self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
+                )
             ]
         with m.If(just_resumed):
             comb += self.running_state_interface.resumeack.eq(1)
@@ -386,8 +394,12 @@ class MtkCpu(Elaboratable):
                     """
                     # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                     with m.If(self.running_state_interface.haltreq):
+                        # From specs:
+                        # Upon entry to debug mode, dpc is updated with the virtual address of
+                        # the next instruction to be executed.
                         sync += [
                             self.running_state.halted.eq(1),
+                            self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(self.pc),
                         ]
                     with m.Else():
                         with m.If(pc & 0b11):
