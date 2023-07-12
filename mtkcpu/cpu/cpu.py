@@ -376,7 +376,7 @@ class MtkCpu(Elaboratable):
 
             if cause is None:
                 return
-            assert isinstance(cause, TrapCause) or isinstance(cause, IrqCause) 
+            assert isinstance(cause, (TrapCause, IrqCause))
             e = exception_unit
             notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
             m.d.comb += notifiers[cause].eq(1)
@@ -555,8 +555,7 @@ class MtkCpu(Elaboratable):
                         with m.If(mem_unit.ack):
                             m.next = "WRITEBACK"
                             sync += active_unit.eq(0)
-                        with m.Else():
-                            m.next = "EXECUTE"
+                        
                         with m.If(interconnect_error):
                             # NOTE: 
                             # the order of that 'If' is important.
@@ -569,8 +568,7 @@ class MtkCpu(Elaboratable):
                             with m.If(csr_unit.vld):
                                 m.next = "WRITEBACK"
                                 sync += active_unit.eq(0)
-                            with m.Else():
-                                m.next = "EXECUTE"
+                            
                     with m.Elif(active_unit.mret):
                         comb += exception_unit.m_mret.eq(1)
                         fetch_with_new_pc(exception_unit.mepc)

@@ -20,12 +20,13 @@ class DebugUnitSimulationContext:
     simulator: Simulator
 
 def create_simulator() -> DebugUnitSimulationContext:
+    from mtkcpu.utils.common import MEM_START_ADDR
     cpu = MtkCpu(
         mem_config=EBRMemConfig(
             mem_size_words=1000,
-            mem_content_words=None,
-            mem_addr=0xA000,
-            simulate=False,
+            mem_content_words=[0xFFFF_FFFF for _ in range(1000)],
+            mem_addr=MEM_START_ADDR,
+            simulate=True,
         ),
         with_debug=True,
     )
@@ -404,9 +405,11 @@ def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
             en = yield gb.en
             store = yield gb.store
             addr = yield gb.addr
-            if en and store:
+            ack = yield gb.ack
+            if en and store and ack:
                 data = yield gb.write_data
-                addr = yield gb.addr
+                msg = f"addr {hex(addr)} store {store} data {hex(data)}"
+                logging.critical(msg)
                 output_dict[addr] = data
             yield
     return f
@@ -576,8 +579,11 @@ def test_progbuf_gets_executed(
     def main_process():
         yield from few_ticks()
 
-        # addi x1, x0, 10
-        ins = encode_ins(instructions.Addi(registers.get_register(1), registers.get_register(0), 10))
+        val = 123
+        assert val < 2**11
+
+        # addi x1, x0, <val>
+        ins = encode_ins(instructions.Addi(registers.get_register(1), registers.get_register(0), val))
         yield from progbuf_write_wait_for_success(dmi_monitor, 0, ins)
 
         # ebreak
@@ -601,28 +607,17 @@ def test_progbuf_gets_executed(
             raise ValueError("CPU was not halted after haltreq set!")
         
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=1000)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
 
-    def wtf():
-        while True:
-            state = yield cpu.debug.dmi_handlers[DMIReg.COMMAND].fsmxd.state
-            if state == 4:
-                for _ in range(10):
-                    pc = yield cpu.pc
-                    dpc = yield cpu.csr_unit.dpc.value
-                    main_state = yield cpu.main_fsm.state
-                    halted = yield cpu.running_state.halted
-                    print("PC", hex(pc), "dpc", hex(dpc), "main state", main_state, halted)
-                    yield
-                return
-            yield
+        x = yield cpu.regs._array._inner[1]
 
-        
+        if x != val:
+            raise ValueError(f"expected x1 to contain {val}, got {x}")
 
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
-        wtf,
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
     ]
     
     for p in processes:
@@ -634,12 +629,12 @@ def test_progbuf_gets_executed(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_halt_resume_with_new_dpc()
-    # test_cmderr_clear()
-    # test_progbuf_writes_to_bus()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_halt_resume_with_new_dpc()
+    test_cmderr_clear()
+    test_progbuf_writes_to_bus()
     test_progbuf_gets_executed()
     logging.critical("ALL TESTS PASSED!")
 
