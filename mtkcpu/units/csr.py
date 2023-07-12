@@ -21,11 +21,12 @@ class ControllerInterface():
 
 class CsrUnit(Elaboratable):
     def enabled_csr_regs(self, controller : ControllerInterface):
-        regs : List[RegisterCSR] = {
+        regs : set[RegisterCSR] = {
             MISA(),
             MTVEC(),
             MTVAL(),
             MEPC(),
+            DPC(),
             MSCRATCH(),
             MHARTID(),
             MCAUSE(),

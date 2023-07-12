@@ -201,7 +201,9 @@ class DebugUnit(Elaboratable):
                 for addr2, record in self.dmi_regs.items():
                     with m.Case(addr2):
                         sync += jtag_tap_dmi_bus.r.data.eq(record)
-                        sync += jtag_tap_dmi_bus.r.op.eq(0) # TODO        
+                        sync += jtag_tap_dmi_bus.r.op.eq(0) # TODO
+                with m.Default():
+                    sync += abstractcs.cmderr.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
 
         abstractcs : ABSTRACTCS_Layout = self.dmi_regs[DMIReg.ABSTRACTCS]
 
@@ -220,7 +222,7 @@ class DebugUnit(Elaboratable):
                             # the W1/WARL/.../ thing from specs - currently all 'r' fields are set manually.
                             # I postpone that task till the time I better understand system constraints
                             # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
-                            sync += abstractcs.busy.eq(jtag_tap_dmi_bus.w.op != DMIOp.NOP)
+                            sync += abstractcs.busy.eq(1)
                             m.next = "WAIT"
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)

@@ -166,6 +166,19 @@ class MEPC(RegisterCSR):
         ]
         self.handler_notify_comb()
 
+class DPC(RegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {}
+    def __init__(self):
+        super().__init__(CSRIndex.DPC, flat_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        m = self.get_m()
+        m.d.sync += [
+            self.rec.r.eq(self.rec.w)
+        ]
+        self.handler_notify_comb()
 
 class MSCRATCH(WriteOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):

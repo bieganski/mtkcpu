@@ -24,6 +24,7 @@ from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
+from mtkcpu.cpu.priv_isa import CSRIndex
 
 match_jal = matcher(
     [
@@ -141,12 +142,22 @@ class MtkCpu(Elaboratable):
         shifter = m.submodules.shifter = ShifterUnit()
         compare = m.submodules.compare = CompareUnit()
         
+        # This bit is read-only in cpu top - it's solely managed by exception unit.
         self.current_priv_mode = Signal(PrivModeBits, reset=PrivModeBits.MACHINE)
+
+        # For Program Buffer Execution flows (refer to Debug Specs), the CPU executes instructions
+        # like in normal flow, but subtle details (like the behavior on 'ebreak' ins.) differs.
+        # TODO - that bit is a part of a Debug Unit <-> CPU interface, let's make it more explicit.
+        self.is_debug_mode = Const(0) if not self.with_debug else Signal()
         
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
             # TODO does '==' below produces the same synth result as .all()?
             in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE
         )
+
+        halt_on_ebreak = self.halt_on_ebreak = Signal()
+        comb += halt_on_ebreak.eq(self.is_debug_mode) # TODO | csr_unit.dcsr.ebreakm)
+
         exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(
             csr_unit=csr_unit, 
             current_priv_mode=self.current_priv_mode
@@ -227,8 +238,15 @@ class MtkCpu(Elaboratable):
             # 
             # When a debugger writes 1 to resumereq, each selected hart’s resume ack bit 
             # is cleared and each selected, halted hart is sent a resume request. 
+
+            # From specs;
+            # When resuming, the hart’s PC is updated to the virtual address stored in dpc. 
+            # A debugger may write dpc to change where the hart resumes.
             sync += [
                 self.running_state.halted.eq(0),
+                self.pc.eq(
+                    self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
+                )
             ]
         with m.If(just_resumed):
             comb += self.running_state_interface.resumeack.eq(1)
@@ -358,7 +376,7 @@ class MtkCpu(Elaboratable):
 
             if cause is None:
                 return
-            assert isinstance(cause, TrapCause) or isinstance(cause, IrqCause) 
+            assert isinstance(cause, (TrapCause, IrqCause))
             e = exception_unit
             notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
             m.d.comb += notifiers[cause].eq(1)
@@ -386,8 +404,16 @@ class MtkCpu(Elaboratable):
                     """
                     # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                     with m.If(self.running_state_interface.haltreq):
+                        # From specs:
+                        # Upon entry to debug mode, dpc is updated with the virtual address of
+                        # the next instruction to be executed.
+
+                        # TODO
+                        # From specs, we need to implement 'cause' write as well:
+                        # 'When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
                         sync += [
                             self.running_state.halted.eq(1),
+                            self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(self.pc),
                         ]
                     with m.Else():
                         with m.If(pc & 0b11):
@@ -473,7 +499,17 @@ class MtkCpu(Elaboratable):
                     with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
                         pass # sfence.vma
                     with m.Elif(opcode == 0b0001111):
-                        pass # fence
+                        pass # fence - do nothing, as we are a simple implementation.
+                    with m.Elif(opcode == 0b1110011):
+                        # ebreak
+                        with m.If(halt_on_ebreak):
+                            # enter Debug Mode.
+                            sync += self.running_state.halted.eq(1)
+                            m.next = "FETCH"
+                        with m.Else():
+                            # EBREAK description from Privileged specs:
+                            # It generates a breakpoint exception and performs no other operation.
+                            trap(TrapCause.BREAKPOINT)
                     with m.Else():
                         trap(TrapCause.ILLEGAL_INSTRUCTION)
                 with m.State("EXECUTE"):
@@ -519,8 +555,7 @@ class MtkCpu(Elaboratable):
                         with m.If(mem_unit.ack):
                             m.next = "WRITEBACK"
                             sync += active_unit.eq(0)
-                        with m.Else():
-                            m.next = "EXECUTE"
+                        
                         with m.If(interconnect_error):
                             # NOTE: 
                             # the order of that 'If' is important.
@@ -533,8 +568,7 @@ class MtkCpu(Elaboratable):
                             with m.If(csr_unit.vld):
                                 m.next = "WRITEBACK"
                                 sync += active_unit.eq(0)
-                            with m.Else():
-                                m.next = "EXECUTE"
+                            
                     with m.Elif(active_unit.mret):
                         comb += exception_unit.m_mret.eq(1)
                         fetch_with_new_pc(exception_unit.mepc)
