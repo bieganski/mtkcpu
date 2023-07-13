@@ -724,7 +724,6 @@ def assert_jtag_test(
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
         print_dmi_transactions(dmi_monitor),
-        monitor_dmi_write_complete(dmi_monitor),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),

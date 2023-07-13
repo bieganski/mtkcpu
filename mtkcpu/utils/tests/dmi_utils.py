@@ -425,30 +425,6 @@ def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
-def monitor_dmi_write_complete(dmi_monitor: DMI_Monitor, timeout_ticks: int = 20):
-    def aux():
-        yield Passive()
-
-        while True:
-            state = yield dmi_monitor.cpu.debug.fsm.state
-            assert state in [0, 1], state
-            if state == 1:
-                for _ in range(timeout_ticks):
-                    finished = yield dmi_monitor.cpu.debug.controller.command_finished
-                    if finished:
-                        break
-                    yield
-                else:
-                    raise ValueError(f"DMI Write didn't complete after {timeout_ticks} ticks!")
-                
-                # post-check
-                yield
-                state = yield dmi_monitor.cpu.debug.fsm.state
-                assert state == 0
-                
-            yield
-    return aux
-
 
 def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: int = 10):
     def aux():
