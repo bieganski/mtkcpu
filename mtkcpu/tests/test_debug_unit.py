@@ -641,7 +641,7 @@ def test_progbuf_cmderr_on_runtime_error(
     def main_process():
         yield from few_ticks()
 
-        invalid_ins = 0x123
+        invalid_ins = 0xbaad
         yield from progbuf_write_wait_for_success(dmi_monitor, 0, invalid_ins)
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
