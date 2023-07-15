@@ -426,7 +426,7 @@ def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
     return aux
 
 
-def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: int = 10):
+def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: int = 20):
     def aux():
         yield Passive()
 

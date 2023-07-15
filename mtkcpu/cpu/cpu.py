@@ -233,6 +233,9 @@ class MtkCpu(Elaboratable):
             just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
         ]
 
+        comb += self.running_state_interface.resumeack.eq(just_resumed)
+        comb += self.running_state_interface.haltack.eq(just_halted)
+
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
             # from specs:
             # 
@@ -248,10 +251,6 @@ class MtkCpu(Elaboratable):
                     self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
                 )
             ]
-        with m.If(just_resumed):
-            comb += self.running_state_interface.resumeack.eq(1)
-        with m.If(just_halted):
-            comb += self.running_state_interface.haltack.eq(1)
 
         comb += [
             exception_unit.m_instruction.eq(instr),

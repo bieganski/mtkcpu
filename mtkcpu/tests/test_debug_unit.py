@@ -582,24 +582,26 @@ def test_progbuf_gets_executed(
         val = 123
         assert val < 2**11
 
+        gpr_reg_num = 8
+
+        # MISA = instructions.RiscvCsrRegister("misa", num=0x301)
+        # ins = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), MISA))
+
         # addi x1, x0, <val>
-        ins = encode_ins(instructions.Addi(registers.get_register(1), registers.get_register(0), val))
+        ins = encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val))
         yield from progbuf_write_wait_for_success(dmi_monitor, 0, ins)
 
-        # ebreak
         ins = encode_ins(instructions.Ebreak())
         yield from progbuf_write_wait_for_success(dmi_monitor, 1, ins)
 
-        # del ins
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_cmderr(
+            dmi_monitor=dmi_monitor,
+            expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
+            timeout=1000,
+        )
 
-        # yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        # yield from dmi_op_wait_for_cmderr(
-        #     dmi_monitor=dmi_monitor,
-        #     expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
-        #     timeout=1000,
-        # )
-
-        # yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
+        yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
 
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
@@ -609,10 +611,10 @@ def test_progbuf_gets_executed(
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
 
-        x = yield cpu.regs._array._inner[1]
+        x = yield cpu.regs._array._inner[gpr_reg_num]
 
         if x != val:
-            raise ValueError(f"expected x1 to contain {val}, got {x}")
+            raise ValueError(f"expected x1 to contain {hex(val)}, got {hex(x)}")
 
     processes = [
         main_process,
@@ -626,16 +628,60 @@ def test_progbuf_gets_executed(
     simulator.run()
 
 
+
+@dmi_simulator
+def test_progbuf_cmderr_on_runtime_error(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
+    assert PROGBUFSIZE >= 2
+
+    def main_process():
+        yield from few_ticks()
+
+        invalid_ins = 0x123
+        yield from progbuf_write_wait_for_success(dmi_monitor, 0, invalid_ins)
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        
+        yield from dmi_op_wait_for_cmderr(
+            dmi_monitor=dmi_monitor,
+            expected_cmderr=ABSTRACTCS_Layout.CMDERR.EXCEPTION,
+            timeout=100,
+        )
+    
+    def mepc():
+        while True:
+            pc = yield cpu.pc
+            mepc = yield cpu.csr_unit.mepc.value
+            print("mepc", hex(mepc), "pc", hex(pc))
+            yield
+
+    processes = [
+        main_process,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+        mepc,
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
-    test_core_halt_resume()
-    test_halt_resume_with_new_dpc()
-    test_cmderr_clear()
-    test_progbuf_writes_to_bus()
-    test_progbuf_gets_executed()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    # test_core_halt_resume()
+    # test_halt_resume_with_new_dpc()
+    # test_cmderr_clear()
+    # test_progbuf_writes_to_bus()
+    # test_progbuf_gets_executed()
+    test_progbuf_cmderr_on_runtime_error()
     logging.critical("ALL TESTS PASSED!")
 
 

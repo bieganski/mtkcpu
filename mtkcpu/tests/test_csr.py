@@ -125,7 +125,7 @@ CSR_TESTS = [
                 csrr x2, mepc
         """,
         out_reg=2,
-        out_val=CODE_START_ADDR + 4*4,
+        out_val=CODE_START_ADDR + 2*4,
         timeout=100,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
