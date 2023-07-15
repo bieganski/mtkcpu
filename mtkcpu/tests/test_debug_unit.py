@@ -653,10 +653,12 @@ def test_progbuf_cmderr_on_runtime_error(
         )
     
     def mepc():
+        yield Passive()
         while True:
             pc = yield cpu.pc
             mepc = yield cpu.csr_unit.mepc.value
-            print("mepc", hex(mepc), "pc", hex(pc))
+            instr = yield cpu.instr
+            print("mepc", hex(mepc), "pc", hex(pc), "instr", hex(instr))
             yield
 
     processes = [

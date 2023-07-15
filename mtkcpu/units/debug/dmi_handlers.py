@@ -246,6 +246,14 @@ class HandlerCOMMAND(HandlerDMI):
                                     comb += done.eq(1)
                                     m.next = "SANITY_CHECK"
                                     sync += cpu.is_debug_mode.eq(0)
+                                
+                                # TODO encapsulation.
+                                with m.Elif(cpu.main_fsm.ongoing("TRAP")):
+                                    # Exception occured during PROGBUF execution. 
+                                    comb += done.eq(1)
+                                    m.next = "SANITY_CHECK"
+
+                                    comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.EXCEPTION)
                     
 
 
