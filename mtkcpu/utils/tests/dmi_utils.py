@@ -453,3 +453,32 @@ def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: 
                     raise ValueError(f"resumereq didnt get an ack in {timeout_ticks} ticks!")
             yield
     return aux
+
+
+def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
+    from mtkcpu.utils.tests.sim_tests import get_state_name
+    def aux():
+        yield Passive()
+
+        cpu = dmi_monitor.cpu
+
+        while True:
+            haltreq = yield cpu.running_state_interface.haltreq
+            if haltreq:
+                break
+            yield
+        log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
+        prev_state = ""
+        while True:
+            state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
+            pc = hex((yield cpu.pc))
+            if state == "FETCH" and state != prev_state:
+                log_fn(f"pc changed to {pc}")
+            if state == "TRAP" and state != prev_state:
+                instr = yield cpu.instr
+                log_fn(f"TRAP at pc {pc} at state {prev_state}, instr {hex(instr)}")
+            
+            prev_state = state
+
+            yield
+    return aux
