@@ -461,24 +461,28 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
         yield Passive()
 
         cpu = dmi_monitor.cpu
-
+        
+        # To avoid spam, wait till first haltreq debugger event.
         while True:
             haltreq = yield cpu.running_state_interface.haltreq
             if haltreq:
                 break
             yield
+        
         log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
         prev_state = ""
+        prev_pc = 0x0
         while True:
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
             pc = hex((yield cpu.pc))
             if state == "FETCH" and state != prev_state:
-                log_fn(f"pc changed to {pc}")
+                log_fn(f"pc changed from {prev_pc} to {pc}")
             if state == "TRAP" and state != prev_state:
                 instr = yield cpu.instr
                 log_fn(f"TRAP at pc {pc} at state {prev_state}, instr {hex(instr)}")
             
             prev_state = state
+            prev_pc = pc
 
             yield
     return aux

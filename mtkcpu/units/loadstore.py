@@ -245,6 +245,13 @@ class MemoryArbiter(Elaboratable, AddressManager):
         
         from mtkcpu.units.debug.impl_config import PROGBUF_MMIO_ADDR, PROGBUFSIZE
 
+        debug_mem_config = EBRMemConfig(
+            mem_size_words=PROGBUFSIZE,
+            mem_content_words=None,
+            mem_addr=-1,
+            simulate=True,
+        )
+
         self.mmio_cfg = [
             (
                 UartTX(serial_record_gen=uart_gen_serial_record, clk_freq=12_000_000, baud_rate=115200),
@@ -274,7 +281,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                 )
             ),
             (
-                EBR_Wishbone(self.mem_config),
+                EBR_Wishbone(debug_mem_config),
                 MMIOAddressSpace(
                     ws=self.word_size,
                     basename="debug_ebr",
