@@ -27,8 +27,8 @@ from amaranth.lib import data
 # https://people.eecs.berkeley.edu/~krste/papers/riscv-privileged-v1.9.1.pdf    
 class DMI_CSR(IntEnum):
     MISA = 0x301
-    DCSR = 0x7B0 # TODO from debug spec: pc saved in dpc and cause is updated
-    DPC  = 0x7B1
+    DCSR = 0x7B0
+    DPC  = 0x7B1  # TODO from debug spec: pc saved in dpc and cause is updated
 
 class DebugCSR():
     # constructor needs CPU instance to use/drive CPU signals

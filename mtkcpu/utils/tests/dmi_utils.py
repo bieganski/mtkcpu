@@ -230,7 +230,7 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
 
                     if addr == DMIReg.DATA0 and op == DMIOp.WRITE:
                         last_data0 = value
-                        logging.critical(f">>>                                             SETTING DATA0 to {hex(last_data0)}")
+                        logging.critical(f"SETTING DATA0 to {hex(last_data0)}")
 
                     if addr == DMIReg.COMMAND:
                         assert op == DMIOp.WRITE
@@ -455,6 +455,20 @@ def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: 
     return aux
 
 
+def monitor_writes_to_gpr(dmi_monitor: DMI_Monitor, gpr_num: int):
+    def aux():
+        yield Passive()
+        prev_x = 0
+        assert gpr_num in range(1, 33)
+        while True:
+            x = yield dmi_monitor.cpu.regs._array._inner[gpr_num]
+            if x != prev_x:
+                logging.critical(f">>> {hex(x)} written to x{gpr_num}")
+                prev_x = x
+            yield
+    return aux
+
+
 def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
     from mtkcpu.utils.tests.sim_tests import get_state_name
     def aux():
@@ -476,13 +490,13 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
             pc = hex((yield cpu.pc))
             if state == "FETCH" and state != prev_state:
-                log_fn(f"pc changed from {prev_pc} to {pc}")
+                log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
+                prev_pc = pc
+            if state == "DECODE" and state != prev_state:
+                log_fn(f"instr: {hex((yield cpu.instr))}")
             if state == "TRAP" and state != prev_state:
                 instr = yield cpu.instr
                 log_fn(f"TRAP at pc {pc} at state {prev_state}, instr {hex(instr)}")
-            
             prev_state = state
-            prev_pc = pc
-
             yield
     return aux

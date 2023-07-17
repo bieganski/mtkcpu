@@ -37,12 +37,14 @@ class CpuRunningStateExternalInterface(Elaboratable):
         resumeack_with_no_delay = ~prev(self.resumereq) & self.resumereq & self.resumeack
 
         with m.If(
-            resumeack_takes_two |
-            haltack_takes_two |
-            haltack_with_no_delay |
-            resumeack_with_no_delay |
-            (~self.haltreq & self.haltack) |
-            (~self.resumereq & self.resumeack)
+            resumeack_takes_two
+            | haltack_takes_two
+            | haltack_with_no_delay
+            | resumeack_with_no_delay
+            # NOTE: it is possible to get haltack without prior haltreq,
+            # as EBREAK may cause halt as well.
+            # | (~self.haltreq & self.haltack) |
+            # | (~self.resumereq & self.resumeack)
         ):
             m.d.sync += self.error_sticky.eq(1)
 
