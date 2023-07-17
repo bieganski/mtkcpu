@@ -190,21 +190,23 @@ mcause_layout = [
 
 
 dcsr_layout = [
-    ("prv",        2, CSRAccess.RW), # Privilege level before Debug Mode was entered
-    ("step",       1, CSRAccess.RW), # Execute a single instruction and re-enter Debug Mode
-    ("nmip",       1, CSRAccess.RO), # A non-maskable interrupt is pending
-    ("mprven",     1, CSRAccess.RW), # Use mstatus.mprv in Debug Mode
-    ("zero0",      1, CSRAccess.RO),
-    ("cause",      3, CSRAccess.RO), # Explains why Debug Mode was entered
-    ("stoptime",   1, CSRAccess.RW), # Stop timer increment during Debug Mode
-    ("stopcount",  1, CSRAccess.RW), # Stop counter increment during Debug Mode
-    ("stepie",     1, CSRAccess.RW), # Enable interrupts during single stepping
-    ("ebreaku",    1, CSRAccess.RW), # EBREAKs in U-mode enter Debug Mode
-    ("ebreaks",    1, CSRAccess.RW), # EBREAKs in S-mode enter Debug Mode
-    ("zero1",      1, CSRAccess.RO),
-    ("ebreakm",    1, CSRAccess.RW), # EBREAKs in M-mode enter Debug Mode
-    ("zero2",     12, CSRAccess.RO),
-    ("xdebugver",  4, CSRAccess.RO), # External Debug specification version
+    ("prv",        2, CSRAccess.RW),
+    ("step",       1, CSRAccess.RW),
+    ("nmip",       1, CSRAccess.RO),
+    ("mprven",     1, CSRAccess.RW),
+    ("v",          1, CSRAccess.RW),
+    ("cause",      3, CSRAccess.RO),
+    ("stoptime",   1, CSRAccess.RW),
+    ("stopcount",  1, CSRAccess.RW),
+    ("stepie",     1, CSRAccess.RW),
+    ("ebreaku",    1, CSRAccess.RW),
+    ("ebreaks",    1, CSRAccess.RW),
+    ("zero1",      1, CSRAccess.RO)
+    ("ebreakm",    1, CSRAccess.RW),
+    ("ebreakvu",   1, CSRAccess.RW),
+    ("ebreakvs",   1, CSRAccess.RW),
+    ("zero2",     10, CSRAccess.RO),
+    ("debugver",   4, CSRAccess.RO), 
 ]
 
 
