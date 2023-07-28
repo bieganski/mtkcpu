@@ -468,6 +468,23 @@ def monitor_writes_to_gpr(dmi_monitor: DMI_Monitor, gpr_num: int):
             yield
     return aux
 
+def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
+    from mtkcpu.units.csr_handlers import DCSR
+    dcsr_addr = DCSR().csr_idx
+    
+    def aux():
+        yield Passive()
+        csr_unit = dmi_monitor.cpu.csr_unit
+        while True:
+            csr_unit_active = yield csr_unit.en
+            if csr_unit_active:
+                csr_idx = yield csr_unit.csr_idx
+                if csr_idx == dcsr_addr:
+                    raise ValueError("active!")
+            
+            
+            yield
+    return aux
 
 def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
     from mtkcpu.utils.tests.sim_tests import get_state_name

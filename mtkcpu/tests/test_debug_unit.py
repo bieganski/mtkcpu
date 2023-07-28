@@ -694,7 +694,7 @@ def test_access_debug_csr_regs_in_debug_mode(
         DCSR_ins = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
 
         # 0x7b0021f3
-        dcsr_read_ins : int = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), DCSR_ins))
+        dcsr_read_ins: int = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), DCSR_ins))
 
         ebreak_ins: int = encode_ins(instructions.Ebreak())
 
@@ -725,6 +725,7 @@ def test_access_debug_csr_regs_in_debug_mode(
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+        monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
     ]
     
     for p in processes:
@@ -735,14 +736,14 @@ def test_access_debug_csr_regs_in_debug_mode(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
-    test_core_halt_resume()
-    test_halt_resume_with_new_dpc()
-    test_cmderr_clear()
-    test_progbuf_writes_to_bus()
-    test_progbuf_gets_executed()
-    test_progbuf_cmderr_on_runtime_error()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    # test_core_halt_resume()
+    # test_halt_resume_with_new_dpc()
+    # test_cmderr_clear()
+    # test_progbuf_writes_to_bus()
+    # test_progbuf_gets_executed()
+    # test_progbuf_cmderr_on_runtime_error()
     test_access_debug_csr_regs_in_debug_mode()
     logging.critical("ALL TESTS PASSED!")
 
