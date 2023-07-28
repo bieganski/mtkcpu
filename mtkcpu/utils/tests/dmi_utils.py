@@ -484,11 +484,10 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             rs1val          = yield csr_unit.rs1val
             if csr_unit_active and (csr_idx == dcsr_addr):
                 if funct3 in [Funct3.CSRRS, Funct3.CSRRSI]:
-                    logging.critical(f"{Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
                     if rs1val == 0:
                         yield
                         continue # not interesting - only read.
-                
+                logging.critical(f"DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
                 raise ValueError(f"active! funct3 {funct3} in {[Funct3.CSRRW, Funct3.CSRRWI]}")
             
             

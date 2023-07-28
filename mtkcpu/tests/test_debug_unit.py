@@ -715,7 +715,7 @@ def test_access_debug_csr_regs_in_debug_mode(
         for _ in range(timeout := 100):
             reg_content = yield dmi_monitor.cpu.regs._array._inner[gpr_reg_num]
             if reg_content != prev_reg_content:
-                logging.info(f"Detected value {reg_content} written to x{gpr_reg_num}")
+                logging.info(f"Detected value {hex(reg_content)} written to x{gpr_reg_num}")
                 if reg_content != expected_dcsr_reset_value:
                     raise ValueError(f"Was expecting to see {hex(expected_dcsr_reset_value)}, got {hex(reg_content)} instead")
                 prev_reg_content = reg_content
@@ -741,15 +741,15 @@ def test_access_debug_csr_regs_in_debug_mode(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_halt_resume_with_new_dpc()
-    # test_cmderr_clear()
-    # test_progbuf_writes_to_bus()
-    # test_progbuf_gets_executed()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_halt_resume_with_new_dpc()
+    test_cmderr_clear()
+    test_progbuf_writes_to_bus()
+    test_progbuf_gets_executed()
     test_progbuf_cmderr_on_runtime_error()
-    # test_access_debug_csr_regs_in_debug_mode()
+    test_access_debug_csr_regs_in_debug_mode()
     logging.critical("ALL TESTS PASSED!")
 
 
