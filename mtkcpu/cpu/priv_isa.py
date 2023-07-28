@@ -201,7 +201,7 @@ dcsr_layout = [
     ("stepie",     1, CSRAccess.RW),
     ("ebreaku",    1, CSRAccess.RW),
     ("ebreaks",    1, CSRAccess.RW),
-    ("zero1",      1, CSRAccess.RO)
+    ("zero1",      1, CSRAccess.RO),
     ("ebreakm",    1, CSRAccess.RW),
     ("ebreakvu",   1, CSRAccess.RW),
     ("ebreakvs",   1, CSRAccess.RW),

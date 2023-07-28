@@ -148,6 +148,14 @@ class MtkCpu(Elaboratable):
         # For Program Buffer Execution flows (refer to Debug Specs), the CPU executes instructions
         # like in normal flow, but subtle details (like the behavior on 'ebreak' ins.) differs.
         # TODO - that bit is a part of a Debug Unit <-> CPU interface, let's make it more explicit.
+        #
+        # Debug Specs 1.0 says about 'dpc', 'dcsr' and 'dscratch' registers:
+        # """
+        # Attempts to access a non-existent Core Debug Register raise an illegal instruction exception.
+        # These registers are only accessible from Debug Mode.
+        # """
+        # TODO - Thus we need to add a mux in decoder, that won't raise illegal instruction exception
+        # when accessing one of Debug CSR Registers, providing that 'is_debug_mode' is high.
         self.is_debug_mode = Const(0) if not self.with_debug else Signal()
         
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
