@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 from tempfile import NamedTemporaryFile
 
-from amaranth.hdl.ast import Signal
+from amaranth.hdl.ast import Signal, Const
 from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
 from amaranth.sim.core import Active, Passive
@@ -276,7 +276,7 @@ def memory_arbiter_tb():
         mem_content_words = [v for k, v in sorted(mem.items())],
         simulate=True,
     )
-    csr_unit = CsrUnit(in_machine_mode=Signal(reset=1))
+    csr_unit = CsrUnit(in_machine_mode=Signal(reset=1), in_debug_mode=Const(0))
     m = MemoryArbiter(mem_config=mem_cfg, with_addr_translation=False, csr_unit=csr_unit, exception_unit=ExceptionUnit(Signal(2, reset=0b11), csr_unit))
     p1 = m.port(priority=1)
     p2 = m.port(priority=2)

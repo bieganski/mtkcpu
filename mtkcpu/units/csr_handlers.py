@@ -219,10 +219,10 @@ class DCSR(RegisterCSR):
     def handle_write(self):
         # TODO
         # 'step' will be handler here in future.
-        m = self.get_m()
-        m.d.sync += [
-            self.rec.r.eq(self.rec.w)
-        ]
+        # m = self.get_m()
+        # m.d.sync += [
+        #     self.rec.r.eq(self.rec.w)
+        # ]
         self.handler_notify_comb()
 
 

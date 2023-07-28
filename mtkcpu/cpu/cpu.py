@@ -159,8 +159,8 @@ class MtkCpu(Elaboratable):
         self.is_debug_mode = Const(0) if not self.with_debug else Signal()
         
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
-            # TODO does '==' below produces the same synth result as .all()?
-            in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE
+            in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE,
+            in_debug_mode=self.is_debug_mode,
         )
 
         halt_on_ebreak = self.halt_on_ebreak = Signal()

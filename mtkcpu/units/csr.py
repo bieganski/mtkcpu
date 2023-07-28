@@ -35,7 +35,7 @@ class CsrUnit(Elaboratable):
             MSTATUS(),
             MIE(),
             MIP(),
-            
+            DCSR(),
             SATP(),
         }
         
@@ -68,7 +68,7 @@ class CsrUnit(Elaboratable):
         raise ValueError(f"CSRUnit: Not found register named {name}")
 
 
-    def __init__(self, in_machine_mode : Signal):
+    def __init__(self, in_machine_mode : Signal, in_debug_mode : Signal):
         # Input signals.
         self.csr_idx = Signal(CSRIndex)
         assert self.csr_idx.width == 12
@@ -78,6 +78,7 @@ class CsrUnit(Elaboratable):
         self.func3 = Signal(Funct3)
         self.en = Signal()
         self.in_machine_mode = in_machine_mode
+        self.in_debug_mode = in_debug_mode
 
         # Debug
         self.ONREAD = Signal()
@@ -107,6 +108,19 @@ class CsrUnit(Elaboratable):
             with m.State("IDLE"):
                 with m.If(self.en):
                     with m.If(~self.in_machine_mode):
+                        m.d.comb += self.illegal_insn.eq(1)
+                    with m.Elif(
+                        # Debug Specs 1.0, 4.10:
+                        # These registers are only accessible from Debug Mode.
+                        ~self.in_debug_mode
+                        &
+                        (
+                            (self.csr_idx == 0x7b0)
+                            | (self.csr_idx == 0x7b1)
+                            | (self.csr_idx == 0x7b2)
+                            | (self.csr_idx == 0x7b3)
+                        )
+                    ):
                         m.d.comb += self.illegal_insn.eq(1)
                     with m.Else():
                         sync += [
