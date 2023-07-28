@@ -148,11 +148,19 @@ class MtkCpu(Elaboratable):
         # For Program Buffer Execution flows (refer to Debug Specs), the CPU executes instructions
         # like in normal flow, but subtle details (like the behavior on 'ebreak' ins.) differs.
         # TODO - that bit is a part of a Debug Unit <-> CPU interface, let's make it more explicit.
+        #
+        # Debug Specs 1.0 says about 'dpc', 'dcsr' and 'dscratch' registers:
+        # """
+        # Attempts to access a non-existent Core Debug Register raise an illegal instruction exception.
+        # These registers are only accessible from Debug Mode.
+        # """
+        # TODO - Thus we need to add a mux in decoder, that won't raise illegal instruction exception
+        # when accessing one of Debug CSR Registers, providing that 'is_debug_mode' is high.
         self.is_debug_mode = Const(0) if not self.with_debug else Signal()
         
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
-            # TODO does '==' below produces the same synth result as .all()?
-            in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE
+            in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE,
+            in_debug_mode=self.is_debug_mode,
         )
 
         halt_on_ebreak = self.halt_on_ebreak = Signal()
@@ -233,6 +241,9 @@ class MtkCpu(Elaboratable):
             just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
         ]
 
+        comb += self.running_state_interface.resumeack.eq(just_resumed)
+        comb += self.running_state_interface.haltack.eq(just_halted)
+
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
             # from specs:
             # 
@@ -248,10 +259,6 @@ class MtkCpu(Elaboratable):
                     self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
                 )
             ]
-        with m.If(just_resumed):
-            comb += self.running_state_interface.resumeack.eq(1)
-        with m.If(just_halted):
-            comb += self.running_state_interface.haltack.eq(1)
 
         comb += [
             exception_unit.m_instruction.eq(instr),
@@ -372,14 +379,18 @@ class MtkCpu(Elaboratable):
 
         def trap(cause: Optional[Union[TrapCause, IrqCause]], interrupt=False):
             m.d.sync += active_unit.eq(0)
-            m.next = "TRAP"
-
-            if cause is None:
-                return
-            assert isinstance(cause, (TrapCause, IrqCause))
-            e = exception_unit
-            notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
-            m.d.comb += notifiers[cause].eq(1)
+            with m.If(self.is_debug_mode):
+                m.next = "FETCH"
+                m.d.sync += self.running_state.halted.eq(1)
+                m.d.comb += self.running_state_interface.error_on_progbuf_execution.eq(1)
+            with m.Else():
+                m.next = "TRAP"
+                if cause is None:
+                    return
+                assert isinstance(cause, (TrapCause, IrqCause))
+                e = exception_unit
+                notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
+                m.d.comb += notifiers[cause].eq(1)
 
         self.fetch = Signal()
         interconnect_error = self.interconnect_error = Signal()

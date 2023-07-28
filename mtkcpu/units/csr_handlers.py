@@ -180,6 +180,52 @@ class DPC(RegisterCSR):
         ]
         self.handler_notify_comb()
 
+
+# dcsr_layout = [
+#     ("prv",        2, CSRAccess.RW),
+#     ("step",       1, CSRAccess.RW),
+#     ("nmip",       1, CSRAccess.RO),
+#     ("mprven",     1, CSRAccess.RW),
+#     ("v",          1, CSRAccess.RW),
+#     ("cause",      3, CSRAccess.RO),
+#     ("stoptime",   1, CSRAccess.RW),
+#     ("stopcount",  1, CSRAccess.RW),
+#     ("stepie",     1, CSRAccess.RW),
+#     ("ebreaku",    1, CSRAccess.RW),
+#     ("ebreaks",    1, CSRAccess.RW),
+#     ("zero1",      1, CSRAccess.RO)
+#     ("ebreakm",    1, CSRAccess.RW),
+#     ("ebreakvu",   1, CSRAccess.RW),
+#     ("ebreakvs",   1, CSRAccess.RW),
+#     ("zero2",     10, CSRAccess.RO),
+#     ("debugver",   4, CSRAccess.RO), 
+# ]
+
+class DCSR(RegisterCSR):
+    class RegValueLocal(RegisterResetValue):
+        def field_values(self):
+            return {
+                # For valid (prv, v) combination, refer to Debug Specs 1.0, table 4.6.
+                "prv": 3,
+                "v": 0,
+
+                # From Debug Specs 1.0:
+                # 4 - Debug support exists as it is described in this document.
+                "debugver": 4,
+            }
+    def __init__(self):
+        super().__init__(CSRIndex.DCSR, dcsr_layout, __class__.RegValueLocal)
+
+    def handle_write(self):
+        # TODO
+        # 'step' will be handler here in future.
+        # m = self.get_m()
+        # m.d.sync += [
+        #     self.rec.r.eq(self.rec.w)
+        # ]
+        self.handler_notify_comb()
+
+
 class MSCRATCH(WriteOnlyRegisterCSR):
     class RegValueLocal(RegisterResetValue):
         def field_values(self):

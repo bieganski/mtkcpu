@@ -88,7 +88,7 @@ class ExceptionUnit(Elaboratable):
             interrupt_pe.i[IrqCause.M_EXTERNAL_INTERRUPT].eq(self.mie.meie), # self.mip.r.meip & self.mie.r.meie)
         ]
 
-        m.d.comb += self.m_raise.eq(~trap_pe.n | ~interrupt_pe.n & self.mstatus.mie)
+        m.d.comb += self.m_raise.eq(~trap_pe.n | (~interrupt_pe.n & self.mstatus.mie))
         with m.If(self.m_raise):
             m.d.sync += [
                 self.mstatus.mpp.eq(self.current_priv_mode),
@@ -102,7 +102,7 @@ class ExceptionUnit(Elaboratable):
             m.d.sync += [
                 # self.mstatus.r.mpie.eq(self.mstatus.r.mie),
                 # self.mstatus.r.mie.eq(0),
-                self.mepc.eq(self.m_pc + 4)
+                self.mepc.eq(self.m_pc)
             ]
             with m.If(~trap_pe.n):
                 m.d.sync += [

@@ -230,7 +230,7 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
 
                     if addr == DMIReg.DATA0 and op == DMIOp.WRITE:
                         last_data0 = value
-                        logging.critical(f">>>                                             SETTING DATA0 to {hex(last_data0)}")
+                        logging.critical(f"SETTING DATA0 to {hex(last_data0)}")
 
                     if addr == DMIReg.COMMAND:
                         assert op == DMIOp.WRITE
@@ -426,7 +426,7 @@ def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
     return aux
 
 
-def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: int = 10):
+def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: int = 20):
     def aux():
         yield Passive()
 
@@ -451,5 +451,77 @@ def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: 
                     yield
                 else:
                     raise ValueError(f"resumereq didnt get an ack in {timeout_ticks} ticks!")
+            yield
+    return aux
+
+
+def monitor_writes_to_gpr(dmi_monitor: DMI_Monitor, gpr_num: int):
+    def aux():
+        yield Passive()
+        prev_x = 0
+        assert gpr_num in range(1, 33)
+        while True:
+            x = yield dmi_monitor.cpu.regs._array._inner[gpr_num]
+            if x != prev_x:
+                logging.critical(f">>> {hex(x)} written to x{gpr_num}")
+                prev_x = x
+            yield
+    return aux
+
+def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
+    from mtkcpu.cpu.isa import Funct3
+    from mtkcpu.units.csr_handlers import DCSR
+    dcsr_addr = DCSR().csr_idx
+    
+    def aux():
+        yield Passive()
+        csr_unit = dmi_monitor.cpu.csr_unit
+        while True:
+            csr_unit_active = yield csr_unit.en
+            csr_idx         = yield csr_unit.csr_idx
+            funct3          = yield csr_unit.func3
+            rs1             = yield csr_unit.rs1
+            rs1val          = yield csr_unit.rs1val
+            if csr_unit_active and (csr_idx == dcsr_addr):
+                if funct3 in [Funct3.CSRRS, Funct3.CSRRSI]:
+                    if rs1val == 0:
+                        yield
+                        continue # not interesting - only read.
+                logging.critical(f"DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
+                raise ValueError(f"active! funct3 {funct3} in {[Funct3.CSRRW, Funct3.CSRRWI]}")
+            
+            
+            yield
+    return aux
+
+def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
+    from mtkcpu.utils.tests.sim_tests import get_state_name
+    def aux():
+        yield Passive()
+
+        cpu = dmi_monitor.cpu
+        
+        # To avoid spam, wait till first haltreq debugger event.
+        while True:
+            haltreq = yield cpu.running_state_interface.haltreq
+            if haltreq:
+                break
+            yield
+        
+        log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
+        prev_state = ""
+        prev_pc = 0x0
+        while True:
+            state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
+            pc = hex((yield cpu.pc))
+            if state == "FETCH" and state != prev_state:
+                log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
+                prev_pc = pc
+            if state == "DECODE" and state != prev_state:
+                log_fn(f"instr: {hex((yield cpu.instr))}")
+            if state == "TRAP" and state != prev_state:
+                instr = yield cpu.instr
+                log_fn(f"TRAP at pc {pc} at state {prev_state}, instr {hex(instr)}")
+            prev_state = state
             yield
     return aux

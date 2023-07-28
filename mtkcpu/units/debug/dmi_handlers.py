@@ -232,7 +232,7 @@ class HandlerCOMMAND(HandlerDMI):
                                 m.next = "B"
                             with m.State("B"):
                                 sync += [
-                                    # TODO: encapsulation - we shouldn't write to dpc directly from DM.
+                                    # TODO: encapsulation - we shouldn't write to CPU CSR directly from DM.
                                     dpc.eq(PROGBUF_MMIO_ADDR)
                                 ]
                                 m.next = "C"
@@ -240,12 +240,21 @@ class HandlerCOMMAND(HandlerDMI):
                                 comb += cpu.running_state_interface.resumereq.eq(1)
                                 with m.If(cpu.running_state_interface.resumeack):
                                     m.next = "D"
+                                    sync += dpc.eq(real_dpc) # TODO - is that a proper place for that assign?
                             with m.State("D"):
                                 with m.If(cpu.running_state.halted):
                                     # CPU executed ebreak.
                                     comb += done.eq(1)
                                     m.next = "SANITY_CHECK"
                                     sync += cpu.is_debug_mode.eq(0)
+                                
+                                # NOTE: Slippery here.
+                                with m.Elif(cpu.running_state_interface.error_on_progbuf_execution):
+                                    # Exception occured during PROGBUF execution. 
+                                    comb += done.eq(1)
+                                    m.next = "SANITY_CHECK"
+
+                                    comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.EXCEPTION)
                     
 
 

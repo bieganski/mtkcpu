@@ -125,7 +125,13 @@ CSR_TESTS = [
                 csrr x2, mepc
         """,
         out_reg=2,
-        out_val=CODE_START_ADDR + 4*4,
+
+        # TODO: note that it fails not on third, but on forth instruction.
+        # The reason is that 'la' is a pseudoinstruction, that is compiled to two instructions,
+        # assuming high enough program start address.
+        # It's a bad design that we specify it manually, not via finding label offset, and needs
+        # to be changed ASAP to avoid people confusion.
+        out_val=CODE_START_ADDR + 3*4,
         timeout=100,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -172,6 +178,9 @@ CSR_TESTS = [
                 .dword 0x0 // illegal instruction
                 addi x2, x0, 20
             trap:
+                csrr x1, mepc
+                addi x1, x1, 4
+                csrw mepc, x1
                 mret
                 addi x2, x0, 10
         """,
@@ -258,7 +267,23 @@ CSR_TESTS = [
     #     mem_init=MemoryContents.empty(),
     #     reg_init=RegistryContents.fill(),
     # ),
+
+    MemTestCase(
+        name="basic csrrc",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                .word 0x30102473 #     csrrs x8,misa,x0
+        """,
+        out_reg=8,
+        out_val=0x40000100,
+        timeout=50,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
 ]
+
+
 
 @mem_test(CSR_TESTS)
 def test_registers(_):

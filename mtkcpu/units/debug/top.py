@@ -24,80 +24,6 @@ from amaranth.lib import data
 #  and cmderr is  set  to  3  (exception error).
 
 
-# https://people.eecs.berkeley.edu/~krste/papers/riscv-privileged-v1.9.1.pdf    
-class DMI_CSR(IntEnum):
-    MISA = 0x301
-    DCSR = 0x7B0 # TODO from debug spec: pc saved in dpc and cause is updated
-    DPC  = 0x7B1
-
-class DebugCSR():
-    # constructor needs CPU instance to use/drive CPU signals
-    def __init__(self, layout, cpu):
-        self.layout = layout
-        self.cpu = cpu
-
-    @overload
-    def field_values(self) -> Dict[str, Signal]:
-        raise NotImplementedError("DebugCSR must implement 'field_values(self)' method!")
-
-
-# coupled in comb. logic
-class ReadOnlyRegValue():
-
-    def __init__(self, layout) -> None:
-        self.layout = layout
-
-    @overload
-    def field_values(self) -> Dict[str, int]:
-        raise NotImplementedError("ReadOnlyRegValue must implement 'field_values(self)' method!")
-
-    # converts values of all fields to single number 
-    def to_value(self):
-        field_vals = self.field_values()
-        res, off = 0, 0
-        for name, width in reversed(self.layout):
-            if "_zero" in name:
-                continue
-            res |= field_vals[name] << off
-            off += width
-        return res
-
-# https://people.eecs.berkeley.edu/~krste/papers/riscv-privileged-v1.9.pdf
-class RegValueMISA(ReadOnlyRegValue):
-    class XLEN(IntEnum):
-        RV32 = 0x1
-    class Extension(IntEnum):
-        I = 1 << 8
-
-    def field_values(self) -> Dict[str, int]:
-        return {
-            "base": self.XLEN.RV32,
-            "extensions": self.Extension.I,
-            "wiri": 0,
-        }
-
-class RegValueDPC(DebugCSR):
-    def field_values(self) -> Dict[str, Signal]:
-        return {
-
-        }
-
-
-dbg_csr_regs = {
-    DMI_CSR.MISA: [
-        ("extensions", 26),
-        ("wiri", 4),
-        ("base", 2),
-    ],
-    DMI_CSR.DPC: [
-        ("value", 32),
-    ]
-}
-
-const_csr_values = {
-    DMI_CSR.MISA: RegValueMISA,
-}
-
 class ControllerInterface():
     def __init__(self):
         self.command_err        = Signal(3) # of shape 'cmderr'
@@ -139,10 +65,6 @@ class DebugUnit(Elaboratable):
 
         with m.If(jtag_dtmcs.update & jtag_dtmcs.w.dmireset):
             comb += sticky.eq(0) # TODO
-
-        self.csr_regs = dbg_csr_regs
-        self.const_csr_values = const_csr_values
-        self.nonconst_csr_values = dict([(k, Record(v)) for k, v in self.csr_regs.items() if k not in self.const_csr_values])
 
         self.controller = ControllerInterface()
 

@@ -582,24 +582,26 @@ def test_progbuf_gets_executed(
         val = 123
         assert val < 2**11
 
+        gpr_reg_num = 8
+
+        # MISA = instructions.RiscvCsrRegister("misa", num=0x301)
+        # ins = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), MISA))
+
         # addi x1, x0, <val>
-        ins = encode_ins(instructions.Addi(registers.get_register(1), registers.get_register(0), val))
+        ins = encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val))
         yield from progbuf_write_wait_for_success(dmi_monitor, 0, ins)
 
-        # ebreak
         ins = encode_ins(instructions.Ebreak())
         yield from progbuf_write_wait_for_success(dmi_monitor, 1, ins)
 
-        # del ins
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_cmderr(
+            dmi_monitor=dmi_monitor,
+            expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
+            timeout=1000,
+        )
 
-        # yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        # yield from dmi_op_wait_for_cmderr(
-        #     dmi_monitor=dmi_monitor,
-        #     expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
-        #     timeout=1000,
-        # )
-
-        # yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
+        yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
 
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
@@ -609,10 +611,10 @@ def test_progbuf_gets_executed(
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
 
-        x = yield cpu.regs._array._inner[1]
+        x = yield cpu.regs._array._inner[gpr_reg_num]
 
         if x != val:
-            raise ValueError(f"expected x1 to contain {val}, got {x}")
+            raise ValueError(f"expected x1 to contain {hex(val)}, got {hex(x)}")
 
     processes = [
         main_process,
@@ -626,6 +628,116 @@ def test_progbuf_gets_executed(
     simulator.run()
 
 
+
+@dmi_simulator
+def test_progbuf_cmderr_on_runtime_error(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
+    assert PROGBUFSIZE >= 2
+
+    def main_process():
+        yield from few_ticks()
+
+        invalid_ins = 0xbaad
+        yield from progbuf_write_wait_for_success(dmi_monitor, 0, invalid_ins)
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        
+        yield from dmi_op_wait_for_cmderr(
+            dmi_monitor=dmi_monitor,
+            expected_cmderr=ABSTRACTCS_Layout.CMDERR.EXCEPTION,
+            timeout=100,
+        )
+
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+        if not halted:
+            raise ValueError("The exception occured during PROGBUF execution. The CMDERR was properly set,"
+                             " but the core hasn't halted (hasn't gone into park loop, in specs language).")
+    
+    def mepc():
+        yield Passive()
+        while True:
+            pc = yield cpu.pc
+            mepc = yield cpu.csr_unit.mepc.value
+            instr = yield cpu.instr
+            print("mepc", hex(mepc), "pc", hex(pc), "instr", hex(instr))
+            yield
+
+    processes = [
+        main_process,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+        mepc,
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
+@dmi_simulator
+def test_access_debug_csr_regs_in_debug_mode(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
+    assert PROGBUFSIZE >= 2
+    
+    gpr_reg_num = 3
+
+    def main_process():
+        yield from few_ticks()
+
+        from mtkcpu.units.csr_handlers import DCSR
+
+        expected_dcsr_reset_value = DCSR()._reset_value.value
+
+        DCSR_ins = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
+
+        # 0x7b0021f3
+        dcsr_read_ins: int = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), DCSR_ins))
+
+        ebreak_ins: int = encode_ins(instructions.Ebreak())
+
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+
+        for i, val in enumerate([dcsr_read_ins, ebreak_ins]):
+            yield from progbuf_write_wait_for_success(dmi_monitor, i, val)
+
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+
+        prev_reg_content = 0
+
+        for _ in range(timeout := 100):
+            reg_content = yield dmi_monitor.cpu.regs._array._inner[gpr_reg_num]
+            if reg_content != prev_reg_content:
+                logging.info(f"Detected value {hex(reg_content)} written to x{gpr_reg_num}")
+                if reg_content != expected_dcsr_reset_value:
+                    raise ValueError(f"Was expecting to see {hex(expected_dcsr_reset_value)}, got {hex(reg_content)} instead")
+                prev_reg_content = reg_content
+                break
+            yield
+        else:
+            raise ValueError(f"Haven't seen write to x{gpr_reg_num} in {timeout} cycles after PROGBUF exec!")
+
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
+
+    processes = [
+        main_process,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+        monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
@@ -636,6 +748,8 @@ if __name__ == "__main__":
     test_cmderr_clear()
     test_progbuf_writes_to_bus()
     test_progbuf_gets_executed()
+    test_progbuf_cmderr_on_runtime_error()
+    test_access_debug_csr_regs_in_debug_mode()
     logging.critical("ALL TESTS PASSED!")
 
 
