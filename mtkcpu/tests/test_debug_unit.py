@@ -673,6 +673,55 @@ def test_progbuf_cmderr_on_runtime_error(
         
     simulator.run()
 
+@dmi_simulator
+def test_access_debug_csr_regs_in_debug_mode(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
+    assert PROGBUFSIZE >= 2
+
+    def main_process():
+        yield from few_ticks()
+
+        gpr_reg_num = 3
+
+        DCSR = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
+        dcsr_read_ins : int = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), DCSR))
+        # 0x7b0021f3
+
+        yield from progbuf_write_wait_for_success(dmi_monitor, 0, dcsr_read_ins)
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        
+        yield from dmi_op_wait_for_cmderr(
+            dmi_monitor=dmi_monitor,
+            expected_cmderr=ABSTRACTCS_Layout.CMDERR.EXCEPTION,
+            timeout=100,
+        )
+    
+    def mepc():
+        yield Passive()
+        while True:
+            pc = yield cpu.pc
+            mepc = yield cpu.csr_unit.mepc.value
+            instr = yield cpu.instr
+            print("mepc", hex(mepc), "pc", hex(pc), "instr", hex(instr))
+            yield
+
+    processes = [
+        main_process,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+        # mepc,
+    ]
+    
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
@@ -683,7 +732,8 @@ if __name__ == "__main__":
     # test_cmderr_clear()
     # test_progbuf_writes_to_bus()
     # test_progbuf_gets_executed()
-    test_progbuf_cmderr_on_runtime_error()
+    # test_progbuf_cmderr_on_runtime_error()
+    test_access_debug_csr_regs_in_debug_mode()
     logging.critical("ALL TESTS PASSED!")
 
 
