@@ -379,14 +379,18 @@ class MtkCpu(Elaboratable):
 
         def trap(cause: Optional[Union[TrapCause, IrqCause]], interrupt=False):
             m.d.sync += active_unit.eq(0)
-            m.next = "TRAP"
-
-            if cause is None:
-                return
-            assert isinstance(cause, (TrapCause, IrqCause))
-            e = exception_unit
-            notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
-            m.d.comb += notifiers[cause].eq(1)
+            with m.If(self.is_debug_mode):
+                m.next = "FETCH"
+                m.d.sync += self.running_state.halted.eq(1)
+                m.d.comb += self.running_state_interface.error_on_progbuf_execution.eq(1)
+            with m.Else():
+                m.next = "TRAP"
+                if cause is None:
+                    return
+                assert isinstance(cause, (TrapCause, IrqCause))
+                e = exception_unit
+                notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
+                m.d.comb += notifiers[cause].eq(1)
 
         self.fetch = Signal()
         interconnect_error = self.interconnect_error = Signal()

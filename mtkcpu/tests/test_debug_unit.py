@@ -651,6 +651,11 @@ def test_progbuf_cmderr_on_runtime_error(
             expected_cmderr=ABSTRACTCS_Layout.CMDERR.EXCEPTION,
             timeout=100,
         )
+
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+        if not halted:
+            raise ValueError("The exception occured during PROGBUF execution. The CMDERR was properly set,"
+                             " but the core hasn't halted (hasn't gone into park loop, in specs language).")
     
     def mepc():
         yield Passive()
@@ -743,8 +748,8 @@ if __name__ == "__main__":
     # test_cmderr_clear()
     # test_progbuf_writes_to_bus()
     # test_progbuf_gets_executed()
-    # test_progbuf_cmderr_on_runtime_error()
-    test_access_debug_csr_regs_in_debug_mode()
+    test_progbuf_cmderr_on_runtime_error()
+    # test_access_debug_csr_regs_in_debug_mode()
     logging.critical("ALL TESTS PASSED!")
 
 

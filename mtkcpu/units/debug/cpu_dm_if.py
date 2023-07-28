@@ -17,18 +17,26 @@ class CpuRunningStateExternalInterface(Elaboratable):
         self.resumeack = Signal()
         self.haltack = Signal()
 
+        # NOTE: though there are many trap causes for PROGBUF execution,
+        # we need only one bit of information to be populated to debugger.
+        # From Debug Specs 1.0:
+        # If there was an exception, it’s left to the debugger to know what must have caused it.
+        self.error_on_progbuf_execution = Signal()
+
         # Points that module was misused.
         self.error_sticky = Signal()
 
     def elaborate(self, _):
+        """
+        Only correctness checking for simulation purposes.
+        No logic from that should be present for production FPGA runtime.
+        """
         m = Module()
 
         def prev(sig: Signal) -> Signal:
             res = Signal()
             m.d.sync += res.eq(sig)
             return res
-
-        # Only correctness checking for simulation purposes.
 
         resumeack_takes_two = prev(self.resumeack) & self.resumeack
         haltack_takes_two   = prev(self.haltack)   & self.haltack
