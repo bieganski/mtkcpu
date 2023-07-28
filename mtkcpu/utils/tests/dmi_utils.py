@@ -444,13 +444,15 @@ def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: 
                     raise ValueError(f"haltreq didnt get an ack in {timeout_ticks} ticks!")
 
             if resumereq:
-                for _ in range(timeout_ticks):
-                    ack = yield dmi_monitor.cpu.running_state_interface.resumeack
-                    if ack:
-                        break
-                    yield
-                else:
-                    raise ValueError(f"resumereq didnt get an ack in {timeout_ticks} ticks!")
+                halted = yield dmi_monitor.cpu.running_state.halted 
+                if not halted: # it is legal for debugger to set 'resumereq' when the hart is not halted (it just has no effect).
+                    for _ in range(timeout_ticks):
+                        ack = yield dmi_monitor.cpu.running_state_interface.resumeack
+                        if ack:
+                            break
+                        yield
+                    else:
+                        raise ValueError(f"resumereq didnt get an ack in {timeout_ticks} ticks!")
             yield
     return aux
 

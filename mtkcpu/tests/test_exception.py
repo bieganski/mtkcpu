@@ -126,6 +126,26 @@ EXCEPTION_TESTS = [
     ),
 ]
 
-@mem_test(EXCEPTION_TESTS)
+tests = [
+    MemTestCase(
+        name="mcause illegal instruction when accessing not implemented CSR, normally accessible in M mode.",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrrs x2, 0x35c, x0
+            trap:
+                csrr x2, mcause
+        """,
+        out_reg=2,
+        out_val=TrapCause.ILLEGAL_INSTRUCTION,
+        timeout=100,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+]
+
+@mem_test(tests)
 def test_registers(_):
     pass
