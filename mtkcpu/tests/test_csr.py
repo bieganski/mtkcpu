@@ -267,11 +267,7 @@ CSR_TESTS = [
     #     mem_init=MemoryContents.empty(),
     #     reg_init=RegistryContents.fill(),
     # ),
-]
 
-
-# csrrs x8, x0, misa
-tests = [
     MemTestCase(
         name="basic csrrc",
         source_type=MemTestSourceType.RAW,
@@ -287,6 +283,8 @@ tests = [
     ),
 ]
 
-@mem_test(tests)
+
+
+@mem_test(CSR_TESTS)
 def test_registers(_):
     pass
