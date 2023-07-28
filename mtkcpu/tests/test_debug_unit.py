@@ -681,40 +681,50 @@ def test_access_debug_csr_regs_in_debug_mode(
 ):
     from mtkcpu.units.debug.impl_config import PROGBUFSIZE
     assert PROGBUFSIZE >= 2
+    
+    gpr_reg_num = 3
 
     def main_process():
         yield from few_ticks()
 
-        gpr_reg_num = 3
+        from mtkcpu.units.csr_handlers import DCSR
 
-        DCSR = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
-        dcsr_read_ins : int = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), DCSR))
+        expected_dcsr_reset_value = DCSR()._reset_value.value
+
+        DCSR_ins = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
+
         # 0x7b0021f3
+        dcsr_read_ins : int = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), DCSR_ins))
 
-        yield from progbuf_write_wait_for_success(dmi_monitor, 0, dcsr_read_ins)
+        ebreak_ins: int = encode_ins(instructions.Ebreak())
+
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+
+        for i, val in enumerate([dcsr_read_ins, ebreak_ins]):
+            yield from progbuf_write_wait_for_success(dmi_monitor, i, val)
+
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        
-        yield from dmi_op_wait_for_cmderr(
-            dmi_monitor=dmi_monitor,
-            expected_cmderr=ABSTRACTCS_Layout.CMDERR.EXCEPTION,
-            timeout=100,
-        )
-    
-    def mepc():
-        yield Passive()
-        while True:
-            pc = yield cpu.pc
-            mepc = yield cpu.csr_unit.mepc.value
-            instr = yield cpu.instr
-            print("mepc", hex(mepc), "pc", hex(pc), "instr", hex(instr))
+
+        prev_reg_content = 0
+
+        for _ in range(timeout := 100):
+            reg_content = yield dmi_monitor.cpu.regs._array._inner[gpr_reg_num]
+            if reg_content != prev_reg_content:
+                logging.info(f"Detected value {reg_content} written to x{gpr_reg_num}")
+                if reg_content != expected_dcsr_reset_value:
+                    raise ValueError(f"Was expecting to see {hex(expected_dcsr_reset_value)}, got {hex(reg_content)} instead")
+                prev_reg_content = reg_content
+                break
             yield
+        else:
+            raise ValueError(f"Haven't seen write to x{gpr_reg_num} in {timeout} cycles after PROGBUF exec!")
+
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
 
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
-        # mepc,
     ]
     
     for p in processes:
@@ -725,14 +735,14 @@ def test_access_debug_csr_regs_in_debug_mode(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_halt_resume_with_new_dpc()
-    # test_cmderr_clear()
-    # test_progbuf_writes_to_bus()
-    # test_progbuf_gets_executed()
-    # test_progbuf_cmderr_on_runtime_error()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_halt_resume_with_new_dpc()
+    test_cmderr_clear()
+    test_progbuf_writes_to_bus()
+    test_progbuf_gets_executed()
+    test_progbuf_cmderr_on_runtime_error()
     test_access_debug_csr_regs_in_debug_mode()
     logging.critical("ALL TESTS PASSED!")
 
