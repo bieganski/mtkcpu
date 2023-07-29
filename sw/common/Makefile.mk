@@ -9,6 +9,7 @@ endif
 
 TOOLCHAIN := riscv-none-embed-
 CC := $(TOOLCHAIN)g++
+LD := $(TOOLCHAIN)ld
 
 MARCH := rv32i
 ARCH_FLAGS := -march=$(MARCH) -mabi=ilp32 -DUSE_GP
@@ -17,9 +18,9 @@ GIT_ROOT := $(shell git rev-parse --show-toplevel)
 
 LINKER_SCRIPT ?= $(GIT_ROOT)/sw/common/linker.ld
 
-LDFLAGS += $(ARCH_FLAGS)
-LDFLAGS += -T$(LINKER_SCRIPT)
+LDFLAGS += -T$(LINKER_SCRIPT) --gc-sections
 
+CCFLAGS += -ffunction-sections -fdata-sections  # for linker garbage collection
 CCFLAGS += $(ARCH_FLAGS)
 CCFLAGS += -std=c++17 # standard library
 CCFLAGS += -Os # reduce code size at most
@@ -52,7 +53,7 @@ CXXFLAGS := error_use_cc_only
 all: $(OBJDIR)/$(PROJ_NAME).elf
 
 $(OBJDIR)/%.elf: $(OBJS) | $(OBJDIR)
-	$(CC) $(CCFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 $(OBJDIR)/%.o: %.cc
 	@mkdir -p $(dir $@)
