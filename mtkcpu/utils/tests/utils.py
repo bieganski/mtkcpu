@@ -683,7 +683,7 @@ def assert_jtag_test(
         with_debug=True,
     )
 
-    sw_project_path = get_git_root() / "sw" / "blink_led"
+    sw_project_path = get_git_root() / "sw" / "just_loop"
     
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
 
