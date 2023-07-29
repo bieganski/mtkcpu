@@ -152,7 +152,9 @@ class HandlerCOMMAND(HandlerDMI):
         sync = m.d.sync
         comb = m.d.comb
         
-        write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.write_value)
+        # NOTE: 'write_value' is slightly different in COMMAND handler, as it uses value 
+        # just latched in main handler-picking Switch statement (temporary solution).
+        write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.dmi_regs[DMIReg.COMMAND])
 
         with m.If(write_value.cmdtype == COMMAND_Layout.AbstractCommandCmdtype.AccessRegister):
 
@@ -284,6 +286,24 @@ class HandlerPROGBUF(HandlerDMI):
         with m.If(bus.ack):
             self.comb += self.controller.command_finished.eq(1)
 
+class HandlerABSTRACTAUTO(HandlerDMI):
+    def handle_write(self):
+        m = self.debug_unit.m
+        sync = self.sync
+        comb = self.comb
+
+        write_value      : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.write_value)
+        reg_abstractauto : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.dmi_regs[DMIReg.ABSTRACTAUTO])
+
+        self.comb += self.controller.command_finished.eq(1)
+
+        from mtkcpu.units.debug.impl_config import DATASIZE
+
+        # WARL.
+        self.sync += [
+            reg_abstractauto.autoexecdata[:DATASIZE].eq(write_value.autoexecdata[:DATASIZE]),
+        ]
+        
 
 DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {
     DMIReg.DMCONTROL: HandlerDMCONTROL,
@@ -291,6 +311,7 @@ DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {
     DMIReg.DATA0: HandlerDATA,
     DMIReg.DATA1: HandlerDATA,
     DMIReg.ABSTRACTCS: HandlerABSTRACTCS,
+    DMIReg.ABSTRACTAUTO: HandlerABSTRACTAUTO,
 
     # NOTE:
     # HandlerPROGBUFx is not stated here.

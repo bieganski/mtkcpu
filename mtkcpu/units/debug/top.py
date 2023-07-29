@@ -146,6 +146,18 @@ class DebugUnit(Elaboratable):
                             # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
                             sync += abstractcs.busy.eq(1)
                             m.next = "WAIT"
+
+                            # TODO
+                            # Normally we don't have to latch the written value, and we could discard it
+                            # when we set 'self.controller.command_finished', but there is one gotcha.
+                            # The ABSTRACTAUTO register that we implement provides interface for triggering
+                            # action currently latched in COMMAND.
+                            #
+                            # To avoid that nasty 'if', issue #23 needs to be implemented.
+                            # https://github.com/bieganski/mtkcpu/issues/23
+                            # TODO: We lose WARZ property of COMMAND reg here.
+                            with m.If(jtag_tap_dmi_bus.w.address == DMIReg.COMMAND):
+                                sync += self.dmi_regs[DMIReg.COMMAND].eq(jtag_tap_dmi_bus.w.data)
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)
                 with m.Switch(jtag_tap_dmi_bus.w.address):

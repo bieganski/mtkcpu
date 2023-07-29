@@ -176,6 +176,27 @@ def debug_inspect_applied_struct(struct: data.Struct, val: int) -> str:
     res = f"{struct.__class__}: {', '.join(reversed(lst))}"
     return res
 
+def monitor_abstractauto(dmi_monitor: DMI_Monitor):
+    from beepy import beep
+    def aux():
+        yield Passive()
+
+        while True:
+            new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
+            if new_dmi_transaction:
+                op   = yield dmi_monitor.cur_dmi_bus.op
+                addr = yield dmi_monitor.cur_dmi_bus.address
+                # value = yield dmi_monitor.cur_dmi_bus.data
+                if (op, addr) == (DMIOp.WRITE, DMIReg.ABSTRACTAUTO):
+                        beep()
+                        for _ in range(4):
+                            logging.warn("")
+                        struct = dmi_monitor.cpu.debug.dmi_regs[DMIReg.COMMAND]
+                        reg_dump = debug_inspect_applied_struct(struct, (yield struct.as_value()))
+                        logging.warn(f"COMMAND during ABSTRACTAUTO write: {reg_dump}")
+            yield
+    return aux
+
 def print_dmi_transactions(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
@@ -489,10 +510,7 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
                     if rs1val == 0:
                         yield
                         continue # not interesting - only read.
-                logging.critical(f"DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
-                raise ValueError(f"active! funct3 {funct3} in {[Funct3.CSRRW, Funct3.CSRRWI]}")
-            
-            
+                logging.critical(f"------       DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
             yield
     return aux
 

@@ -730,6 +730,7 @@ def assert_jtag_test(
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
+        monitor_abstractauto(dmi_monitor=dmi_monitor),
     ]
 
     with_checkpoints = False # XXX
