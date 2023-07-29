@@ -186,14 +186,25 @@ def monitor_abstractauto(dmi_monitor: DMI_Monitor):
             if new_dmi_transaction:
                 op   = yield dmi_monitor.cur_dmi_bus.op
                 addr = yield dmi_monitor.cur_dmi_bus.address
-                # value = yield dmi_monitor.cur_dmi_bus.data
                 if (op, addr) == (DMIOp.WRITE, DMIReg.ABSTRACTAUTO):
-                        beep()
                         for _ in range(4):
                             logging.warn("")
                         struct = dmi_monitor.cpu.debug.dmi_regs[DMIReg.COMMAND]
                         reg_dump = debug_inspect_applied_struct(struct, (yield struct.as_value()))
                         logging.warn(f"COMMAND during ABSTRACTAUTO write: {reg_dump}")
+                if (op, addr) == (DMIOp.WRITE, DMIReg.DMCONTROL):
+                    cpu_dmactive = yield dmi_monitor.cpu.debug.dmi_regs[DMIReg.DMCONTROL].dmactive
+                    value = yield dmi_monitor.cur_dmi_bus.data
+                    write_dmactive = yield dmi_monitor.cur_DMCONTROL.dmactive
+                    from multiprocessing import Process
+                    Process(target=beep, args=(6,)).start()
+                    logging.info(f"<< >> CPU dmactive {cpu_dmactive}, write dmactive {write_dmactive} << >>")
+                    if value & 0x2:
+                        # ndmreset is 0x2.
+                        Process(target=beep, args=(4,)).start()
+                        for _ in range(4):
+                            logging.info("<< >> << >>")
+
             yield
     return aux
 
@@ -274,9 +285,8 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         if (not cpu_dmactive) and (haltreq or resumereq):
                             raise ValueError(f"Likely a bug in CPU implementation: Attempt to (haltreq={haltreq}, resumereq={resumereq}) when cpu's dmactive=0!")
                         cpu_halted = yield dmi_monitor.cpu.running_state.halted
-                        if haltreq:
-                            if (not cpu_dmactive) or cpu_halted:
-                                raise ValueError(f"Likely a bug in CPU implementation: Attempt to haltreq when cpu's dmactive={cpu_dmactive}, cpu_running_state.halted={cpu_halted}!")                    
+                        if haltreq and cpu_halted:
+                            logging.critical(f"Possibly a bug in CPU or in debugger: Attempt to haltreq when cpu is already halted!")
                     
                     from riscvmodel.code import decode
                     if addr in [DMIReg.PROGBUF0 + i for i in range(16)] and op == DMIOp.WRITE:
@@ -455,18 +465,26 @@ def monitor_halt_or_resume_req_get_ack(dmi_monitor: DMI_Monitor, timeout_ticks: 
             haltreq = yield dmi_monitor.cpu.running_state_interface.haltreq
             resumereq = yield dmi_monitor.cpu.running_state_interface.resumereq
 
+            # NOTE: it is legal for debugger to set 'resumereq' when the hart is not halted (it just has no effect)
+            # (analogically with 'haltreq'). Actually, openOCD does this at some point..
+
+            # TODO: maybe it could be relaxed.
+            assert not (haltreq and resumereq)
+
             if haltreq:
-                for _ in range(timeout_ticks):
-                    ack = yield dmi_monitor.cpu.running_state_interface.haltack
-                    if ack:
-                        break
-                    yield
-                else:
-                    raise ValueError(f"haltreq didnt get an ack in {timeout_ticks} ticks!")
+                halted = yield dmi_monitor.cpu.running_state.halted 
+                if not halted:
+                    for _ in range(timeout_ticks):
+                        ack = yield dmi_monitor.cpu.running_state_interface.haltack
+                        if ack:
+                            break
+                        yield
+                    else:
+                        raise ValueError(f"haltreq didnt get an ack in {timeout_ticks} ticks!")
 
             if resumereq:
                 halted = yield dmi_monitor.cpu.running_state.halted 
-                if not halted: # it is legal for debugger to set 'resumereq' when the hart is not halted (it just has no effect).
+                if halted:
                     for _ in range(timeout_ticks):
                         ack = yield dmi_monitor.cpu.running_state_interface.resumeack
                         if ack:
