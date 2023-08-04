@@ -8,6 +8,7 @@ from mtkcpu.units.debug.types import *
 from mtkcpu.utils.misc import get_color_logging_object, get_members
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.units.debug.types import DMI_reg_kinds
+from mtkcpu.utils.tests.sim_tests import get_state_name
 
 logging = get_color_logging_object()
 
@@ -197,7 +198,7 @@ def monitor_abstractauto(dmi_monitor: DMI_Monitor):
                     value = yield dmi_monitor.cur_dmi_bus.data
                     write_dmactive = yield dmi_monitor.cur_DMCONTROL.dmactive
                     from multiprocessing import Process
-                    Process(target=beep, args=(6,)).start()
+                    # Process(target=beep, args=(6,)).start()
                     logging.info(f"<< >> CPU dmactive {cpu_dmactive}, write dmactive {write_dmactive} << >>")
                     if value & 0x2:
                         # ndmreset is 0x2.
@@ -208,13 +209,27 @@ def monitor_abstractauto(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
+def pprint_bin_chunked(val: int, bits_high_to_low: list[int]) -> str:
+    res_fn = lambda lst: '_'.join(reversed(lst))
+    res = []
+    cur_offset = 0
+    for x in reversed(bits_high_to_low):
+        full_mask = (2 ** x) - 1  # only 1s in bit repr.
+        masked_val = (val >> cur_offset) & full_mask
+        res.append(
+            format(masked_val, f'0{x}b')
+        )
+        cur_offset += x
+    return res_fn(res)
+
+
 def print_dmi_transactions(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
 
         def print_fn(s: str):
             logging.info(s)
-        
+
         last_data0 = None
         while True:
             new_dmi_transaction = yield dmi_monitor.new_dmi_transaction
@@ -234,12 +249,12 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                     if op == DMIOp.WRITE and struct is not None:
                         reg_dump = debug_inspect_applied_struct(struct, value)
 
-                    print_fn(f"DMI: {action}, address: {addr!r}, value: {hex(value)} aka {_bin(value)}, dump {reg_dump}")
+                    print_fn(f"(mtime={(yield dmi_monitor.cpu.mtime)})DMI: {action}, address: {addr!r}, value: {hex(value)} aka {_bin(value)}, dump {reg_dump}")
 
                     if op == DMIOp.READ:
                         if struct is None:
                             print_fn(f"Skipping waiting for DMI READ to complete "
-                                     "as DMI REG {addr} is not implemented, so no dump can be created.")
+                                     f"as DMI REG {addr} is not implemented, so no dump can be created.")
                             yield
                             continue
                         timeout = 1000
@@ -270,7 +285,6 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         regno = yield acc_reg.regno
                         write = yield acc_reg.write
                         transfer = yield acc_reg.transfer
-                        aarsize = yield acc_reg.aarsize
                         if transfer:
                             if write:
                                 logging.critical(f"DMI WRITE, addr: {hex(regno)}, DATA0: {hex(last_data0)}")
@@ -287,6 +301,40 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         cpu_halted = yield dmi_monitor.cpu.running_state.halted
                         if haltreq and cpu_halted:
                             logging.critical(f"Possibly a bug in CPU or in debugger: Attempt to haltreq when cpu is already halted!")
+                            prev_state = None
+                            prev_jtag_tap_dmi_bus = 0
+                            while True:
+                                fsm = dmi_monitor.cpu.debug.fsm
+                                state = get_state_name(fsm, (yield fsm.state))
+                                if state != prev_state:
+                                    mtime = yield dmi_monitor.cpu.mtime
+                                    logging.critical(f"mtime={mtime}, entry to state {state}")
+                                    prev_state = state
+                                haltack =       yield dmi_monitor.cpu.running_state_interface.haltack
+                                resumeack =     yield dmi_monitor.cpu.running_state_interface.resumeack
+                                cmd_finished =  yield dmi_monitor.cpu.debug.controller.command_finished
+                                cmd_err =       yield dmi_monitor.cpu.debug.controller.command_err
+                                if haltack or cmd_err or cmd_finished or resumeack:
+                                    logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) haltack {haltack}, resumeack {resumeack}, cmderr: {cmd_err}, cmd_finished: {cmd_finished}")
+                                if cmd_finished:
+                                    raise ValueError("OK")
+                                
+                                jtag_fsm = dmi_monitor.cpu.debug.jtag.jtag_fsm
+                                jtag_fsm_state = get_state_name(jtag_fsm, (yield jtag_fsm.state))
+                                logging.warn(jtag_fsm_state)
+                                
+                                jtag_tap_dmi_bus    = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].w.as_value()
+                                update              = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].update
+                                if update:
+                                    logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) UPDATE!")
+                                if jtag_tap_dmi_bus != prev_jtag_tap_dmi_bus:
+                                    dmi_bus_bit_mask = [7, 32, 2]  # 7 bit addr, 32 bit data, 2 bit op
+                                    logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) BUS was {pprint_bin_chunked(prev_jtag_tap_dmi_bus, dmi_bus_bit_mask)}, now is {pprint_bin_chunked(jtag_tap_dmi_bus, dmi_bus_bit_mask)} (aka {hex(jtag_tap_dmi_bus)})")
+                                    prev_jtag_tap_dmi_bus = jtag_tap_dmi_bus
+                                
+
+
+                                yield
                     
                     from riscvmodel.code import decode
                     if addr in [DMIReg.PROGBUF0 + i for i in range(16)] and op == DMIOp.WRITE:
@@ -443,7 +491,8 @@ def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
             if dmactive != prev_dmactive:
                 repr = "active" if dmactive else "inactive"
                 note = "from initial" if prev_dmactive is None else ""
-                logging.info(f"DM changed state {note} to {repr}")
+                mtime = yield dmi_monitor.cpu.mtime
+                logging.info(f"DM changed state {note} to {repr} (mtime={mtime})")
             prev_dmactive = dmactive
             
             cpu_state = yield dmi_monitor.cpu.running_state.halted

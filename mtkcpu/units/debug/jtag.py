@@ -108,7 +108,7 @@ class JTAGTap(Elaboratable):
             with m.If(record.capture):
                 sync += record.capture.eq(0)
 
-        with m.FSM() as jtag_fsm:
+        with m.FSM() as self.jtag_fsm:
             with m.State("TEST-LOGIC-RESET"):
                 with m.If(rising_tck & ~tms):
                     sync += self.ir.eq(self.ir_reset)
