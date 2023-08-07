@@ -719,6 +719,20 @@ def assert_jtag_test(
     sim_gadgets = create_jtag_simulator(dmi_monitor, cpu)
     sim, vcd_traces = [sim_gadgets[k] for k in ["sim", "vcd_traces"]]
 
+
+    def f(dmi_monitor):
+        def aux():
+            prev_state = None
+            while True:
+                fsm = dmi_monitor.cpu.debug.fsm
+                state = get_state_name(fsm, (yield fsm.state))
+                if state != prev_state:
+                    mtime = yield dmi_monitor.cpu.mtime
+                    logging.critical(f"mtime={mtime}, entry to state {state}")
+                    prev_state = state
+                yield
+        return aux
+
     processes = [
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
@@ -731,6 +745,7 @@ def assert_jtag_test(
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
         monitor_abstractauto(dmi_monitor=dmi_monitor),
+        f(dmi_monitor=dmi_monitor),
     ]
 
     with_checkpoints = False # XXX

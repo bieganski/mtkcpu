@@ -738,9 +738,42 @@ def test_access_debug_csr_regs_in_debug_mode(
         
     simulator.run()
 
+
+@dmi_simulator
+def test_not_supported_command_type_finishes(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    def main_process():
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        # --- simulation output, that explains '0x2180000' value
+        #   INFO     | (mtime=181844)DMI: writing, address: <DMIReg.COMMAND: 23>, 
+        # value: 0x2180000 aka 00000010_00011000_00000000_00000000, 
+        # dump <class 'mtkcpu.units.debug.types.COMMAND_Layout'>: cmdtype=0x2, 
+        # [ <class 'amaranth.lib.data.StructLayout'>: zero2_=0x0, aarsize=0x1, 
+        # zero1_=0x1, postexec=0x0, transfer=0x0, write=0x0, regno=0x0 ]
+        
+        # NOTE: cmdtype=0x2 stands for ACCESS MEMORY abstract command.
+        yield dmi_monitor.cur_dmi_bus.data.eq(0x2180000)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_cmderr(dmi_monitor=dmi_monitor, expected_cmderr=ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+    
+    processes = [main_process]
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
+    test_not_supported_command_type_finishes()
     test_dmi_try_read_not_implemented_register()
     test_dmi_abstract_command_read_write_gpr()
     test_core_halt_resume()

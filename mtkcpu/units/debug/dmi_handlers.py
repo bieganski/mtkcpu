@@ -257,6 +257,11 @@ class HandlerCOMMAND(HandlerDMI):
                                     m.next = "SANITY_CHECK"
 
                                     comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.EXCEPTION)
+        with m.Else():
+            comb += [
+                self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED),
+                self.controller.command_finished.eq(1),
+            ]
                     
 
 

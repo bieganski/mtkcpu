@@ -319,10 +319,6 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                                 if cmd_finished:
                                     raise ValueError("OK")
                                 
-                                jtag_fsm = dmi_monitor.cpu.debug.jtag.jtag_fsm
-                                jtag_fsm_state = get_state_name(jtag_fsm, (yield jtag_fsm.state))
-                                logging.warn(jtag_fsm_state)
-                                
                                 jtag_tap_dmi_bus    = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].w.as_value()
                                 update              = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].update
                                 if update:
@@ -331,8 +327,6 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                                     dmi_bus_bit_mask = [7, 32, 2]  # 7 bit addr, 32 bit data, 2 bit op
                                     logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) BUS was {pprint_bin_chunked(prev_jtag_tap_dmi_bus, dmi_bus_bit_mask)}, now is {pprint_bin_chunked(jtag_tap_dmi_bus, dmi_bus_bit_mask)} (aka {hex(jtag_tap_dmi_bus)})")
                                     prev_jtag_tap_dmi_bus = jtag_tap_dmi_bus
-                                
-
 
                                 yield
                     
