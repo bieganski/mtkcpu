@@ -554,8 +554,9 @@ def monitor_writes_to_gpr(dmi_monitor: DMI_Monitor, gpr_num: int):
 
 def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
     from mtkcpu.cpu.isa import Funct3
-    from mtkcpu.units.csr_handlers import DCSR
+    from mtkcpu.units.csr_handlers import DCSR, DPC
     dcsr_addr = DCSR().csr_idx
+    dpc_addr = DPC().csr_idx
     
     def aux():
         yield Passive()
@@ -566,12 +567,15 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             funct3          = yield csr_unit.func3
             rs1             = yield csr_unit.rs1
             rs1val          = yield csr_unit.rs1val
-            if csr_unit_active and (csr_idx == dcsr_addr):
+            if csr_unit_active:
                 if funct3 in [Funct3.CSRRS, Funct3.CSRRSI]:
                     if rs1val == 0:
                         yield
                         continue # not interesting - only read.
-                logging.critical(f"------       DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
+                    if csr_idx == dcsr_addr:
+                        logging.critical(f"------       DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
+                    elif csr_idx == dpc_addr:
+                        raise ValueError(f"------       DPC write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
             yield
     return aux
 
