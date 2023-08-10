@@ -116,13 +116,14 @@ class HandlerDMCONTROL(HandlerDMI):
             from mtkcpu.units.debug.cpu_dm_if import CpuRunningStateExternalInterface
             cpu_state_if : CpuRunningStateExternalInterface = self.debug_unit.cpu.running_state_interface
 
-            with m.If(write_value.haltreq):
+            with m.If(write_value.haltreq & ~self.debug_unit.cpu.running_state.halted):
                 comb += [
                     cpu_state_if.haltreq.eq(1),
                 ]
                 with m.If(cpu_state_if.haltack):
                     comb += self.controller.command_finished.eq(1)
-            with m.Elif(write_value.resumereq): # Elif, because specs says: 'resumereq is ignored if haltreq is set'
+            with m.Elif(write_value.resumereq & self.debug_unit.cpu.running_state.halted):
+                # NOTE: Elif, because specs says: 'resumereq is ignored if haltreq is set'
                 comb += [
                     cpu_state_if.resumereq.eq(1),
                 ]

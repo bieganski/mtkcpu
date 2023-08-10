@@ -301,34 +301,34 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                         cpu_halted = yield dmi_monitor.cpu.running_state.halted
                         if haltreq and cpu_halted:
                             logging.critical(f"Possibly a bug in CPU or in debugger: Attempt to haltreq when cpu is already halted!")
-                            prev_state = None
-                            prev_jtag_tap_dmi_bus = 0
-                            while True:
-                                fsm = dmi_monitor.cpu.debug.fsm
-                                state = get_state_name(fsm, (yield fsm.state))
-                                if state != prev_state:
-                                    mtime = yield dmi_monitor.cpu.mtime
-                                    logging.critical(f"mtime={mtime}, entry to state {state}")
-                                    prev_state = state
-                                haltack =       yield dmi_monitor.cpu.running_state_interface.haltack
-                                resumeack =     yield dmi_monitor.cpu.running_state_interface.resumeack
-                                cmd_finished =  yield dmi_monitor.cpu.debug.controller.command_finished
-                                cmd_err =       yield dmi_monitor.cpu.debug.controller.command_err
-                                if haltack or cmd_err or cmd_finished or resumeack:
-                                    logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) haltack {haltack}, resumeack {resumeack}, cmderr: {cmd_err}, cmd_finished: {cmd_finished}")
-                                if cmd_finished:
-                                    raise ValueError("OK")
+                            # prev_state = None
+                            # prev_jtag_tap_dmi_bus = 0
+                            # while True:
+                            #     fsm = dmi_monitor.cpu.debug.fsm
+                            #     state = get_state_name(fsm, (yield fsm.state))
+                            #     if state != prev_state:
+                            #         mtime = yield dmi_monitor.cpu.mtime
+                            #         logging.critical(f"mtime={mtime}, entry to state {state}")
+                            #         prev_state = state
+                            #     haltack =       yield dmi_monitor.cpu.running_state_interface.haltack
+                            #     resumeack =     yield dmi_monitor.cpu.running_state_interface.resumeack
+                            #     cmd_finished =  yield dmi_monitor.cpu.debug.controller.command_finished
+                            #     cmd_err =       yield dmi_monitor.cpu.debug.controller.command_err
+                            #     if haltack or cmd_err or cmd_finished or resumeack:
+                            #         logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) haltack {haltack}, resumeack {resumeack}, cmderr: {cmd_err}, cmd_finished: {cmd_finished}")
+                            #     if cmd_finished:
+                            #         raise ValueError("OK")
                                 
-                                jtag_tap_dmi_bus    = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].w.as_value()
-                                update              = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].update
-                                if update:
-                                    logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) UPDATE!")
-                                if jtag_tap_dmi_bus != prev_jtag_tap_dmi_bus:
-                                    dmi_bus_bit_mask = [7, 32, 2]  # 7 bit addr, 32 bit data, 2 bit op
-                                    logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) BUS was {pprint_bin_chunked(prev_jtag_tap_dmi_bus, dmi_bus_bit_mask)}, now is {pprint_bin_chunked(jtag_tap_dmi_bus, dmi_bus_bit_mask)} (aka {hex(jtag_tap_dmi_bus)})")
-                                    prev_jtag_tap_dmi_bus = jtag_tap_dmi_bus
+                            #     jtag_tap_dmi_bus    = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].w.as_value()
+                            #     update              = yield dmi_monitor.cpu.debug.jtag.regs[JtagIR.DMI].update
+                            #     if update:
+                            #         logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) UPDATE!")
+                            #     if jtag_tap_dmi_bus != prev_jtag_tap_dmi_bus:
+                            #         dmi_bus_bit_mask = [7, 32, 2]  # 7 bit addr, 32 bit data, 2 bit op
+                            #         logging.critical(f"(mtime={(yield dmi_monitor.cpu.mtime)}) BUS was {pprint_bin_chunked(prev_jtag_tap_dmi_bus, dmi_bus_bit_mask)}, now is {pprint_bin_chunked(jtag_tap_dmi_bus, dmi_bus_bit_mask)} (aka {hex(jtag_tap_dmi_bus)})")
+                            #         prev_jtag_tap_dmi_bus = jtag_tap_dmi_bus
 
-                                yield
+                            #     yield
                     
                     from riscvmodel.code import decode
                     if addr in [DMIReg.PROGBUF0 + i for i in range(16)] and op == DMIOp.WRITE:

@@ -678,7 +678,7 @@ def assert_jtag_test(
     with_checkpoints=False,
 ):
     cpu = MtkCpu(
-        reg_init=[0xabcd + i for i in range(32)],
+        reg_init=[0x0 for i in range(32)],
         mem_config=EBRMemConfig(mem_size_words=1000, mem_addr=0x8000, mem_content_words=None, simulate=False),
         with_debug=True,
     )
