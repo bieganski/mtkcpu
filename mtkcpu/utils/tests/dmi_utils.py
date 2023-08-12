@@ -223,6 +223,17 @@ def pprint_bin_chunked(val: int, bits_high_to_low: list[int]) -> str:
     return res_fn(res)
 
 
+class Color:
+    yellow = "\x1b[33m"
+    green = "\x1b[32m"
+    red = "\x1b[21m"
+    bold_red = "\x1b[31;1m"
+    bold = "\033[1m"
+    uline = "\033[4m"
+    reset = "\x1b[0m"
+    cyan = "\x1b[36m"
+    blue = "\x1b[34m"
+
 def print_dmi_transactions(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
@@ -248,8 +259,13 @@ def print_dmi_transactions(dmi_monitor: DMI_Monitor):
                     
                     if op == DMIOp.WRITE and struct is not None:
                         reg_dump = debug_inspect_applied_struct(struct, value)
+                        reg_dump = reg_dump.replace("resumereq=0x1", f"{Color.cyan}resumereq=0x1{Color.green}")
+                        reg_dump = reg_dump.replace("haltreq=0x1", f"{Color.blue}haltreq=0x1{Color.green}")
 
-                    print_fn(f"(mtime={(yield dmi_monitor.cpu.mtime)})DMI: {action}, address: {addr!r}, value: {hex(value)} aka {_bin(value)}, dump {reg_dump}")
+                    msg = f"(mtime={(yield dmi_monitor.cpu.mtime)})DMI: {action}, address: {addr!r}"
+                    if op == DMIOp.WRITE:
+                        msg += f", value: {hex(value)} aka {_bin(value)}, dump {reg_dump}"
+                    print_fn(msg)
 
                     if op == DMIOp.READ:
                         if struct is None:

@@ -679,7 +679,7 @@ def assert_jtag_test(
 ):
     cpu = MtkCpu(
         reg_init=[0x0 for i in range(32)],
-        mem_config=EBRMemConfig(mem_size_words=1000, mem_addr=0x8000, mem_content_words=None, simulate=False),
+        mem_config=EBRMemConfig(mem_size_words=60, mem_addr=0x8000, mem_content_words=None, simulate=True),
         with_debug=True,
     )
 
@@ -723,7 +723,7 @@ def assert_jtag_test(
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
-        # monitor_pc_and_main_fsm(dmi_monitor),
+        monitor_pc_and_main_fsm(dmi_monitor),
         print_dmi_transactions(dmi_monitor),
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
