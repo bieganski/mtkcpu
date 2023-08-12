@@ -138,6 +138,8 @@ class DebugUnit(Elaboratable):
                     with m.Switch(jtag_tap_dmi_bus.w.op):
                         with m.Case(DMIOp.READ):
                             on_read(jtag_tap_dmi_bus.w.address)
+                            sync += abstractcs.busy.eq(1)
+                            m.next = "DEASSERT_BUSY"
                         with m.Case(DMIOp.WRITE):
                             # TODO - in legacy code for each DMI register we had 'r' and 'w' copy.
                             # Current implementation has only one 'w' register (called 'write_value' in dmi_handlers),
@@ -145,7 +147,9 @@ class DebugUnit(Elaboratable):
                             # 
                             # That FSM needs to be refactored, but also the way that we automate
                             # the W1/WARL/.../ thing from specs - currently all 'r' fields are set manually.
-                            # I postpone that task till the time I better understand system constraints
+                            # I postpone that task till the time I better understand system constraints.
+                            # Related issue: https://github.com/bieganski/mtkcpu/issues/23
+                            #
                             # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
                             sync += abstractcs.busy.eq(1)
                             m.next = "WAIT"
@@ -166,6 +170,9 @@ class DebugUnit(Elaboratable):
                             # TODO: We lose WARZ property of COMMAND reg here.
                             with m.If(jtag_tap_dmi_bus.w.address == DMIReg.COMMAND):
                                 sync += self.dmi_regs[DMIReg.COMMAND].eq(jtag_tap_dmi_bus.w.data)
+            with m.State("DEASSERT_BUSY"):
+                sync += abstractcs.busy.eq(0)
+                m.next = "IDLE"
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)
                 with m.Switch(self.dmi_write_address):

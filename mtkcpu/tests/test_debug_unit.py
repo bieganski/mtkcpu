@@ -204,15 +204,7 @@ def test_dmi_try_read_not_implemented_register(
             yield dmi_monitor.cur_dmi_bus.address.eq(dmi_reg)
             yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
             yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-
-            # TODO
-            # we cannot use 'dmi_op_wait_for_cmderr', due to CPU not setting 'busy' for single-cycle read transactions.
-            # yield from dmi_op_wait_for_cmderr(dmi_monitor=dmi_monitor, expected_cmderr=ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
-            yield from few_ticks()
-            expected_cmderr = ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED
-            cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
-            if cmderr != expected_cmderr:
-                raise ValueError(f"expected cmderr {expected_cmderr}, got {cmderr}")
+            yield from dmi_op_wait_for_cmderr(dmi_monitor=dmi_monitor, expected_cmderr=ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
             
             data = yield dmi_monitor.cur_dmi_read_data
             if data != 0x0:
@@ -741,19 +733,100 @@ def test_not_supported_command_type_finishes(
         
     simulator.run()
 
+@dmi_simulator
+def test_abstracauto_autoexecdata(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    def main_process():
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        from mtkcpu.units.debug.impl_config import DATASIZE
+        from amaranth.lib import data
+
+        as_abstractauto: ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, dmi_monitor.cur_dmi_bus.data)
+        autoexecdata_width = as_abstractauto.autoexecdata.shape().width
+
+        yield as_abstractauto.autoexecdata.eq(2 ** autoexecdata_width - 1)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.ABSTRACTAUTO)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        yield dmi_monitor.cur_dmi_bus.data.eq(0)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.ABSTRACTAUTO)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.READ)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        actual_data = yield data.View(ABSTRACTAUTO_Layout, dmi_monitor.jtag_tap_dmi_bus.r.data).autoexecdata
+        expected_data = 2 ** DATASIZE - 1
+        if actual_data != expected_data:
+            raise ValueError(f"ABSTRACTAUTO: Was expecting to see {expected_data}, got {actual_data} instead")
+
+        gpr_reg_num = 8
+
+        def get_gpr_value(regno: int):
+            assert regno in range(32)
+            return (yield cpu.regs._array._inner[regno])
+        
+        init_reg_value = yield from get_gpr_value(gpr_reg_num)
+
+        for i, ins in enumerate([
+            # addi x1, x0, 1
+            encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), 1)),
+            encode_ins(instructions.Ebreak()),
+        ]):
+            yield from progbuf_write_wait_for_success(dmi_monitor, i, ins)
+        
+        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
+
+        reg_value_plus_one = yield from get_gpr_value(gpr_reg_num)
+
+        if init_reg_value + 1 != reg_value_plus_one:
+            raise ValueError("Progbuf manual execution seemingly didn't work! Not even trying ABSTRACTAUTO functionality in that case.")
+        
+        # Any write to DATA0 should trigger latched COMMAND execution - in our case increment value stored in x8.
+        yield dmi_monitor.cur_dmi_bus.data.eq(0x12345)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        autoexec_reg_value = yield from get_gpr_value(gpr_reg_num)
+
+        if (expected_value := reg_value_plus_one + 1) != autoexec_reg_value:
+            raise ValueError(f"ABSTRACTAUTO didn't work, despite the hardware claims that it supports it. Was expecting to see {expected_value}, got {autoexec_reg_value} instead.")
+
+        
+        
+
+    
+    processes = [main_process]
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_not_supported_command_type_finishes()
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
-    test_core_halt_resume()
-    test_halt_resume_with_new_dpc()
-    test_cmderr_clear()
-    test_progbuf_writes_to_bus()
-    test_progbuf_gets_executed()
-    test_progbuf_cmderr_on_runtime_error()
-    test_access_debug_csr_regs_in_debug_mode()
+    # test_not_supported_command_type_finishes()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    # test_core_halt_resume()
+    # test_halt_resume_with_new_dpc()
+    # test_cmderr_clear()
+    # test_progbuf_writes_to_bus()
+    # test_progbuf_gets_executed()
+    # test_progbuf_cmderr_on_runtime_error()
+    # test_access_debug_csr_regs_in_debug_mode()
+    test_abstracauto_autoexecdata()
     logging.critical("ALL TESTS PASSED!")
 
 
