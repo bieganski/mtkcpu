@@ -55,6 +55,7 @@ def dmi_simulator(f):
         if len(types) != 3:
             raise NotImplementedError()
         assert all([x == y for x, y in zip(types[:3], expected_types)])
+        print(f"== Starting {f.__name__}")
         f(simulator, cpu, dmi_monitor)
     return aux
 
@@ -331,9 +332,7 @@ def clear_cmderr_wait_for_success(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
     yield dmi_monitor.cur_dmi_bus.data.eq(0xFFFF_FFFF)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-    yield from few_ticks()
-    # TODO: below doesn't work for some reason..
-    # yield from dmi_op_wait_for_success(dmi_monitor)
+    yield from dmi_op_wait_for_success(dmi_monitor)
 
 @dmi_simulator
 def test_cmderr_clear(
@@ -477,13 +476,10 @@ def progbuf_write_wait_for_success(dmi_monitor: DMI_Monitor, progbuf_reg_num: in
 def trigger_progbuf_exec(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+    yield dmi_monitor.cur_dmi_bus.data.eq(0)
 
     yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
     acc_reg = dmi_monitor.cur_COMMAND.control
-
-    yield acc_reg.as_value().eq(0)
-    
-    yield # TODO remove me
 
     yield acc_reg.regno.eq(0x1000)
     yield acc_reg.write.eq(0)
@@ -584,15 +580,12 @@ def test_progbuf_gets_executed(
 
         gpr_reg_num = 8
 
-        # MISA = instructions.RiscvCsrRegister("misa", num=0x301)
-        # ins = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), MISA))
-
-        # addi x1, x0, <val>
-        ins = encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val))
-        yield from progbuf_write_wait_for_success(dmi_monitor, 0, ins)
-
-        ins = encode_ins(instructions.Ebreak())
-        yield from progbuf_write_wait_for_success(dmi_monitor, 1, ins)
+        for i, ins in enumerate([
+            # addi x1, x0, <val>
+            encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val)),
+            encode_ins(instructions.Ebreak()),
+        ]):
+            yield from progbuf_write_wait_for_success(dmi_monitor, i, ins)
 
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_cmderr(
@@ -600,9 +593,9 @@ def test_progbuf_gets_executed(
             expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
             timeout=1000,
         )
-
+        
         yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
-
+        
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
         if not halted:
@@ -614,7 +607,7 @@ def test_progbuf_gets_executed(
         x = yield cpu.regs._array._inner[gpr_reg_num]
 
         if x != val:
-            raise ValueError(f"expected x1 to contain {hex(val)}, got {hex(x)}")
+            raise ValueError(f"expected x{gpr_reg_num} to contain {hex(val)}, got {hex(x)} instead")
 
     processes = [
         main_process,

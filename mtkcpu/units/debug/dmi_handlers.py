@@ -220,7 +220,7 @@ class HandlerCOMMAND(HandlerDMI):
                         cpu : MtkCpu = self.debug_unit.cpu
                         real_dpc = Signal(32)
                         dpc = cpu.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
-                        with m.FSM() as self.fsmxd:
+                        with m.FSM():
                             with m.State("SANITY_CHECK"):
                                 with m.If(~self.debug_unit.cpu.running_state.halted):
                                     comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)

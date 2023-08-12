@@ -379,37 +379,21 @@ def dmi_op_wait_for_cmderr(dmi_monitor: DMI_Monitor, expected_cmderr: int, timeo
             if cmderr != expected_cmderr:
                 raise ValueError(f"Expected cmderr {expected_cmderr}, got {cmderr}")
             break
-        yield   
+        yield
     else:
         raise ValueError("dmi_op_wait_for_cmderr: abstractcs.busy high for too long!")
+    
+    # TODO
+    # Bus zeroing should be stated explicitely, but i don't yet know good place for that..
+    yield dmi_monitor.cur_dmi_bus.as_value().eq(0)
 
 
 def dmi_op_wait_for_success(dmi_monitor: DMI_Monitor, timeout: int = 40):
-    """
-    Check 'busy' and 'cmderr' fields in 'abstractcs'.
-    Raises if 'cmderr' is nonzero, or if 'busy' is never high/is high for too long.
-    """
-    for i in range(timeout):
-        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
-        if busy:
-            break
-        yield
-    else:
-        raise ValueError(f"dmi_op_wait_for_success: abstractcs.busy wasn't asserted during {timeout} cycles!")
-    
-    for i in range(i, timeout):
-        busy = yield dmi_monitor.cur_ABSTRACTCS_latched.busy
-        cmderr = yield dmi_monitor.cur_ABSTRACTCS_latched.cmderr
-
-        if cmderr:
-            raise ValueError(f"dmi_op_wait_for_success: detected nonzero0 abstractcs.cmderr ({cmderr})!")
-
-        if not busy:
-            logging.debug(f"DMI OP finished in {i} ticks.")
-            break
-        yield   
-    else:
-        raise ValueError("dmi_op_wait_for_success: abstractcs.busy high for too long!")
+    yield from dmi_op_wait_for_cmderr(
+        dmi_monitor=dmi_monitor,
+        expected_cmderr=ABSTRACTCS_Layout.CMDERR.NO_ERR,
+        timeout=timeout
+    )
 
 
 def dmi_bus_reset(dmi_monitor: DMI_Monitor):
@@ -498,18 +482,18 @@ def monitor_cpu_and_dm_state(dmi_monitor: DMI_Monitor):
         prev_dmactive = None
         while True:
             dmactive = yield dmi_monitor.cpu.debug.dmi_regs[DMIReg.DMCONTROL].dmactive
+            mtime = yield dmi_monitor.cpu.mtime
             if dmactive != prev_dmactive:
                 repr = "active" if dmactive else "inactive"
                 note = "from initial" if prev_dmactive is None else ""
-                mtime = yield dmi_monitor.cpu.mtime
-                logging.info(f"DM changed state {note} to {repr} (mtime={mtime})")
+                logging.info(f"(mtime={mtime}) DM changed state {note} to {repr}")
             prev_dmactive = dmactive
             
             cpu_state = yield dmi_monitor.cpu.running_state.halted
             if cpu_state != prev_cpu_state:
                 repr = "halted" if cpu_state else "running"
                 note = "from initial" if prev_cpu_state is None else ""
-                logging.info(f"CPU changed state {note} to {repr}")
+                logging.info(f"(mtime={mtime}) CPU changed state {note} to {repr}")
             prev_cpu_state = cpu_state
 
             yield
