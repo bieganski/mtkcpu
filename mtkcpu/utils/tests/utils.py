@@ -731,6 +731,7 @@ def assert_jtag_test(
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
         monitor_abstractauto(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
     ]
 
     with_checkpoints = False # XXX

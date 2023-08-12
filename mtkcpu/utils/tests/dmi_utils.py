@@ -610,3 +610,25 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
             prev_state = state
             yield
     return aux
+
+
+# TODO
+# Almost-duplicate of mtkcpu.utils.tests.utils.capture_write_transactions, that captures only EBR transactions,
+# but heavily used, so cannot easily change it.
+def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
+    def f():
+        yield Passive()
+        gb = cpu.arbiter.generic_bus
+        
+        while(True):
+            en = yield gb.en
+            store = yield gb.store
+            addr = yield gb.addr
+            ack = yield gb.ack
+            if en and store and ack:
+                data = yield gb.write_data
+                msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}"
+                logging.critical(msg)
+                output_dict[addr] = data
+            yield
+    return f
