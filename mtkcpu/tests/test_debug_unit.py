@@ -55,6 +55,7 @@ def dmi_simulator(f):
         if len(types) != 3:
             raise NotImplementedError()
         assert all([x == y for x, y in zip(types[:3], expected_types)])
+        print(f"== Starting {f.__name__}")
         f(simulator, cpu, dmi_monitor)
     return aux
 
@@ -331,9 +332,7 @@ def clear_cmderr_wait_for_success(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
     yield dmi_monitor.cur_dmi_bus.data.eq(0xFFFF_FFFF)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-    yield from few_ticks()
-    # TODO: below doesn't work for some reason..
-    # yield from dmi_op_wait_for_success(dmi_monitor)
+    yield from dmi_op_wait_for_success(dmi_monitor)
 
 @dmi_simulator
 def test_cmderr_clear(
@@ -391,28 +390,6 @@ def test_cmderr_clear(
         simulator.add_sync_process(p)
         
     simulator.run()
-
-
-# TODO
-# Almost-duplicate of mtkcpu.utils.tests.utils.capture_write_transactions, that captures only EBR transactions,
-# but heavily used, so cannot easily change it.
-def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
-    def f():
-        yield Passive()
-        gb = cpu.arbiter.generic_bus
-        
-        while(True):
-            en = yield gb.en
-            store = yield gb.store
-            addr = yield gb.addr
-            ack = yield gb.ack
-            if en and store and ack:
-                data = yield gb.write_data
-                msg = f"addr {hex(addr)} store {store} data {hex(data)}"
-                logging.critical(msg)
-                output_dict[addr] = data
-            yield
-    return f
 
 @dmi_simulator
 def test_progbuf_writes_to_bus(
@@ -477,13 +454,10 @@ def progbuf_write_wait_for_success(dmi_monitor: DMI_Monitor, progbuf_reg_num: in
 def trigger_progbuf_exec(dmi_monitor: DMI_Monitor):
     yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
     yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+    yield dmi_monitor.cur_dmi_bus.data.eq(0)
 
     yield dmi_monitor.cur_COMMAND.cmdtype.eq(COMMAND_Layout.AbstractCommandCmdtype.AccessRegister)
     acc_reg = dmi_monitor.cur_COMMAND.control
-
-    yield acc_reg.as_value().eq(0)
-    
-    yield # TODO remove me
 
     yield acc_reg.regno.eq(0x1000)
     yield acc_reg.write.eq(0)
@@ -584,15 +558,12 @@ def test_progbuf_gets_executed(
 
         gpr_reg_num = 8
 
-        # MISA = instructions.RiscvCsrRegister("misa", num=0x301)
-        # ins = encode_ins(instructions.Csrr(registers.get_register(gpr_reg_num), MISA))
-
-        # addi x1, x0, <val>
-        ins = encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val))
-        yield from progbuf_write_wait_for_success(dmi_monitor, 0, ins)
-
-        ins = encode_ins(instructions.Ebreak())
-        yield from progbuf_write_wait_for_success(dmi_monitor, 1, ins)
+        for i, ins in enumerate([
+            # addi x1, x0, <val>
+            encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val)),
+            encode_ins(instructions.Ebreak()),
+        ]):
+            yield from progbuf_write_wait_for_success(dmi_monitor, i, ins)
 
         yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_cmderr(
@@ -600,9 +571,9 @@ def test_progbuf_gets_executed(
             expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
             timeout=1000,
         )
-
+        
         yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
-
+        
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
         if not halted:
@@ -614,7 +585,7 @@ def test_progbuf_gets_executed(
         x = yield cpu.regs._array._inner[gpr_reg_num]
 
         if x != val:
-            raise ValueError(f"expected x1 to contain {hex(val)}, got {hex(x)}")
+            raise ValueError(f"expected x{gpr_reg_num} to contain {hex(val)}, got {hex(x)} instead")
 
     processes = [
         main_process,
@@ -738,9 +709,42 @@ def test_access_debug_csr_regs_in_debug_mode(
         
     simulator.run()
 
+
+@dmi_simulator
+def test_not_supported_command_type_finishes(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    def main_process():
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        # --- simulation output, that explains '0x2180000' value
+        #   INFO     | (mtime=181844)DMI: writing, address: <DMIReg.COMMAND: 23>, 
+        # value: 0x2180000 aka 00000010_00011000_00000000_00000000, 
+        # dump <class 'mtkcpu.units.debug.types.COMMAND_Layout'>: cmdtype=0x2, 
+        # [ <class 'amaranth.lib.data.StructLayout'>: zero2_=0x0, aarsize=0x1, 
+        # zero1_=0x1, postexec=0x0, transfer=0x0, write=0x0, regno=0x0 ]
+        
+        # NOTE: cmdtype=0x2 stands for ACCESS MEMORY abstract command.
+        yield dmi_monitor.cur_dmi_bus.data.eq(0x2180000)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.COMMAND)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_cmderr(dmi_monitor=dmi_monitor, expected_cmderr=ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED)
+    
+    processes = [main_process]
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
+    test_not_supported_command_type_finishes()
     test_dmi_try_read_not_implemented_register()
     test_dmi_abstract_command_read_write_gpr()
     test_core_halt_resume()

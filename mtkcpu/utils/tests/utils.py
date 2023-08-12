@@ -678,8 +678,8 @@ def assert_jtag_test(
     with_checkpoints=False,
 ):
     cpu = MtkCpu(
-        reg_init=[0xabcd + i for i in range(32)],
-        mem_config=EBRMemConfig(mem_size_words=1000, mem_addr=0x8000, mem_content_words=None, simulate=False),
+        reg_init=[0x0 for i in range(32)],
+        mem_config=EBRMemConfig(mem_size_words=60, mem_addr=0x8000, mem_content_words=None, simulate=True),
         with_debug=True,
     )
 
@@ -723,13 +723,15 @@ def assert_jtag_test(
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
-        # monitor_pc_and_main_fsm(dmi_monitor),
+        monitor_pc_and_main_fsm(dmi_monitor),
         print_dmi_transactions(dmi_monitor),
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
+        monitor_abstractauto(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
     ]
 
     with_checkpoints = False # XXX

@@ -109,27 +109,27 @@ class CsrUnit(Elaboratable):
                 with m.If(self.en):
                     with m.If(~self.in_machine_mode):
                         m.d.comb += self.illegal_insn.eq(1)
-                    with m.Elif(
-                        # Debug Specs 1.0, 4.10:
-                        # These registers are only accessible from Debug Mode.
-                        ~self.in_debug_mode
-                        &
-                        (
-                            (self.csr_idx == 0x7b0)
-                            | (self.csr_idx == 0x7b1)
-                            | (self.csr_idx == 0x7b2)
-                            | (self.csr_idx == 0x7b3)
-                        )
-                    ):
-                        m.d.comb += self.illegal_insn.eq(1)
                     with m.Else():
-                        sync += [
-                            rd_latch.eq(self.rd),
-                            rs1_latch.eq(self.rs1),
-                            func3_latch.eq(self.func3),
-                            csr_idx_latch.eq(self.csr_idx),
-                        ]
-                        m.next = "REG_GENERIC"
+                        with m.Switch(self.csr_idx):
+                            for reg in self.csr_regs:
+                                with m.Case(reg.csr_idx):
+                                    sync += [
+                                        rd_latch.eq(self.rd),
+                                        rs1_latch.eq(self.rs1),
+                                        func3_latch.eq(self.func3),
+                                        csr_idx_latch.eq(self.csr_idx),
+                                    ]
+                                    m.next = "REG_GENERIC"
+
+                                    # Debug Specs 1.0, 4.10:
+                                    # 'These registers are only accessible from Debug Mode.'
+                                    if reg.csr_idx in range(0x7b0, 0x7b4):
+                                        with m.If(~self.in_debug_mode):
+                                            # TODO: slippery code here - needs to be reverified.
+                                            m.d.comb += self.illegal_insn.eq(1)
+                                            m.next = "IDLE"
+                            with m.Default():
+                                m.d.comb += self.illegal_insn.eq(1)
             with m.State("REG_GENERIC"):
                 # all CSRxx insructions do read.
                 # NOTE from doc:

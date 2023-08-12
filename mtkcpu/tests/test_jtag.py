@@ -16,7 +16,10 @@ def get_git_root() -> Path:
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 
-    openocd_executable = get_git_root() / "openocd_riscv" / "src" / "openocd"
+    # openocd_executable = get_git_root() / "openocd_riscv" / "src" / "openocd"
+    # TODO https://github.com/bieganski/mtkcpu/issues/30
+    # Needs setup&build support for setup stage, to install correct tools.
+    openocd_executable = get_git_root() / ".." / "riscv-openocd" / "src" / "openocd"
 
     gdb_executable = get_git_root() / "xpack-riscv-none-embed-gcc-8.3.0-2.3" / "bin" / "riscv-none-embed-gdb"
 

@@ -50,6 +50,11 @@ class HARTINFO_Layout(data.Struct):
     nscratch : unsigned(4)
     _zero2 : unsigned(8)
 
+class ABSTRACTAUTO_Layout(data.Struct):
+    autoexecdata : unsigned(12)
+    zero_ : unsigned(4)
+    autoexecprogbuf : unsigned(16)
+
 class ABSTRACTCS_Layout(data.Struct):
     class CMDERR(enum.IntEnum, shape=unsigned(3)):
         """
@@ -195,6 +200,7 @@ DMI_reg_kinds = {
     DMIReg.HARTINFO: HARTINFO_Layout,
     DMIReg.ABSTRACTCS: ABSTRACTCS_Layout,
     DMIReg.COMMAND: COMMAND_Layout,
+    DMIReg.ABSTRACTAUTO: ABSTRACTAUTO_Layout,
 
     DMIReg.DATA0: flat_layout_factory(32),
     DMIReg.DATA1: flat_layout_factory(32),

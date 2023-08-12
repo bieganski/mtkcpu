@@ -232,9 +232,9 @@ def get_sim_jtag_controller(
                 if FINISH_SIM_OK:
                     print("XXX finishing sim")
                     return # checkpoint checker catched all configurations
-                if i == 120000:
-                    # TODO exit gracefully
-                    exit(1) # finish manual test or catch bug if automated test
+                # if i == 120000:
+                #     # TODO exit gracefully
+                #     exit(1) # finish manual test or catch bug if automated test
         timeout = None
         iter = inf() if not timeout else range(timeout)
         SETUP_CYCLES = 10

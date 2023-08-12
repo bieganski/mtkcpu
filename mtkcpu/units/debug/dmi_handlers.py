@@ -116,13 +116,14 @@ class HandlerDMCONTROL(HandlerDMI):
             from mtkcpu.units.debug.cpu_dm_if import CpuRunningStateExternalInterface
             cpu_state_if : CpuRunningStateExternalInterface = self.debug_unit.cpu.running_state_interface
 
-            with m.If(write_value.haltreq):
+            with m.If(write_value.haltreq & ~self.debug_unit.cpu.running_state.halted):
                 comb += [
                     cpu_state_if.haltreq.eq(1),
                 ]
                 with m.If(cpu_state_if.haltack):
                     comb += self.controller.command_finished.eq(1)
-            with m.Elif(write_value.resumereq): # Elif, because specs says: 'resumereq is ignored if haltreq is set'
+            with m.Elif(write_value.resumereq & self.debug_unit.cpu.running_state.halted):
+                # NOTE: Elif, because specs says: 'resumereq is ignored if haltreq is set'
                 comb += [
                     cpu_state_if.resumereq.eq(1),
                 ]
@@ -152,7 +153,9 @@ class HandlerCOMMAND(HandlerDMI):
         sync = m.d.sync
         comb = m.d.comb
         
-        write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.write_value)
+        # NOTE: 'write_value' is slightly different in COMMAND handler, as it uses value 
+        # just latched in main handler-picking Switch statement (temporary solution).
+        write_value : COMMAND_Layout = data.View(COMMAND_Layout, self.dmi_regs[DMIReg.COMMAND])
 
         with m.If(write_value.cmdtype == COMMAND_Layout.AbstractCommandCmdtype.AccessRegister):
 
@@ -217,7 +220,7 @@ class HandlerCOMMAND(HandlerDMI):
                         cpu : MtkCpu = self.debug_unit.cpu
                         real_dpc = Signal(32)
                         dpc = cpu.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
-                        with m.FSM() as self.fsmxd:
+                        with m.FSM():
                             with m.State("SANITY_CHECK"):
                                 with m.If(~self.debug_unit.cpu.running_state.halted):
                                     comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME)
@@ -255,6 +258,11 @@ class HandlerCOMMAND(HandlerDMI):
                                     m.next = "SANITY_CHECK"
 
                                     comb += self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.EXCEPTION)
+        with m.Else():
+            comb += [
+                self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.NOT_SUPPORTED),
+                self.controller.command_finished.eq(1),
+            ]
                     
 
 
@@ -284,6 +292,24 @@ class HandlerPROGBUF(HandlerDMI):
         with m.If(bus.ack):
             self.comb += self.controller.command_finished.eq(1)
 
+class HandlerABSTRACTAUTO(HandlerDMI):
+    def handle_write(self):
+        m = self.debug_unit.m
+        sync = self.sync
+        comb = self.comb
+
+        write_value      : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.write_value)
+        reg_abstractauto : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.dmi_regs[DMIReg.ABSTRACTAUTO])
+
+        self.comb += self.controller.command_finished.eq(1)
+
+        from mtkcpu.units.debug.impl_config import DATASIZE
+
+        # WARL.
+        self.sync += [
+            reg_abstractauto.autoexecdata[:DATASIZE].eq(write_value.autoexecdata[:DATASIZE]),
+        ]
+        
 
 DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {
     DMIReg.DMCONTROL: HandlerDMCONTROL,
@@ -291,6 +317,7 @@ DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {
     DMIReg.DATA0: HandlerDATA,
     DMIReg.DATA1: HandlerDATA,
     DMIReg.ABSTRACTCS: HandlerABSTRACTCS,
+    DMIReg.ABSTRACTAUTO: HandlerABSTRACTAUTO,
 
     # NOTE:
     # HandlerPROGBUFx is not stated here.

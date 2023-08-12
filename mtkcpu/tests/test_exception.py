@@ -124,6 +124,23 @@ EXCEPTION_TESTS = [
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
     ),
+    MemTestCase(
+        name="mcause illegal instruction when accessing not implemented M-mode CSR",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrrs x2, 0x35c, x0
+            trap:
+                csrr x2, mcause
+        """,
+        out_reg=2,
+        out_val=TrapCause.ILLEGAL_INSTRUCTION,
+        timeout=100,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
 ]
 
 @mem_test(EXCEPTION_TESTS)
