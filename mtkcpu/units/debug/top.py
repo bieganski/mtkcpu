@@ -58,8 +58,6 @@ class DebugUnit(Elaboratable):
             jtag_dtmcs.r.idle.eq(2), # TODO
         ]
 
-        self.autoexecdata = Signal(DATASIZE)
-
         HANDLE_ME_PLZ = 0
         sticky = Signal(reset=HANDLE_ME_PLZ)
 

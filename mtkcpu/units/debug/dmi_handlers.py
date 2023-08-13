@@ -75,14 +75,25 @@ class HandlerDATA(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
-        with m.If(self.debug_unit.autoexecdata & (1 << num)):
-            # trigger COMMAND handler manually and let it mark command handle finished.
-            comb += [
-                self.controller.command_finished.eq(1),
-                self.controller.command_err.eq(ABSTRACTCS_Layout.CMDERR.OTHER),
-            ]
-        with m.Else():
-            self.default_handle_write()
+        with m.FSM() as self.fixme_fsm:
+            with m.State("LATCH"):
+                my_reg = self.debug_unit.dmi_regs[self.my_reg_addr]
+                self.sync += [
+                    my_reg.eq(self.write_value),
+                ]
+                m.next = "MAYBE_TRIGGER_COMMAND_EXEC"
+            with m.State("MAYBE_TRIGGER_COMMAND_EXEC"):
+                with m.If(self.debug_unit.dmi_regs[DMIReg.ABSTRACTAUTO].autoexecdata & (1 << num)):
+                    # NOTE: current implementation assumes that all implemented DATAx support autoexecdata.
+                    # FIXME - it duplicates the logic of 'handle_write'.
+                    
+                    # trigger COMMAND handler manually and let it mark command handle finished.
+                    self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
+                    with m.If(self.controller.command_finished):
+                        m.next = "LATCH"
+                with m.Else():
+                    m.next = "LATCH"
+                    comb += self.controller.command_finished.eq(1)
 
 class HandlerABSTRACTCS(HandlerDMI):
     def handle_write(self):
@@ -298,16 +309,17 @@ class HandlerABSTRACTAUTO(HandlerDMI):
         sync = self.sync
         comb = self.comb
 
+        from mtkcpu.units.debug.impl_config import DATASIZE
+        AUTOEXEC_NUM_SUPPORTED_DATA_BITS = DATASIZE # autoexec is implemented for all bits.
+
         write_value      : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.write_value)
         reg_abstractauto : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.dmi_regs[DMIReg.ABSTRACTAUTO])
 
         self.comb += self.controller.command_finished.eq(1)
 
-        from mtkcpu.units.debug.impl_config import DATASIZE
-
         # WARL.
         self.sync += [
-            reg_abstractauto.autoexecdata[:DATASIZE].eq(write_value.autoexecdata[:DATASIZE]),
+            reg_abstractauto.autoexecdata[:AUTOEXEC_NUM_SUPPORTED_DATA_BITS].eq(write_value.autoexecdata[:AUTOEXEC_NUM_SUPPORTED_DATA_BITS]),
         ]
         
 

@@ -797,16 +797,25 @@ def test_abstracauto_autoexecdata(
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
+        yield from few_ticks(n=3)
+
         autoexec_reg_value = yield from get_gpr_value(gpr_reg_num)
 
         if (expected_value := reg_value_plus_one + 1) != autoexec_reg_value:
             raise ValueError(f"ABSTRACTAUTO didn't work, despite the hardware claims that it supports it. Was expecting to see {expected_value}, got {autoexec_reg_value} instead.")
-
-        
-        
-
     
-    processes = [main_process]
+    def fixme():
+        yield Passive()
+        while True:
+            state           = yield cpu.debug.dmi_handlers[DMIReg.DATA0].fixme_fsm.state
+            cmd_finished    = yield cpu.debug.dmi_handlers[DMIReg.DATA0].controller.command_finished
+            print(state, cmd_finished)
+            yield
+    
+    processes = [
+        main_process,
+        fixme,
+    ]
     for p in processes:
         simulator.add_sync_process(p)
         
