@@ -807,9 +807,17 @@ def test_abstracauto_autoexecdata(
     def fixme():
         yield Passive()
         while True:
-            state           = yield cpu.debug.dmi_handlers[DMIReg.DATA0].fixme_fsm.state
+            data0_fsm   = cpu.debug.dmi_handlers[DMIReg.DATA0].fixme_fsm
+            command_fsm = cpu.debug.dmi_handlers[DMIReg.COMMAND].main_fms
+            
+            state_data0     = yield data0_fsm.state
+            state_command   = yield command_fsm.state
             cmd_finished    = yield cpu.debug.dmi_handlers[DMIReg.DATA0].controller.command_finished
-            print(state, cmd_finished)
+            
+            state_data0   = get_state_name(fsm=data0_fsm, num=state_data0)
+            state_command = get_state_name(fsm=command_fsm, num=state_command)
+
+            print(f"state_DATA0={state_data0}, state_COMMAND={state_command}, cmd_finished={cmd_finished}")
             yield
     
     processes = [
