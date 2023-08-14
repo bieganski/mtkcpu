@@ -833,17 +833,17 @@ def test_abstracauto_autoexecdata(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_not_supported_command_type_finishes()
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_halt_resume_with_new_dpc()
-    # test_cmderr_clear()
-    # test_progbuf_writes_to_bus()
-    # test_progbuf_gets_executed()
-    # test_progbuf_cmderr_on_runtime_error()
-    # test_access_debug_csr_regs_in_debug_mode()
-    test_abstracauto_autoexecdata()
+    test_not_supported_command_type_finishes()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_halt_resume_with_new_dpc()
+    test_cmderr_clear()
+    test_progbuf_writes_to_bus()
+    test_progbuf_gets_executed()
+    test_progbuf_cmderr_on_runtime_error()
+    test_access_debug_csr_regs_in_debug_mode()
+    # test_abstracauto_autoexecdata() # XXX
     logging.critical("ALL TESTS PASSED!")
 
 

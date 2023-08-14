@@ -80,8 +80,10 @@ class DebugUnit(Elaboratable):
                     dmi_write_address=self.dmi_write_address,) ) for k, v in DMI_HANDLERS_MAP.items()
             ]
         )
+        for module in self.dmi_handlers.values():
+            m.submodules += module
 
-        progbuf_handler = HandlerPROGBUF(
+        progbuf_handler = m.submodules.progbuf_handler = HandlerPROGBUF(
             my_reg_addr=-1,
             debug_unit=self,
             dmi_regs=self.dmi_regs,
@@ -176,7 +178,7 @@ class DebugUnit(Elaboratable):
                 with m.Switch(self.dmi_write_address):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
-                            h.handle_write()
+                            comb += h.active.eq(1)
                     with m.Default():
                         comb += [
                             self.controller.command_finished.eq(1),
