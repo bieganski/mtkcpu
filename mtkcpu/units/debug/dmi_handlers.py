@@ -28,7 +28,6 @@ class HandlerDMI(Elaboratable):
                  debug_unit,
                  dmi_regs: dict,
                  controller: ControllerInterfaceDuplicated,
-                 dmi_write_value: Signal,
                  dmi_write_address: Signal,
             ):
         self.debug_unit = debug_unit
@@ -39,6 +38,7 @@ class HandlerDMI(Elaboratable):
         # 
         # Needs to be deasserted in cycle following 'controller.cmd_finished' asserted.
         self.active = Signal()
+        self.write_value = Signal(32)
 
         # TODO
         # https://github.com/bieganski/mtkcpu/issues/25
@@ -50,10 +50,6 @@ class HandlerDMI(Elaboratable):
         self.reg_command        = self.dmi_regs[DMIReg.COMMAND]
         self.reg_abstractcs     = self.dmi_regs[DMIReg.ABSTRACTCS]
         self.reg_data0          = self.dmi_regs[DMIReg.DATA0]
-
-        assert dmi_write_value.shape() == unsigned(32)
-        self.write_value = dmi_write_value
-    
 
     def elaborate(self):
         raise NotImplementedError()
@@ -80,11 +76,11 @@ class HandlerDATA(HandlerDMI):
                         
                         # trigger COMMAND handler manually and let it mark command handle finished.
                         #
-                        # self.debug_unit.dmi_handlers[DMIReg.COMMAND].handle_write()
-                        # with m.If(self.controller.command_finished):
-                        #     m.next = "LATCH"
-                        m.next = "LATCH" # FIXME FIXME FIXME only temporarily.
-                        comb += self.controller.command_finished.eq(1) # FIXME FIXME FIXME
+                        comb += [
+                            self.debug_unit.dmi_handlers[DMIReg.COMMAND].active.eq(1),
+                        ]
+                        with m.If(self.controller.command_finished):
+                            m.next = "LATCH"
                     with m.Else():
                         m.next = "LATCH"
                         comb += self.controller.command_finished.eq(1)
@@ -306,24 +302,23 @@ class HandlerPROGBUF(HandlerDMI):
 class HandlerABSTRACTAUTO(HandlerDMI):
     def elaborate(self, _):
         m = Module()
-        return m
-    def handle_write(self):
-        m = self.debug_unit.m
-        sync = self.sync
-        comb = self.comb
-
+        comb, sync = m.d.comb, m.d.sync
+        
         from mtkcpu.units.debug.impl_config import DATASIZE
         AUTOEXEC_NUM_SUPPORTED_DATA_BITS = DATASIZE # autoexec is implemented for all bits.
 
         write_value      : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.write_value)
         reg_abstractauto : ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, self.dmi_regs[DMIReg.ABSTRACTAUTO])
 
-        self.comb += self.controller.command_finished.eq(1)
+        with m.If(self.active):
+            comb += self.controller.command_finished.eq(1)
 
-        # WARL.
-        self.sync += [
-            reg_abstractauto.autoexecdata[:AUTOEXEC_NUM_SUPPORTED_DATA_BITS].eq(write_value.autoexecdata[:AUTOEXEC_NUM_SUPPORTED_DATA_BITS]),
-        ]
+            # WARL.
+            sync += [
+                reg_abstractauto.autoexecdata[:AUTOEXEC_NUM_SUPPORTED_DATA_BITS].eq(write_value.autoexecdata[:AUTOEXEC_NUM_SUPPORTED_DATA_BITS]),
+            ]
+
+        return m
         
 
 DMI_HANDLERS_MAP : dict[int, Type[HandlerDMI]]= {

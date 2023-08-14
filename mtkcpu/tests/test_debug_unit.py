@@ -776,8 +776,8 @@ def test_abstracauto_autoexecdata(
         init_reg_value = yield from get_gpr_value(gpr_reg_num)
 
         for i, ins in enumerate([
-            # addi x1, x0, 1
-            encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), 1)),
+            # addi x1, x1, 1
+            encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(gpr_reg_num), 1)),
             encode_ins(instructions.Ebreak()),
         ]):
             yield from progbuf_write_wait_for_success(dmi_monitor, i, ins)
@@ -803,6 +803,35 @@ def test_abstracauto_autoexecdata(
 
         if (expected_value := reg_value_plus_one + 1) != autoexec_reg_value:
             raise ValueError(f"ABSTRACTAUTO didn't work, despite the hardware claims that it supports it. Was expecting to see {expected_value}, got {autoexec_reg_value} instead.")
+        
+        # Now check the autoexec-deassert functionality.
+        #
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.ABSTRACTAUTO)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        yield dmi_monitor.cur_dmi_bus.data.eq(0x0)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        yield dmi_monitor.cur_dmi_bus.data.eq(0x12345)
+        yield dmi_monitor.cur_dmi_bus.address.eq(DMIReg.DATA0)
+        yield dmi_monitor.cur_dmi_bus.op.eq(DMIOp.WRITE)
+        yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        yield from few_ticks(n=3)
+
+        should_stay_the_same_reg_value = yield from get_gpr_value(gpr_reg_num)
+
+        if should_stay_the_same_reg_value != autoexec_reg_value:
+            raise ValueError(f"Despite autoexec was disabled, the hardware seemingly still assumes it is asserted. Expected {autoexec_reg_value}, got {should_stay_the_same_reg_value}")
+
+
+
+
+
+
+
+
     
     def fixme():
         yield Passive()
@@ -823,6 +852,8 @@ def test_abstracauto_autoexecdata(
     processes = [
         main_process,
         fixme,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
     ]
     for p in processes:
         simulator.add_sync_process(p)
@@ -843,7 +874,7 @@ if __name__ == "__main__":
     test_progbuf_gets_executed()
     test_progbuf_cmderr_on_runtime_error()
     test_access_debug_csr_regs_in_debug_mode()
-    # test_abstracauto_autoexecdata() # XXX
+    test_abstracauto_autoexecdata()
     logging.critical("ALL TESTS PASSED!")
 
 

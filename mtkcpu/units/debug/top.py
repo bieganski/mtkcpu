@@ -76,7 +76,6 @@ class DebugUnit(Elaboratable):
                     debug_unit=self,
                     dmi_regs=self.dmi_regs,
                     controller=self.controller,
-                    dmi_write_value=self.dmi_write_value,
                     dmi_write_address=self.dmi_write_address,) ) for k, v in DMI_HANDLERS_MAP.items()
             ]
         )
@@ -88,7 +87,6 @@ class DebugUnit(Elaboratable):
             debug_unit=self,
             dmi_regs=self.dmi_regs,
             controller=self.controller,
-            dmi_write_value=self.dmi_write_value,
             dmi_write_address=self.dmi_write_address,
         )
 
@@ -179,6 +177,7 @@ class DebugUnit(Elaboratable):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
                             comb += h.active.eq(1)
+                            comb += h.write_value.eq(self.dmi_write_value)
                     with m.Default():
                         comb += [
                             self.controller.command_finished.eq(1),
