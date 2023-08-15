@@ -58,8 +58,6 @@ class DebugUnit(Elaboratable):
             jtag_dtmcs.r.idle.eq(2), # TODO
         ]
 
-        self.autoexecdata = Signal(DATASIZE)
-
         HANDLE_ME_PLZ = 0
         sticky = Signal(reset=HANDLE_ME_PLZ)
 
@@ -78,17 +76,17 @@ class DebugUnit(Elaboratable):
                     debug_unit=self,
                     dmi_regs=self.dmi_regs,
                     controller=self.controller,
-                    dmi_write_value=self.dmi_write_value,
                     dmi_write_address=self.dmi_write_address,) ) for k, v in DMI_HANDLERS_MAP.items()
             ]
         )
+        for module in self.dmi_handlers.values():
+            m.submodules += module
 
-        progbuf_handler = HandlerPROGBUF(
+        progbuf_handler = m.submodules.progbuf_handler = HandlerPROGBUF(
             my_reg_addr=-1,
             debug_unit=self,
             dmi_regs=self.dmi_regs,
             controller=self.controller,
-            dmi_write_value=self.dmi_write_value,
             dmi_write_address=self.dmi_write_address,
         )
 
@@ -138,6 +136,8 @@ class DebugUnit(Elaboratable):
                     with m.Switch(jtag_tap_dmi_bus.w.op):
                         with m.Case(DMIOp.READ):
                             on_read(jtag_tap_dmi_bus.w.address)
+                            sync += abstractcs.busy.eq(1)
+                            m.next = "DEASSERT_BUSY"
                         with m.Case(DMIOp.WRITE):
                             # TODO - in legacy code for each DMI register we had 'r' and 'w' copy.
                             # Current implementation has only one 'w' register (called 'write_value' in dmi_handlers),
@@ -145,7 +145,9 @@ class DebugUnit(Elaboratable):
                             # 
                             # That FSM needs to be refactored, but also the way that we automate
                             # the W1/WARL/.../ thing from specs - currently all 'r' fields are set manually.
-                            # I postpone that task till the time I better understand system constraints
+                            # I postpone that task till the time I better understand system constraints.
+                            # Related issue: https://github.com/bieganski/mtkcpu/issues/23
+                            #
                             # on_write(jtag_tap_dmi_bus.w.address, jtag_tap_dmi_bus.w.data)
                             sync += abstractcs.busy.eq(1)
                             m.next = "WAIT"
@@ -166,12 +168,16 @@ class DebugUnit(Elaboratable):
                             # TODO: We lose WARZ property of COMMAND reg here.
                             with m.If(jtag_tap_dmi_bus.w.address == DMIReg.COMMAND):
                                 sync += self.dmi_regs[DMIReg.COMMAND].eq(jtag_tap_dmi_bus.w.data)
+            with m.State("DEASSERT_BUSY"):
+                sync += abstractcs.busy.eq(0)
+                m.next = "IDLE"
             with m.State("WAIT"):
                 sync += abstractcs.cmderr.eq(self.controller.command_err)
                 with m.Switch(self.dmi_write_address):
                     for reg, h in self.dmi_handlers.items():
                         with m.Case(reg):
-                            h.handle_write()
+                            comb += h.active.eq(1)
+                            comb += h.write_value.eq(self.dmi_write_value)
                     with m.Default():
                         comb += [
                             self.controller.command_finished.eq(1),
