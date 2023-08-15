@@ -825,33 +825,8 @@ def test_abstracauto_autoexecdata(
         if should_stay_the_same_reg_value != autoexec_reg_value:
             raise ValueError(f"Despite autoexec was disabled, the hardware seemingly still assumes it is asserted. Expected {autoexec_reg_value}, got {should_stay_the_same_reg_value}")
 
-
-
-
-
-
-
-
-    
-    def fixme():
-        yield Passive()
-        while True:
-            data0_fsm   = cpu.debug.dmi_handlers[DMIReg.DATA0].fixme_fsm
-            command_fsm = cpu.debug.dmi_handlers[DMIReg.COMMAND].main_fms
-            
-            state_data0     = yield data0_fsm.state
-            state_command   = yield command_fsm.state
-            cmd_finished    = yield cpu.debug.dmi_handlers[DMIReg.DATA0].controller.command_finished
-            
-            state_data0   = get_state_name(fsm=data0_fsm, num=state_data0)
-            state_command = get_state_name(fsm=command_fsm, num=state_command)
-
-            print(f"state_DATA0={state_data0}, state_COMMAND={state_command}, cmd_finished={cmd_finished}")
-            yield
-    
     processes = [
         main_process,
-        fixme,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
         monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
     ]
