@@ -57,6 +57,14 @@ file build/$PROJ_NAME.elf # make sure it exists
 
 ### Generate bitstream
 
+For that step `yosys` and `nextpnr-ice40` packages are required. For `Ubuntu 22.04` and newer it is as simple as running
+
+```sh
+sudo apt-get install yosys nextpnr-ice40
+```
+
+For different distros follow the instructions in project references.
+
 ```sh
 PROJ_NAME=blink_led
 ./mtkcpu/cli/top.py --build_design_with_elf sw/$PROJ_NAME/build/$PROJ_NAME.elf 
