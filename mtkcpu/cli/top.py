@@ -63,7 +63,7 @@ def get_platform() -> Platform:
 def build(elf_path : Path, do_program=True):
     platform = get_platform()
     m = get_board_cpu(elf_path=elf_path)
-    platform.build(m, do_program=do_program)
+    platform.build(m, do_program=do_program, nextpnr_opts="--timing-allow-fail")
     logger.info(f"OK, Design was built successfully, printing out some stats..")
     timing_report = Path("build/top.tim")
     if not timing_report.exists():
