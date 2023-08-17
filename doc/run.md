@@ -57,13 +57,18 @@ file build/$PROJ_NAME.elf # make sure it exists
 
 ### Generate bitstream
 
-For that step `yosys` and `nextpnr-ice40` packages are required. For `Ubuntu 22.04` and newer it is as simple as running
+
+#### Dependencies
+
+For `Ubuntu 22.04` and newer:
 
 ```sh
-sudo apt-get install yosys nextpnr-ice40
+sudo apt-get install yosys nextpnr-ice40 fpga-icestorm
 ```
 
 For different distros follow the instructions in project references.
+
+#### Bitstream generation
 
 ```sh
 PROJ_NAME=blink_led
