@@ -53,9 +53,21 @@ def get_platform() -> Platform:
     # Yes that means that the pins at the edge of the board come first
     # and the pins further away from the edge second
     platform.add_resources([
-        Resource("debug", 0, Pins("7 8 9 10 1 2 3 4", dir="o",
-                                    conn=("pmod", 0)), Attrs(IO_STANDARD="SB_LVCMOS"))
+        Resource(
+            "debug",
+            0,
+            Pins(
+                "1 2 3 4 7 8 9 10 ",
+                dir="o",
+                conn=("pmod", 1)),
+                Attrs(IO_STANDARD="SB_LVCMOS")
+            ),
     ])
+
+    # TMS - white - 1
+    # TDI - gray - 2
+    # TDO - purple - 3
+    # TCK - blue - 4
 
     return platform
     

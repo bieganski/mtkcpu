@@ -63,6 +63,14 @@ class JTAGTap(Elaboratable):
         sync = m.d.sync
         comb = m.d.comb
 
+        debug = platform.request("debug")
+        comb += [
+            self.port.tms.eq(debug[0]),
+            self.port.tdi.eq(debug[1]),
+            debug[2].eq(self.port.tdo),
+            self.port.tck.eq(debug[3]),
+        ]
+
         # XXX it does nothing but draws a horizontal bar on waveform..
         self.BAR = Signal()
         sync += self.BAR.eq(~self.BAR)
@@ -233,5 +241,10 @@ class JTAGTap(Elaboratable):
                         m.next = "SELECT-IR-SCAN"
                     with m.Else():
                         m.next = "RUN-TEST-IDLE"
+        
+
+        led_r = platform.request("led_r")
+        with m.If(~self.jtag_fsm.ongoing("TEST-LOGIC-RESET")):
+            sync += led_r.eq(1)
                 
         return m

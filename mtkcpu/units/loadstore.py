@@ -253,15 +253,15 @@ class MemoryArbiter(Elaboratable, AddressManager):
         )
 
         self.mmio_cfg = [
-            (
-                UartTX(serial_record_gen=uart_gen_serial_record, clk_freq=12_000_000, baud_rate=115200),
-                MMIOAddressSpace(
-                    ws=self.word_size,
-                    basename="uart",
-                    first_valid_addr_incl=0x7000_0000,
-                    last_valid_addr_excl=0x7000_1000,
-                )
-            ),
+            # (
+            #     UartTX(serial_record_gen=uart_gen_serial_record, clk_freq=12_000_000, baud_rate=115200),
+            #     MMIOAddressSpace(
+            #         ws=self.word_size,
+            #         basename="uart",
+            #         first_valid_addr_incl=0x7000_0000,
+            #         last_valid_addr_excl=0x7000_1000,
+            #     )
+            # ),
             (
                 EBR_Wishbone(self.mem_config),
                 MMIOAddressSpace(
@@ -271,15 +271,15 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     last_valid_addr_excl=self.mem_config.last_valid_addr_excl,
                 )
             ),
-            (
-                GPIO_Wishbone(signal_map_gen=gpio_gen),
-                MMIOAddressSpace(
-                    ws=self.word_size,
-                    basename="gpio",
-                    first_valid_addr_incl=0x9000_0000,
-                    last_valid_addr_excl=0x9000_1000,
-                )
-            ),
+            # (
+            #     GPIO_Wishbone(signal_map_gen=gpio_gen),
+            #     MMIOAddressSpace(
+            #         ws=self.word_size,
+            #         basename="gpio",
+            #         first_valid_addr_incl=0x9000_0000,
+            #         last_valid_addr_excl=0x9000_1000,
+            #     )
+            # ),
             (
                 EBR_Wishbone(debug_mem_config),
                 MMIOAddressSpace(
