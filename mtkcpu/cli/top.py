@@ -41,7 +41,7 @@ def get_board_cpu(elf_path : Optional[Path] = None):
 
 def get_platform() -> Platform:
     from amaranth_boards.icebreaker import ICEBreakerPlatform
-    from amaranth.build.dsl import Resource, Pins, Attrs
+    from amaranth.build.dsl import Resource, Pins, Attrs, Subsignal
     
     platform = ICEBreakerPlatform()
 
@@ -56,13 +56,13 @@ def get_platform() -> Platform:
         Resource(
             "debug",
             0,
-            Pins(
-                "1 2 3 4 7 8 9 10 ",
-                dir="o",
-                conn=("pmod", 1)),
-                Attrs(IO_STANDARD="SB_LVCMOS")
+            Subsignal("tms", Pins("1", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Subsignal("tdi", Pins("2", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Subsignal("tdo", Pins("3", dir="o", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Subsignal("tck", Pins("4", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
             ),
-    ])
+        ]
+    )
 
     # TMS - white - 1
     # TDI - gray - 2

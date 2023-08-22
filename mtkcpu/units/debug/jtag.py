@@ -62,14 +62,15 @@ class JTAGTap(Elaboratable):
         m = Module()
         sync = m.d.sync
         comb = m.d.comb
-
-        debug = platform.request("debug")
-        comb += [
-            self.port.tms.eq(debug[0]),
-            self.port.tdi.eq(debug[1]),
-            debug[2].eq(self.port.tdo),
-            self.port.tck.eq(debug[3]),
-        ]
+        
+        if platform is not None:
+            debug = platform.request("debug")
+            comb += [
+                self.port.tms.eq(debug.tms),
+                self.port.tdi.eq(debug.tdi),
+                debug.tdo.eq(self.port.tdo),
+                self.port.tck.eq(debug.tck),
+            ]
 
         # XXX it does nothing but draws a horizontal bar on waveform..
         self.BAR = Signal()
@@ -243,8 +244,9 @@ class JTAGTap(Elaboratable):
                         m.next = "RUN-TEST-IDLE"
         
 
-        led_r = platform.request("led_r")
-        with m.If(~self.jtag_fsm.ongoing("TEST-LOGIC-RESET")):
-            sync += led_r.eq(1)
+        if platform is not None:
+            led_r = platform.request("led_r")
+            with m.If(self.port.tck):
+                sync += led_r.eq(1)
                 
         return m
