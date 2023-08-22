@@ -242,11 +242,17 @@ class JTAGTap(Elaboratable):
                         m.next = "SELECT-IR-SCAN"
                     with m.Else():
                         m.next = "RUN-TEST-IDLE"
-        
 
         if platform is not None:
             led_r = platform.request("led_r")
-            with m.If(self.port.tck):
-                sync += led_r.eq(1)
+            led_g = platform.request("led_g")
+            with m.FSM() as f:
+                with m.State("A"):
+                    with m.If(self.port.tck):
+                        sync += led_g.eq(1)
+                        m.next = "B"
+                with m.State("B"):
+                    with m.If(~self.port.tck):
+                        sync += led_r.eq(1)
                 
         return m

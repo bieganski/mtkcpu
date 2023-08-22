@@ -60,6 +60,7 @@ def get_platform() -> Platform:
             Subsignal("tdi", Pins("2", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
             Subsignal("tdo", Pins("3", dir="o", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
             Subsignal("tck", Pins("4", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Attrs(IO_STANDARD="SB_LVCMOS"),
             ),
         ]
     )
