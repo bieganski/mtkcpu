@@ -165,7 +165,7 @@ class JTAGTap(Elaboratable):
                     m.next = "EXIT1-DR"
 
             with m.State("EXIT1-DR"):
-                sync += self.port.tdo.eq(0) # TODO
+                # sync += self.port.tdo.eq(0) # TODO
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "UPDATE-DR"
@@ -222,7 +222,7 @@ class JTAGTap(Elaboratable):
                     m.next = "EXIT1-IR"
 
             with m.State("EXIT1-IR"):
-                sync += self.port.tdo.eq(0) # TODO
+                # sync += self.port.tdo.eq(0) # TODO
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "UPDATE-IR"
