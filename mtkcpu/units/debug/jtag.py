@@ -118,6 +118,9 @@ class JTAGTap(Elaboratable):
 
         with m.FSM() as self.jtag_fsm:
             with m.State("TEST-LOGIC-RESET"):
+
+                sync += self.port.tdo.eq(1)
+        
                 with m.If(rising_tck & ~tms):
                     sync += self.ir.eq(self.ir_reset)
                     m.next = "RUN-TEST-IDLE"
