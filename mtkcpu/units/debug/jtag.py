@@ -79,7 +79,6 @@ class JTAGTap(Elaboratable):
         self.tms = tms = Signal.like(self.port.tms)
         self.tck = tck = Signal.like(self.port.tck)
         self.tdi = tdi = Signal.like(self.port.tdi)
-        self.tdo = tdo = Signal.like(self.port.tdo)
 
         m.submodules += [
             FFSynchronizer(self.port.tms, tms),
@@ -91,7 +90,7 @@ class JTAGTap(Elaboratable):
         self.rising_tck = rising_tck = Signal()
         self.falling_tck = falling_tck = Signal()
 
-        sync += prev_tck.eq(tck)
+        sync += prev_tck.eq(self.port.tck)
 
         comb += [
             rising_tck.eq((~prev_tck) & tck),
@@ -216,7 +215,6 @@ class JTAGTap(Elaboratable):
                     sync += self.port.tdo.eq(self.ir[0])
                 with m.If(rising_tck):
                     sync += self.ir.eq(Cat(self.ir[1:], tdi))
-                comb += tdo.eq(self.ir[0])
                 with m.If(rising_tck & tms):
                     m.next = "EXIT1-IR"
 
@@ -246,13 +244,18 @@ class JTAGTap(Elaboratable):
         if platform is not None:
             led_r = platform.request("led_r")
             led_g = platform.request("led_g")
+            # with m.If(self.rising_tck):
+            #     sync += self.port.tdo.eq(~self.port.tdo)
+            # sync += self.port.tdo.eq(1)
             with m.FSM() as f:
                 with m.State("A"):
-                    with m.If(self.port.tck):
+                    with m.If(~self.jtag_fsm.ongoing("TEST-LOGIC-RESET")):
+                    # with m.If(debug.tms | debug.tdi | debug.tck):
                         sync += led_g.eq(1)
-                        m.next = "B"
-                with m.State("B"):
-                    with m.If(~self.port.tck):
                         sync += led_r.eq(1)
+                #         m.next = "B"
+                # with m.State("B"):
+                #     with m.If(~debug.tck):
+                #         sync += led_r.eq(1)
                 
         return m

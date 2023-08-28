@@ -14,7 +14,7 @@ ftdi_layout_init 0x2088 0x308b
 ftdi_layout_signal nSRST -data 0x2000 -noe 0x1000
 
 #jtag_rclk
-adapter speed 5
+adapter speed 50
 transport select jtag
 
 set _CHIPNAME riscv
