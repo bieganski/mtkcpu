@@ -71,11 +71,45 @@ def get_platform() -> Platform:
     # TCK - blue - 4
 
     return platform
-    
+
+from amaranth import *
+class M(Elaboratable):
+    def elaborate(self, platform):
+        m = Module()
+        comb, sync = m.d.comb, m.d.sync
+
+        debug = platform.request("debug")
+        
+        # design goes on 12 mhz = 12 * 10^6
+        # 6 khz = 6 * 10^3
+
+        # 2^10 = 10^3
+        # 
+        ctr_tdo = Signal(10)
+        ctr_tdi = Signal(11)
+
+        for x in [ctr_tdo, ctr_tdi]:
+            sync += x.eq(x + 1)
+
+        comb += debug.tms.eq(0)
+
+        with m.If(ctr_tdo == 0):
+            sync += debug.tdo.eq(~debug.tdo)
+        
+        # with m.If(ctr_tdi == 0):
+        #     sync += debug.tdi.eq(~debug.tdi)
+
+        with m.If(ctr_tdi > 2 ** 9):
+            sync += debug.tdi.eq(1)
+        with m.Else():
+            sync += debug.tdi.eq(0)
+
+        return m
 
 def build(elf_path : Path, do_program=True):
     platform = get_platform()
     m = get_board_cpu(elf_path=elf_path)
+    # m = M()
     platform.build(m, do_program=do_program, nextpnr_opts="--timing-allow-fail")
     logger.info(f"OK, Design was built successfully, printing out some stats..")
     timing_report = Path("build/top.tim")
