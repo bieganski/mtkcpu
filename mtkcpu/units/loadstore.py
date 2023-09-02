@@ -271,15 +271,15 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     last_valid_addr_excl=self.mem_config.last_valid_addr_excl,
                 )
             ),
-            # (
-            #     GPIO_Wishbone(signal_map_gen=gpio_gen),
-            #     MMIOAddressSpace(
-            #         ws=self.word_size,
-            #         basename="gpio",
-            #         first_valid_addr_incl=0x9000_0000,
-            #         last_valid_addr_excl=0x9000_1000,
-            #     )
-            # ),
+            (
+                GPIO_Wishbone(signal_map_gen=gpio_gen),
+                MMIOAddressSpace(
+                    ws=self.word_size,
+                    basename="gpio",
+                    first_valid_addr_incl=0x9000_0000,
+                    last_valid_addr_excl=0x9000_1000,
+                )
+            ),
             (
                 EBR_Wishbone(debug_mem_config),
                 MMIOAddressSpace(

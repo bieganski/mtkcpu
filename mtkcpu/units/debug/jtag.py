@@ -242,21 +242,21 @@ class JTAGTap(Elaboratable):
                     with m.Else():
                         m.next = "RUN-TEST-IDLE"
 
-        if platform is not None:
-            led_r = platform.request("led_r")
-            led_g = platform.request("led_g")
-            # with m.If(self.rising_tck):
-            #     sync += self.port.tdo.eq(~self.port.tdo)
-            # sync += self.port.tdo.eq(1)
-            with m.FSM() as f:
-                with m.State("A"):
-                    with m.If(~self.jtag_fsm.ongoing("TEST-LOGIC-RESET")):
-                    # with m.If(debug.tms | debug.tdi | debug.tck):
-                        sync += led_g.eq(1)
-                        sync += led_r.eq(1)
-                #         m.next = "B"
-                # with m.State("B"):
-                #     with m.If(~debug.tck):
-                #         sync += led_r.eq(1)
+        # if platform is not None:
+        #     led_r = platform.request("led_r")
+        #     led_g = platform.request("led_g")
+        #     # with m.If(self.rising_tck):
+        #     #     sync += self.port.tdo.eq(~self.port.tdo)
+        #     # sync += self.port.tdo.eq(1)
+        #     with m.FSM() as f:
+        #         with m.State("A"):
+        #             with m.If(~self.jtag_fsm.ongoing("TEST-LOGIC-RESET")):
+        #             # with m.If(debug.tms | debug.tdi | debug.tck):
+        #                 sync += led_g.eq(1)
+        #                 sync += led_r.eq(1)
+        #         #         m.next = "B"
+        #         # with m.State("B"):
+        #         #     with m.If(~debug.tck):
+        #         #         sync += led_r.eq(1)
                 
         return m
