@@ -10,15 +10,15 @@ WORKDIR /toolchain
 RUN apt-get update -y
 
 # Install nodejs
-RUN curl -sL https://deb.nodesource.com/setup_16.x  | bash -
-RUN apt-get -y install nodejs
+RUN curl -sL https://deb.nodesource.com/setup_16.x | sed --expression='s/sleep 60//g' | bash -
+RUN apt-get -y install nodejs npm
 
 # Install XPM
 RUN npm install --global xpm@latest
 
 # Install gcc extensions
 RUN xpm install --global @xpack-dev-tools/riscv-none-elf-gcc@latest --verbose
-ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-embed-gcc/12.2.0-1.3.1/.content/bin:$PATH" 
+ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-elf-gcc/13.2.0-1.2/.content/bin:$PATH"
 
 # Install Poetry
 RUN pip install poetry
@@ -29,7 +29,6 @@ ADD poetry.lock .
 RUN poetry install --no-interaction
 
 ADD mtkcpu ./mtkcpu
-ADD submodules ./submodules
 RUN poetry install --no-interaction
 
 ENV PATH=$HOME/.poetry/bin/:$PATH

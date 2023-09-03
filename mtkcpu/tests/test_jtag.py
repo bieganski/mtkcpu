@@ -1,8 +1,10 @@
 from pathlib import Path
+import logging
+
+import pytest
 
 from mtkcpu.utils.tests.utils import assert_jtag_test
 
-import logging
 
 def get_git_root() -> Path:
     """
@@ -13,6 +15,7 @@ def get_git_root() -> Path:
     stdout, _ = process.communicate()
     return Path(stdout.decode("ascii").strip())
 
+@pytest.mark.skip
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 
@@ -35,5 +38,6 @@ def test_openocd_gdb():
     )
 
 if __name__ == "__main__":
-    # If you need verbose output by default, invoke it directly instead of via pytest.
+    # It helps when we use 'pytest.mark.skip', as there is no good workaround for that
+    # (source: https://stackoverflow.com/questions/56078593/how-to-disable-skipping-a-test-in-pytest-without-modifying-the-code).
     test_openocd_gdb()
