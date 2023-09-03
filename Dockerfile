@@ -29,7 +29,6 @@ ADD poetry.lock .
 RUN poetry install --no-interaction
 
 ADD mtkcpu ./mtkcpu
-ADD submodules ./submodules
 RUN poetry install --no-interaction
 
 ENV PATH=$HOME/.poetry/bin/:$PATH
