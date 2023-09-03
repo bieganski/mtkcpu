@@ -122,7 +122,7 @@ def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
         from mtkcpu.utils.linker import write_linker_script
         write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR, mem_size_kb=mem_size_kb)
         
-    cmd = [compiler, "-march=rv32i", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
+    cmd = [compiler, "-march=rv32i_zicsr", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
     logging.critical(" ".join(cmd))
     p = Popen(cmd, stdout=PIPE, stderr=PIPE)
     out, err = p.communicate()
