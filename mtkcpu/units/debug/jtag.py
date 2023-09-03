@@ -62,6 +62,15 @@ class JTAGTap(Elaboratable):
         m = Module()
         sync = m.d.sync
         comb = m.d.comb
+        
+        if platform is not None:
+            debug = platform.request("debug")
+            comb += [
+                self.port.tms.eq(debug.tms),
+                self.port.tdi.eq(debug.tdi),
+                debug.tdo.eq(self.port.tdo),
+                self.port.tck.eq(debug.tck),
+            ]
 
         # XXX it does nothing but draws a horizontal bar on waveform..
         self.BAR = Signal()
@@ -70,7 +79,6 @@ class JTAGTap(Elaboratable):
         self.tms = tms = Signal.like(self.port.tms)
         self.tck = tck = Signal.like(self.port.tck)
         self.tdi = tdi = Signal.like(self.port.tdi)
-        self.tdo = tdo = Signal.like(self.port.tdo)
 
         m.submodules += [
             FFSynchronizer(self.port.tms, tms),
@@ -154,7 +162,6 @@ class JTAGTap(Elaboratable):
                     m.next = "EXIT1-DR"
 
             with m.State("EXIT1-DR"):
-                sync += self.port.tdo.eq(0) # TODO
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "UPDATE-DR"
@@ -207,12 +214,10 @@ class JTAGTap(Elaboratable):
                     sync += self.port.tdo.eq(self.ir[0])
                 with m.If(rising_tck):
                     sync += self.ir.eq(Cat(self.ir[1:], tdi))
-                comb += tdo.eq(self.ir[0])
                 with m.If(rising_tck & tms):
                     m.next = "EXIT1-IR"
 
             with m.State("EXIT1-IR"):
-                sync += self.port.tdo.eq(0) # TODO
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "UPDATE-IR"
@@ -233,5 +238,5 @@ class JTAGTap(Elaboratable):
                         m.next = "SELECT-IR-SCAN"
                     with m.Else():
                         m.next = "RUN-TEST-IDLE"
-                
+
         return m

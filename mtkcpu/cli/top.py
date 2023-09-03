@@ -41,7 +41,7 @@ def get_board_cpu(elf_path : Optional[Path] = None):
 
 def get_platform() -> Platform:
     from amaranth_boards.icebreaker import ICEBreakerPlatform
-    from amaranth.build.dsl import Resource, Pins, Attrs
+    from amaranth.build.dsl import Resource, Pins, Attrs, Subsignal
     
     platform = ICEBreakerPlatform()
 
@@ -53,12 +53,20 @@ def get_platform() -> Platform:
     # Yes that means that the pins at the edge of the board come first
     # and the pins further away from the edge second
     platform.add_resources([
-        Resource("debug", 0, Pins("7 8 9 10 1 2 3 4", dir="o",
-                                    conn=("pmod", 0)), Attrs(IO_STANDARD="SB_LVCMOS"))
-    ])
+        Resource(
+            "debug",
+            0,
+            Subsignal("tms", Pins("1", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Subsignal("tdi", Pins("2", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Subsignal("tdo", Pins("3", dir="o", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Subsignal("tck", Pins("4", dir="i", conn=("pmod", 1)), Attrs(IO_STANDARD="SB_LVCMOS")),
+            Attrs(IO_STANDARD="SB_LVCMOS"),
+            ),
+        ]
+    )
 
     return platform
-    
+
 
 def build(elf_path : Path, do_program=True):
     platform = get_platform()
