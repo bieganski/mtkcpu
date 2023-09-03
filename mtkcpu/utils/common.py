@@ -106,8 +106,15 @@ def read_elf(elf_path, verbose=False):
 
 # TODO pass additional param
 def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
-    COMPILER = "riscv-none-embed-gcc"
-    assert which(COMPILER)
+    
+    COMPILERS = ["riscv-none-embed-gcc", "riscv-none-elf-gcc"]
+    for candicate in COMPILERS:
+        if which(candicate) is not None:
+            break
+    else:
+        raise ValueError(f"Could not find a suitable compiler! Seeked for {COMPILERS}")
+    
+    compiler = candicate
     
     with NamedTemporaryFile(suffix=".S", delete=False, mode="w+") as asm_file:
         assert asm_file.write(source_raw)
@@ -115,7 +122,7 @@ def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
         from mtkcpu.utils.linker import write_linker_script
         write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR, mem_size_kb=mem_size_kb)
         
-    cmd = [COMPILER, "-march=rv32i", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
+    cmd = [compiler, "-march=rv32i", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
     logging.critical(" ".join(cmd))
     p = Popen(cmd, stdout=PIPE, stderr=PIPE)
     out, err = p.communicate()
