@@ -118,7 +118,6 @@ class JTAGTap(Elaboratable):
 
         with m.FSM() as self.jtag_fsm:
             with m.State("TEST-LOGIC-RESET"):
-        
                 with m.If(rising_tck & ~tms):
                     sync += self.ir.eq(self.ir_reset)
                     m.next = "RUN-TEST-IDLE"
@@ -163,7 +162,6 @@ class JTAGTap(Elaboratable):
                     m.next = "EXIT1-DR"
 
             with m.State("EXIT1-DR"):
-                # sync += self.port.tdo.eq(0) # TODO
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "UPDATE-DR"
@@ -220,7 +218,6 @@ class JTAGTap(Elaboratable):
                     m.next = "EXIT1-IR"
 
             with m.State("EXIT1-IR"):
-                # sync += self.port.tdo.eq(0) # TODO
                 with m.If(rising_tck):
                     with m.If(tms):
                         m.next = "UPDATE-IR"
@@ -242,21 +239,4 @@ class JTAGTap(Elaboratable):
                     with m.Else():
                         m.next = "RUN-TEST-IDLE"
 
-        # if platform is not None:
-        #     led_r = platform.request("led_r")
-        #     led_g = platform.request("led_g")
-        #     # with m.If(self.rising_tck):
-        #     #     sync += self.port.tdo.eq(~self.port.tdo)
-        #     # sync += self.port.tdo.eq(1)
-        #     with m.FSM() as f:
-        #         with m.State("A"):
-        #             with m.If(~self.jtag_fsm.ongoing("TEST-LOGIC-RESET")):
-        #             # with m.If(debug.tms | debug.tdi | debug.tck):
-        #                 sync += led_g.eq(1)
-        #                 sync += led_r.eq(1)
-        #         #         m.next = "B"
-        #         # with m.State("B"):
-        #         #     with m.If(~debug.tck):
-        #         #         sync += led_r.eq(1)
-                
         return m
