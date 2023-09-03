@@ -11,7 +11,7 @@ RUN apt-get update -y
 
 # Install nodejs
 RUN curl -sL https://deb.nodesource.com/setup_16.x  | bash -
-RUN apt-get -y install nodejs
+RUN apt-get -y install nodejs npm
 
 # Install XPM
 RUN npm install --global xpm@latest
