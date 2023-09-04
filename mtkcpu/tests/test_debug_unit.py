@@ -20,7 +20,8 @@ class DebugUnitSimulationContext:
     simulator: Simulator
 
 def create_simulator() -> DebugUnitSimulationContext:
-    from mtkcpu.utils.common import MEM_START_ADDR
+    from mtkcpu.utils.common import MEM_START_ADDR, CODE_START_ADDR
+    from mtkcpu.cpu.cpu import CPU_Config
     cpu = MtkCpu(
         mem_config=EBRMemConfig(
             mem_size_words=1000,
@@ -28,7 +29,11 @@ def create_simulator() -> DebugUnitSimulationContext:
             mem_addr=MEM_START_ADDR,
             simulate=True,
         ),
-        with_debug=True,
+        cpu_config=CPU_Config(
+            with_debug=True,
+            dev_mode=False,
+            pc_reset_value=CODE_START_ADDR,
+        )
     )
 
     dmi_monitor = DMI_Monitor(cpu=cpu)

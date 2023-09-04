@@ -220,7 +220,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                 led_r, led_g = platform.request("led_r"), platform.request("led_g")
             else:
                 led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
-            self.led_r, self.led_g = led_r, led_g # TODO this is obfuscated, but we need those signals for simulation testbench
+            self.led_r, self.led_g = led_r, led_g # XXX: for simulation testbench.
             return [led_r, led_g]
 
         from mtkcpu.units.mmio.uart import UartTX

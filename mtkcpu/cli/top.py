@@ -9,20 +9,22 @@ from amaranth.hdl.dsl import Module
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
-from mtkcpu.utils.common import EBRMemConfig, CODE_START_ADDR, read_elf
+from mtkcpu.utils.common import EBRMemConfig, CODE_START_ADDR, MEM_START_ADDR, read_elf
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.units.mmio.bspgen import MemMapCodeGen
 from mtkcpu.units.memory_interface import AddressManager
+from mtkcpu.utils.linker import write_linker_script
+from mtkcpu.cpu.cpu import CPU_Config
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
 
-def get_board_cpu(elf_path : Optional[Path] = None):
+def get_board_cpu(elf_path : Optional[Path], cpu_config: CPU_Config):
     if elf_path:
         mem = read_elf(elf_path, verbose=False)
         # logger.info(f"ELF {elf_path} memory content: {mem}")
-        print(f"== read elf: {len(mem)}*4 bytes = {len(mem) * 4} bytes")
+        logger.info(f"== read elf: {len(mem)}*4 ()= {len(mem) * 4}) bytes")
         mem_config = EBRMemConfig.from_mem_dict(
             simulate=False,
             start_addr=CODE_START_ADDR,
@@ -36,7 +38,7 @@ def get_board_cpu(elf_path : Optional[Path] = None):
             mem_addr=CODE_START_ADDR,
             simulate=False
         )
-    return MtkCpu(mem_config=mem_config)
+    return MtkCpu(mem_config=mem_config, cpu_config=cpu_config)
 
 
 def get_platform() -> Platform:
@@ -65,12 +67,17 @@ def get_platform() -> Platform:
         ]
     )
 
+    platform.add_resources(platform.break_off_pmod)
+
     return platform
 
 
-def build(elf_path : Path, do_program=True):
+def build(
+        elf_path : Optional[Path],
+        do_program: bool,
+        cpu_config: CPU_Config):
     platform = get_platform()
-    m = get_board_cpu(elf_path=elf_path)
+    m = get_board_cpu(elf_path=elf_path, cpu_config=cpu_config)
     platform.build(m, do_program=do_program, nextpnr_opts="--timing-allow-fail")
     logger.info(f"OK, Design was built successfully, printing out some stats..")
     timing_report = Path("build/top.tim")
@@ -117,7 +124,13 @@ def generate_bsp():
     sw_bsp_path = os.path.join(os.path.dirname(__file__), "..", "..", "sw", "bsp")
     print(f"sw_bsp_path = {sw_bsp_path}")
     Path(sw_bsp_path).mkdir(parents=True, exist_ok=True)
-    cpu = get_board_cpu()
+
+    cpu_config = CPU_Config(
+        dev_mode=False,
+        with_debug=True,
+        pc_reset_value=0xdeadbeef,
+    )
+    cpu = get_board_cpu(elf_path=None, cpu_config=cpu_config)
     platform = get_platform()
     dummy_elaborate(cpu, platform)
     arbiter = cpu.arbiter
@@ -128,49 +141,38 @@ def generate_bsp():
 def main():
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument("--build_design_with_elf", type=str, help="Path to an .elf file to be embedded into bitstream")
-    parser.add_argument("--program", action="store_true")
-    parser.add_argument("--gen_bsp", action="store_true")
-    parser.add_argument("--gen_linker_script", action="store_true")
-    parser.add_argument("--sim", type=str, help="Name of project inside sw/ to compile and sim.")
-    # parser.add_argument("--elf", type=Path, help="ELF to be used for build/sim")
+    sp = parser.add_subparsers(required=True, dest="command")
+    
+    build_p = sp.add_parser("build", help="Build the IceBreaker bitstream containing full SoC.")
+    build_p.add_argument("--no_dm", action="store_true")
+    build_p.add_argument("--dev_mode", action="store_true")
+    build_p.add_argument("-e", "--elf", type=Path, help="Path to an .elf file to initialize Block RAM with.")
+    build_p.add_argument("-p", "--program", action="store_true")
+    
+    sp.add_parser("gen_bsp", help="Generate bsp .c and .h sources, based on SoC address space.")
+    sp.add_parser("gen_linker_script", help="Generate linker script, based on SoC address space.")
+    
     args = parser.parse_args()
 
+    cpu_config = CPU_Config(
+        with_debug=(not args.no_dm),
+        dev_mode=args.dev_mode,
+        pc_reset_value=CODE_START_ADDR,
+    )
 
-    if args.build_design_with_elf:
-        elf_path = args.build_design_with_elf
-        build(elf_path=elf_path, do_program=args.program)
-    elif args.gen_bsp:
-        generate_bsp()
-    elif args.gen_linker_script:
-        from mtkcpu.utils.linker import write_linker_script
-        from mtkcpu.global_config import Config
-        out_path = Config.sw_dir / "common" / "linker.ld"
-        from mtkcpu.utils.common import CODE_START_ADDR
-        mem_addr = CODE_START_ADDR
-        mem_size_kb = 1 # TODO pass as a command line param
-        logging.info(f"writing linker script to {out_path}, addr: {hex(mem_addr)} of size {mem_size_kb} kb..")
-        write_linker_script(out_path, mem_addr, mem_size_kb)
-    elif args.sim:
-        from mtkcpu.utils.tests.utils import CpuTestbenchCase, cpu_testbench_test
-        proj_name = args.sim
-        projects = [x.name for x in Config.sw_dir.iterdir() if x.is_dir()]
-        if not proj_name in projects:
-            raise ValueError(f"Project sw/{proj_name} does not exists! Try one of following: {projects}")
-        
-        cpu_testbench_test(
-            CpuTestbenchCase(
-                name=f"simulate project: sw/{proj_name}",
-                try_compile=True,
-                elf_path=Config.sw_dir / proj_name / "build" / f"{proj_name}.elf"
-            )
+    if args.command == "build":
+        build(
+            elf_path=args.elf,
+            do_program=args.program,
+            cpu_config=cpu_config,
         )
-    else:
-        if args.program:
-            logger.error("Cannot --program without previous --build!")
-            exit(1)
-        logger.error("ERORR: exactly one of --build or --gen_bsp param must be passed!") # TODO allow both
-        exit(1)
+    elif args.command == "gen_bsp":
+        generate_bsp()
+    elif args.command == "gen_linker_script":
+        out_path = Config.sw_dir / "common" / "linker.ld"
+        mem_addr = MEM_START_ADDR
+        mem_size_kb = 1 # TODO pass as a command line param
+        write_linker_script(out_path=out_path, mem_addr=mem_addr, mem_size_kb=mem_size_kb)
     
 
 if __name__ == "__main__":
