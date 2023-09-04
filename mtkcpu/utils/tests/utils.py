@@ -34,6 +34,7 @@ from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
+from mtkcpu.cpu.cpu import CPU_Config
 
 logging = get_color_logging_object()
 
@@ -94,11 +95,15 @@ def reg_test(
     mem_cfg: EBRMemConfig,
     verbose: bool = False,
 ):
-
+    
     cpu = MtkCpu(
-        reg_init=reg_init.reg, 
-        with_debug=False, # XXX
-        mem_config=mem_cfg
+        reg_init=reg_init.reg,
+        mem_config=mem_cfg,
+        cpu_config=CPU_Config(
+            dev_mode=False,
+            with_debug=False,
+            pc_reset_value=CODE_START_ADDR,
+        )
     )
 
     sim = Simulator(cpu)
