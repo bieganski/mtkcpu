@@ -35,7 +35,7 @@ SECTIONS {
 """
 
 def write_linker_script(out_path : Path, mem_addr : int, mem_size_kb: int = 1):
-	logging.info(f"writing linker script: using {hex(mem_addr)} address..")
+	logging.info(f"writing linker script to {out_path}, addr: {hex(mem_addr)} of size {mem_size_kb} kb..")
 	linker_script_content = linker_script_template % {
 		'template_mem_start_addr': hex(mem_addr),
 		'template_mem_size_kb': mem_size_kb

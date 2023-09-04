@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-from __future__ import with_statement
 from functools import reduce
 from operator import or_
 
 from typing import Union, Optional
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
-from amaranth import unsigned
-from amaranth.lib import data
 
 from mtkcpu.units.csr import CsrUnit, match_csr
 from mtkcpu.units.exception import ExceptionUnit
-from mtkcpu.utils.common import CODE_START_ADDR, EBRMemConfig
+from mtkcpu.utils.common import EBRMemConfig
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
 from mtkcpu.units.loadstore import (MemoryArbiter, MemoryUnit,
@@ -87,8 +84,29 @@ class ActiveUnit(Record):
         super().__init__(ActiveUnitLayout(), name="active_unit")
 
 
+
+from dataclasses import dataclass
+
+@dataclass
+class CPU_Config:
+    # With Debug Module logic (for openOCD communication)
+    with_debug: bool
+
+    # Developer mode - assumes IceBreaker platform.
+    # Warns user via led blinking, e.g. that the CPU trapped,
+    # or some internal assert failed. 
+    dev_mode: bool
+
+    # Address of first instruction to be executed after CPU reset.
+    pc_reset_value: int
+
 class MtkCpu(Elaboratable):
-    def __init__(self, mem_config: EBRMemConfig, reg_init=[0 for _ in range(32)], with_debug=True):
+    def __init__(
+            self,
+            mem_config: EBRMemConfig,
+            cpu_config: CPU_Config,
+            reg_init=[0 for _ in range(32)],
+        ):
 
         if len(reg_init) > 32:
             raise ValueError(
@@ -101,8 +119,8 @@ class MtkCpu(Elaboratable):
             )
             reg_init[0] = 0
 
+        self.cpu_config = cpu_config
         self.mem_config = mem_config
-        self.with_debug = with_debug
 
         # 0xDE for debugging (uninitialized data magic byte)
         self.reg_init = reg_init + [0x0] * (len(reg_init) - 32)
@@ -121,7 +139,7 @@ class MtkCpu(Elaboratable):
         self.gprf_debug_data = Signal(32)
         self.gprf_debug_write_en = Signal()
 
-        if self.with_debug:
+        if cpu_config.with_debug:
             self.debug = DebugUnit(self)
 
         self.regs = Memory(width=32, depth=32, init=self.reg_init)
@@ -156,7 +174,7 @@ class MtkCpu(Elaboratable):
         # """
         # TODO - Thus we need to add a mux in decoder, that won't raise illegal instruction exception
         # when accessing one of Debug CSR Registers, providing that 'is_debug_mode' is high.
-        self.is_debug_mode = Const(0) if not self.with_debug else Signal()
+        self.is_debug_mode = Const(0) if not self.cpu_config.with_debug else Signal()
         
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
             in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE,
@@ -177,7 +195,7 @@ class MtkCpu(Elaboratable):
             exception_unit=exception_unit, # current privilege mode
         )
 
-        if self.with_debug:
+        if self.cpu_config.with_debug:
             m.submodules.debug = self.debug
             m.submodules.dm_cpu_if = self.running_state_interface
             self.debug_bus = arbiter.port(priority=0)
@@ -203,7 +221,7 @@ class MtkCpu(Elaboratable):
         csr_idx = Signal(12)
         uimm = Signal(20)
         opcode = self.opcode = Signal(InstrType)
-        pc = self.pc = Signal(32, reset=CODE_START_ADDR)
+        pc = self.pc = Signal(32, reset=self.cpu_config.pc_reset_value)
 
         # at most one active_unit at any time
         active_unit = ActiveUnit()

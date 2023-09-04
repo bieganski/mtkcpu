@@ -12,13 +12,13 @@ pip3 install . # installs mtkCPU and it's dependencies
 ### Generate BSP files
 
 ```sh
-./mtkcpu/cli/top.py --gen_bsp
+./mtkcpu/cli/top.py gen_bsp
 ```
 
 Expected output:
 
 ```
-mateusz@mateusz:~/github/mtkcpu$ ./mtkcpu/cli/top.py --gen_bsp
+mateusz@mateusz:~/github/mtkcpu$ ./mtkcpu/cli/top.py gen_bsp
 sw_bsp_path = ./mtkcpu/cli/../../sw/bsp
 GPIO: adding output (sig led_r_0__o) to GPIO pin 0..
 GPIO: adding output (sig led_g_0__o) to GPIO pin 1..
@@ -35,7 +35,7 @@ ok, code generation done!
 ### Generate linker script
 First, you need linker script to be generated for your CPU configuration
 ```sh
-./mtkcpu/cli/top.py --gen_linker_script
+./mtkcpu/cli/top.py gen_linker_script
 ```
 
 Expected output:
@@ -72,7 +72,7 @@ For different distros follow the instructions in project references.
 
 ```sh
 PROJ_NAME=blink_led
-./mtkcpu/cli/top.py --build_design_with_elf sw/$PROJ_NAME/build/$PROJ_NAME.elf 
+./mtkcpu/cli/top.py build -e sw/$PROJ_NAME/build/$PROJ_NAME.elf 
 ```
 
 The loadable content of provieded ELF file will be loaded into Block RAM memory.
