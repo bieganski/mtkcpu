@@ -21,6 +21,9 @@ _init:
     ret
 
 
+trap_entry:
+	j trap_entry
+
 /*
 _start:
 #ifdef USE_GP
@@ -29,6 +32,8 @@ _start:
 	la gp, __global_pointer$
 .option pop
 #endif
+	la t0, trap_entry
+	csrw mtvec, t0
 	la sp, _sp
 
 	// Load data section
