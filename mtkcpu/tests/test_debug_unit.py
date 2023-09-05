@@ -2,13 +2,20 @@
 
 from dataclasses import dataclass
 
-from amaranth.sim import Simulator
+from amaranth.sim import Simulator, Settle
+from amaranth.lib import data
 
 from mtkcpu.cpu.cpu import MtkCpu, EBRMemConfig
 from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.units.debug.types import *
 from mtkcpu.utils.misc import get_color_logging_object
-
+from mtkcpu.cpu.priv_isa import CSRIndex
+from mtkcpu.utils.common import MEM_START_ADDR, CODE_START_ADDR
+from mtkcpu.cpu.cpu import CPU_Config
+from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
+from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
+from mtkcpu.units.debug.impl_config import DATASIZE
+from mtkcpu.units.csr_handlers import DCSR
 
 logging = get_color_logging_object()
 
@@ -20,12 +27,13 @@ class DebugUnitSimulationContext:
     simulator: Simulator
 
 def create_simulator() -> DebugUnitSimulationContext:
-    from mtkcpu.utils.common import MEM_START_ADDR, CODE_START_ADDR
-    from mtkcpu.cpu.cpu import CPU_Config
+
+    ebreak = encode_ins(instructions.Ebreak())
+    
     cpu = MtkCpu(
         mem_config=EBRMemConfig(
             mem_size_words=1000,
-            mem_content_words=[0xFFFF_FFFF for _ in range(1000)],
+            mem_content_words=[ebreak for _ in range(1000)],
             mem_addr=MEM_START_ADDR,
             simulate=True,
         ),
@@ -191,7 +199,6 @@ def test_dmi_try_read_not_implemented_register(
         yield from few_ticks()
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
 
-        from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
         not_implemented_dmi_regs = [0x1, 0x2, 0x3]
         assert not [x for x in not_implemented_dmi_regs if x in DMI_HANDLERS_MAP]
 
@@ -254,7 +261,7 @@ def test_core_halt_resume(
         the resume ack bit is set. These status signals of all selected harts are reflected in 
         allresumeack, anyresumeack, allrunning, and anyrunning. Resume requests are ignored by running harts.
         """
-        from amaranth.sim import Settle
+
         yield Settle()
 
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
@@ -290,10 +297,9 @@ def test_core_halt_resume(
         yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
         yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
         yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-        yield from few_ticks(100)
+        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
         yield from DMSTATUS_read(dmi_monitor=dmi_monitor)
-
         yield from check_dmstatus_field_values(halted_expected_low, 1)
         yield from check_dmstatus_field_values(halted_expected_high, 0)
     
@@ -394,7 +400,6 @@ def test_progbuf_writes_to_bus(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
     assert PROGBUFSIZE >= 2
 
     memory = dict()
@@ -497,7 +502,7 @@ def test_halt_resume_with_new_dpc(
         the resume ack bit is set. These status signals of all selected harts are reflected in 
         allresumeack, anyresumeack, allrunning, and anyrunning. Resume requests are ignored by running harts.
         """
-        from amaranth.sim import Settle
+
         yield Settle()
 
         halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
@@ -515,7 +520,6 @@ def test_halt_resume_with_new_dpc(
         new_pc = pc // 2 + 0x1000
         assert new_pc != pc
 
-        from mtkcpu.cpu.priv_isa import CSRIndex
         yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(new_pc)
 
         yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
@@ -544,7 +548,6 @@ def test_progbuf_gets_executed(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
     assert PROGBUFSIZE >= 2
 
     def main_process():
@@ -603,7 +606,6 @@ def test_progbuf_cmderr_on_runtime_error(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
     assert PROGBUFSIZE >= 2
 
     def main_process():
@@ -652,15 +654,12 @@ def test_access_debug_csr_regs_in_debug_mode(
     cpu: MtkCpu,
     dmi_monitor: DMI_Monitor,
 ):
-    from mtkcpu.units.debug.impl_config import PROGBUFSIZE
     assert PROGBUFSIZE >= 2
     
     gpr_reg_num = 3
 
     def main_process():
         yield from few_ticks()
-
-        from mtkcpu.units.csr_handlers import DCSR
 
         expected_dcsr_reset_value = DCSR()._reset_value.value
 
@@ -747,9 +746,6 @@ def test_abstracauto_autoexecdata(
     def main_process():
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
         yield from few_ticks()
-
-        from mtkcpu.units.debug.impl_config import DATASIZE
-        from amaranth.lib import data
 
         as_abstractauto: ABSTRACTAUTO_Layout = data.View(ABSTRACTAUTO_Layout, dmi_monitor.cur_dmi_bus.data)
         autoexecdata_width = as_abstractauto.autoexecdata.shape().width
@@ -841,20 +837,107 @@ def test_abstracauto_autoexecdata(
     simulator.run()
 
 
+
+@dmi_simulator
+def test_ebreakm_halt(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    def main_process():
+
+        # yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        # yield from few_ticks()
+        # gb = cpu.arbiter.generic_bus
+        # yield gb.en.eq(1)
+        # yield gb.store.eq(1)
+        # yield gb.addr.eq(CODE_START_ADDR)
+        # yield gb.write_data.eq(encode_ins(instructions.Ebreak()))
+        # while True:
+        #     ack = yield gb.ack
+        #     if ack:
+        #         raise ValueError("A")
+        #         break
+        #     yield
+
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from few_ticks()
+
+        yield dmi_monitor.cur_DMCONTROL.eq(0)
+
+        def resume_core_via_dmi():
+            yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+            yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
+            yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
+            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+            yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        yield from resume_core_via_dmi()
+        
+        # TODO - some more generic way of zeroing the bus, please.
+        yield dmi_monitor.cur_DMCONTROL.resumereq.eq(0)
+
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+
+        if halted:
+            raise ValueError("ebreakm-agnostic bug: Core halted despite resumereq succeeded.")
+        
+        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+
+        assert(yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
+
+        yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r.ebreakm.eq(1)
+        
+        # Starting from now, every EBREAK should cause core halt.
+
+        yield from resume_core_via_dmi()
+
+        # halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+        # assert not halted
+
+        for _ in range(timeout := 100):
+            halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+            if halted:
+                raise ValueError("SUPER!!!")
+        else:
+            raise ValueError(f"EBREAKM seemingly doesn't have an effect, as core didn't halted during {timeout} cycles!")
+
+
+    def wtf():
+        yield Passive()
+
+        for _ in range(20):
+            fsm = cpu.main_fsm
+            state_name = get_state_name(fsm, (yield fsm.state))
+            print(state_name)
+            yield
+
+    processes = [
+        main_process,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+    ]
+    for p in processes:
+        simulator.add_sync_process(p)
+        
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_not_supported_command_type_finishes()
-    test_dmi_try_read_not_implemented_register()
-    test_dmi_abstract_command_read_write_gpr()
-    test_core_halt_resume()
-    test_halt_resume_with_new_dpc()
-    test_cmderr_clear()
-    test_progbuf_writes_to_bus()
-    test_progbuf_gets_executed()
-    test_progbuf_cmderr_on_runtime_error()
-    test_access_debug_csr_regs_in_debug_mode()
-    test_abstracauto_autoexecdata()
+    # test_not_supported_command_type_finishes()
+    # test_dmi_try_read_not_implemented_register()
+    # test_dmi_abstract_command_read_write_gpr()
+    # test_core_halt_resume()
+    # test_halt_resume_with_new_dpc()
+    # test_cmderr_clear()
+    # test_progbuf_writes_to_bus()
+    # test_progbuf_gets_executed()
+    # test_progbuf_cmderr_on_runtime_error()
+    # test_access_debug_csr_regs_in_debug_mode()
+    # test_abstracauto_autoexecdata()
+    test_ebreakm_halt()
     logging.critical("ALL TESTS PASSED!")
 
 

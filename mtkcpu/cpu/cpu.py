@@ -182,7 +182,7 @@ class MtkCpu(Elaboratable):
         )
 
         halt_on_ebreak = self.halt_on_ebreak = Signal()
-        comb += halt_on_ebreak.eq(self.is_debug_mode) # TODO | csr_unit.dcsr.ebreakm)
+        comb += halt_on_ebreak.eq(self.is_debug_mode | csr_unit.dcsr.ebreakm)
 
         exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(
             csr_unit=csr_unit, 
@@ -693,11 +693,16 @@ class MtkCpu(Elaboratable):
                 debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
                 self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
 
+                comb += debug_led_g.eq(0)
+
                 with m.If(self.main_fsm.ongoing("TRAP")):
                     sync += self.debug_blink_red.eq(1)
 
                 with m.If(self.running_state.halted):
                     comb += self.debug_blink_green.eq(1)
+
+                with m.If(self.running_state_interface.resumereq):
+                    comb += platform.request("led_g", 2).eq(1)
 
                 ctr = Signal(22)
                 sync += ctr.eq(ctr + 1)

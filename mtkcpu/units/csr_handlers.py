@@ -217,12 +217,12 @@ class DCSR(RegisterCSR):
         super().__init__(CSRIndex.DCSR, dcsr_layout, __class__.RegValueLocal)
 
     def handle_write(self):
-        # TODO
-        # 'step' will be handler here in future.
-        # m = self.get_m()
-        # m.d.sync += [
-        #     self.rec.r.eq(self.rec.w)
-        # ]
+        m = self.get_m()
+
+        for x in ["step", "ebreakm"]:
+            m.d.sync += [
+                getattr(self.rec.r, x).eq(getattr(self.rec.w, x))
+            ]
         self.handler_notify_comb()
 
 
