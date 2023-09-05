@@ -410,7 +410,6 @@ class MtkCpu(Elaboratable):
                 notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
                 m.d.comb += notifiers[cause].eq(1)
 
-        self.fetch = Signal()
         interconnect_error = self.interconnect_error = Signal()
         comb += interconnect_error.eq(
             exception_unit.m_store_error
@@ -463,7 +462,6 @@ class MtkCpu(Elaboratable):
                             ]
                             m.next = "DECODE"
                 with m.State("DECODE"):
-                    comb += self.fetch.eq(1) # only for simulation, notify that 'instr' ready to use.
                     m.next = "EXECUTE"
                     # here, we have registers already fetched into rs1val, rs2val.
                     with m.If(instr & 0b11 != 0b11):
@@ -685,7 +683,7 @@ class MtkCpu(Elaboratable):
                     """
                     NOTE: First implementation didn't have TRAP state. It was added to fix ibus issue,
                     as there were situations that the ibus.en was high 100% time (e.g. trap and fetch from non-existing mtvec),
-                    so that the debug bus couldn't own the bus.
+                    so that the debug bus couldn't take the bus ownership.
                     """
                     fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
             

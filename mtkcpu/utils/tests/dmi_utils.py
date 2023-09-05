@@ -587,14 +587,14 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
         cpu = dmi_monitor.cpu
         
         # To avoid spam, wait till first haltreq debugger event.
-        while True:
-            haltreq = yield cpu.running_state_interface.haltreq
-            if haltreq:
-                break
-            yield
+        # while True:
+        #     haltreq = yield cpu.running_state_interface.haltreq
+        #     if haltreq:
+        #         break
+        #     yield
         
         log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
-        prev_state = ""
+        prev_state = None
         prev_pc = 0x0
         while True:
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))

@@ -10,7 +10,7 @@ from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.units.debug.types import *
 from mtkcpu.utils.misc import get_color_logging_object
 from mtkcpu.cpu.priv_isa import CSRIndex
-from mtkcpu.utils.common import MEM_START_ADDR, CODE_START_ADDR
+from mtkcpu.utils.common import MEM_START_ADDR
 from mtkcpu.cpu.cpu import CPU_Config
 from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
 from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
@@ -29,18 +29,21 @@ class DebugUnitSimulationContext:
 def create_simulator() -> DebugUnitSimulationContext:
 
     ebreak = encode_ins(instructions.Ebreak())
+
+    mem_content_words = [0xFFFF_FFFF for _ in range(1000)]
+    # mem_content_words[0]
     
     cpu = MtkCpu(
         mem_config=EBRMemConfig(
             mem_size_words=1000,
-            mem_content_words=[ebreak for _ in range(1000)],
+            mem_content_words=mem_content_words,
             mem_addr=MEM_START_ADDR,
             simulate=True,
         ),
         cpu_config=CPU_Config(
             with_debug=True,
             dev_mode=False,
-            pc_reset_value=CODE_START_ADDR,
+            pc_reset_value=MEM_START_ADDR,
         )
     )
 
@@ -846,25 +849,6 @@ def test_ebreakm_halt(
 ):
     def main_process():
 
-        # yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
-        # yield from few_ticks()
-        # gb = cpu.arbiter.generic_bus
-        # yield gb.en.eq(1)
-        # yield gb.store.eq(1)
-        # yield gb.addr.eq(CODE_START_ADDR)
-        # yield gb.write_data.eq(encode_ins(instructions.Ebreak()))
-        # while True:
-        #     ack = yield gb.ack
-        #     if ack:
-        #         raise ValueError("A")
-        #         break
-        #     yield
-
-        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
-        yield from few_ticks()
-
-        yield dmi_monitor.cur_DMCONTROL.eq(0)
-
         def resume_core_via_dmi():
             yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
             yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
@@ -872,50 +856,63 @@ def test_ebreakm_halt(
             yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
             yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
-        yield from resume_core_via_dmi()
-        
-        # TODO - some more generic way of zeroing the bus, please.
-        yield dmi_monitor.cur_DMCONTROL.resumereq.eq(0)
+        def reset_dmi_bus():
+            yield dmi_monitor.cur_dmi_bus.eq(0)
 
-        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+        # # TODO - some more generic way of zeroing the bus, please.
+        # yield dmi_monitor.cur_DMCONTROL.resumereq.eq(0)
 
-        if halted:
-            raise ValueError("ebreakm-agnostic bug: Core halted despite resumereq succeeded.")
+        # halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+
+        # if halted:
+        #     raise ValueError("ebreakm-agnostic bug: Core halted despite resumereq succeeded.")
         
+        yield from few_ticks() # XXX
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
+        yield from reset_dmi_bus()
 
-        assert(yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
+        assert (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
 
-        yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r.ebreakm.eq(1)
+        # yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r.ebreakm.eq(1)
         
         # Starting from now, every EBREAK should cause core halt.
 
         yield from resume_core_via_dmi()
+        yield from reset_dmi_bus()
 
         # halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
         # assert not halted
 
         for _ in range(timeout := 100):
+            fsm = cpu.main_fsm
+            
+            state = get_state_name(fsm, (yield fsm.state))
+            pc = yield cpu.pc
+            halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+            haltreq = yield cpu.running_state_interface.haltreq
+            resumereq = yield cpu.running_state_interface.resumereq
+            
+            ibus_en = yield cpu.ibus.en
+            dbus_en = yield cpu.dbus.en
+            debugbus_en = yield cpu.debug_bus.en
+
+            meta = yield cpu.arbiter.wb_bus.ack
+
+            print(f"meta {hex(meta)}, ibus {ibus_en}, dbus {dbus_en}, debugbus_en {debugbus_en}")
+
+            # print(f"ibus_en {hex(ibus_en)}", state, hex(pc), "halted" if halted else "running", "resumereq" if resumereq else "not resumereq", ", haltreq" if haltreq else ", not haltreq")
             halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
             if halted:
                 raise ValueError("SUPER!!!")
         else:
             raise ValueError(f"EBREAKM seemingly doesn't have an effect, as core didn't halted during {timeout} cycles!")
 
-
-    def wtf():
-        yield Passive()
-
-        for _ in range(20):
-            fsm = cpu.main_fsm
-            state_name = get_state_name(fsm, (yield fsm.state))
-            print(state_name)
-            yield
-
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
         monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        monitor_cmderr(dmi_monitor),
+        monitor_cpu_dm_if_error(dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
     ]
     for p in processes:
