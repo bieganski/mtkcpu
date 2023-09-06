@@ -259,9 +259,31 @@ class MtkCpu(Elaboratable):
             just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
         ]
 
-        comb += self.running_state_interface.resumeack.eq(just_resumed)
-        comb += self.running_state_interface.haltack.eq(just_halted)
+        cpu_state_if = self.running_state_interface
+        cpu_state = self.running_state
 
+
+        # NOTE - such logic turnt out not to be enough - 2 FMSs seems to be needed to handle {halt/resume}req.
+        # comb += self.running_state_interface.resumeack.eq(just_resumed)
+        # comb += self.running_state_interface.haltack.eq(just_halted)
+        with m.FSM():
+            with m.State("A"):
+                with m.If(cpu_state_if.haltreq):
+                    m.next = "B"
+            with m.State("B"):
+                with m.If(cpu_state.halted):
+                    comb += cpu_state_if.haltack.eq(1)
+                    m.next = "A"
+        
+        with m.FSM():
+            with m.State("A"):
+                with m.If(cpu_state_if.resumereq):
+                    m.next = "B"
+            with m.State("B"):
+                with m.If(~cpu_state.halted):
+                    comb += cpu_state_if.resumeack.eq(1)
+                    m.next = "A"
+        
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
             # from specs:
             # 
@@ -691,16 +713,11 @@ class MtkCpu(Elaboratable):
                 debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
                 self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
 
-                comb += debug_led_g.eq(0)
-
                 with m.If(self.main_fsm.ongoing("TRAP")):
                     sync += self.debug_blink_red.eq(1)
 
                 with m.If(self.running_state.halted):
                     comb += self.debug_blink_green.eq(1)
-
-                with m.If(self.running_state_interface.resumereq):
-                    comb += platform.request("led_g", 2).eq(1)
 
                 ctr = Signal(22)
                 sync += ctr.eq(ctr + 1)

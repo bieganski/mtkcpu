@@ -30,8 +30,7 @@ def create_simulator() -> DebugUnitSimulationContext:
 
     ebreak = encode_ins(instructions.Ebreak())
 
-    mem_content_words = [0xFFFF_FFFF for _ in range(1000)]
-    # mem_content_words[0]
+    mem_content_words = [ebreak for _ in range(1000)]
     
     cpu = MtkCpu(
         mem_config=EBRMemConfig(
@@ -228,11 +227,12 @@ def test_dmi_try_read_not_implemented_register(
     processes = [
         main_process,
         *error_monitors(dmi_monitor),
+        print_dmi_transactions(dmi_monitor),
     ]
     
     for p in processes:
         simulator.add_sync_process(p)
-        
+
     simulator.run()
 
 
@@ -849,6 +849,11 @@ def test_ebreakm_halt(
 ):
     def main_process():
 
+        ebreak = encode_ins(instructions.Ebreak())
+
+        if not all([x == ebreak for x in cpu.mem_config.mem_content_words]):
+            raise NotImplementedError("for now only code full of ebreaks supported!")
+
         def resume_core_via_dmi():
             yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
             yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
@@ -859,13 +864,11 @@ def test_ebreakm_halt(
         def reset_dmi_bus():
             yield dmi_monitor.cur_dmi_bus.eq(0)
 
-        # # TODO - some more generic way of zeroing the bus, please.
-        # yield dmi_monitor.cur_DMCONTROL.resumereq.eq(0)
+        yield from few_ticks(20) # go to trap
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
 
-        # halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
-
-        # if halted:
-        #     raise ValueError("ebreakm-agnostic bug: Core halted despite resumereq succeeded.")
+        if halted:
+            raise ValueError("ebreakm-agnostic bug: Core halted despite resumereq succeeded.")
         
         yield from few_ticks() # XXX
         yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
@@ -873,37 +876,19 @@ def test_ebreakm_halt(
 
         assert (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
 
-        # yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r.ebreakm.eq(1)
+        yield dmi_monitor.cpu.csr_unit.dcsr.ebreakm.eq(1)
         
         # Starting from now, every EBREAK should cause core halt.
 
         yield from resume_core_via_dmi()
-        yield from reset_dmi_bus()
+        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+        assert not halted
 
-        # halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
-        # assert not halted
-
-        for _ in range(timeout := 100):
-            fsm = cpu.main_fsm
-            
-            state = get_state_name(fsm, (yield fsm.state))
-            pc = yield cpu.pc
-            halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
-            haltreq = yield cpu.running_state_interface.haltreq
-            resumereq = yield cpu.running_state_interface.resumereq
-            
-            ibus_en = yield cpu.ibus.en
-            dbus_en = yield cpu.dbus.en
-            debugbus_en = yield cpu.debug_bus.en
-
-            meta = yield cpu.arbiter.wb_bus.ack
-
-            print(f"meta {hex(meta)}, ibus {ibus_en}, dbus {dbus_en}, debugbus_en {debugbus_en}")
-
-            # print(f"ibus_en {hex(ibus_en)}", state, hex(pc), "halted" if halted else "running", "resumereq" if resumereq else "not resumereq", ", haltreq" if haltreq else ", not haltreq")
+        for _ in range(timeout := 50):
             halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
             if halted:
-                raise ValueError("SUPER!!!")
+                break # ebreakm did work as expected!
+            yield
         else:
             raise ValueError(f"EBREAKM seemingly doesn't have an effect, as core didn't halted during {timeout} cycles!")
 
@@ -917,23 +902,23 @@ def test_ebreakm_halt(
     ]
     for p in processes:
         simulator.add_sync_process(p)
-        
+    
     simulator.run()
-
+        
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_not_supported_command_type_finishes()
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_halt_resume_with_new_dpc()
-    # test_cmderr_clear()
-    # test_progbuf_writes_to_bus()
-    # test_progbuf_gets_executed()
-    # test_progbuf_cmderr_on_runtime_error()
-    # test_access_debug_csr_regs_in_debug_mode()
-    # test_abstracauto_autoexecdata()
+    test_not_supported_command_type_finishes()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_halt_resume_with_new_dpc()
+    test_cmderr_clear()
+    test_progbuf_writes_to_bus()
+    test_progbuf_gets_executed()
+    test_progbuf_cmderr_on_runtime_error()
+    test_access_debug_csr_regs_in_debug_mode()
+    test_abstracauto_autoexecdata()
     test_ebreakm_halt()
     logging.critical("ALL TESTS PASSED!")
 
