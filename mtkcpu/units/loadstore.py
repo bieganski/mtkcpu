@@ -397,9 +397,6 @@ class MemoryArbiter(Elaboratable, AddressManager):
         sv32_i = Signal(reset=1)
         root_ppn = self.root_ppn = Signal(22)
 
-        if not self.with_addr_translation:
-            return m
-        
         with m.FSM():
             with m.State("IDLE"):
                 with m.If(start_translation):

@@ -182,7 +182,7 @@ class MtkCpu(Elaboratable):
         )
 
         halt_on_ebreak = self.halt_on_ebreak = Signal()
-        comb += halt_on_ebreak.eq(self.is_debug_mode) # TODO | csr_unit.dcsr.ebreakm)
+        comb += halt_on_ebreak.eq(self.is_debug_mode | csr_unit.dcsr.ebreakm)
 
         exception_unit = self.exception_unit = m.submodules.exception_unit = ExceptionUnit(
             csr_unit=csr_unit, 
@@ -259,9 +259,31 @@ class MtkCpu(Elaboratable):
             just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
         ]
 
-        comb += self.running_state_interface.resumeack.eq(just_resumed)
-        comb += self.running_state_interface.haltack.eq(just_halted)
+        cpu_state_if = self.running_state_interface
+        cpu_state = self.running_state
 
+
+        # NOTE - such logic turnt out not to be enough - 2 FMSs seems to be needed to handle {halt/resume}req.
+        # comb += self.running_state_interface.resumeack.eq(just_resumed)
+        # comb += self.running_state_interface.haltack.eq(just_halted)
+        with m.FSM():
+            with m.State("A"):
+                with m.If(cpu_state_if.haltreq):
+                    m.next = "B"
+            with m.State("B"):
+                with m.If(cpu_state.halted):
+                    comb += cpu_state_if.haltack.eq(1)
+                    m.next = "A"
+        
+        with m.FSM():
+            with m.State("A"):
+                with m.If(cpu_state_if.resumereq):
+                    m.next = "B"
+            with m.State("B"):
+                with m.If(~cpu_state.halted):
+                    comb += cpu_state_if.resumeack.eq(1)
+                    m.next = "A"
+        
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
             # from specs:
             # 
@@ -410,7 +432,6 @@ class MtkCpu(Elaboratable):
                 notifiers = e.irq_cause_map if interrupt else e.trap_cause_map 
                 m.d.comb += notifiers[cause].eq(1)
 
-        self.fetch = Signal()
         interconnect_error = self.interconnect_error = Signal()
         comb += interconnect_error.eq(
             exception_unit.m_store_error
@@ -463,7 +484,6 @@ class MtkCpu(Elaboratable):
                             ]
                             m.next = "DECODE"
                 with m.State("DECODE"):
-                    comb += self.fetch.eq(1) # only for simulation, notify that 'instr' ready to use.
                     m.next = "EXECUTE"
                     # here, we have registers already fetched into rs1val, rs2val.
                     with m.If(instr & 0b11 != 0b11):
@@ -685,7 +705,7 @@ class MtkCpu(Elaboratable):
                     """
                     NOTE: First implementation didn't have TRAP state. It was added to fix ibus issue,
                     as there were situations that the ibus.en was high 100% time (e.g. trap and fetch from non-existing mtvec),
-                    so that the debug bus couldn't own the bus.
+                    so that the debug bus couldn't take the bus ownership.
                     """
                     fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
             

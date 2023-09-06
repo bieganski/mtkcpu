@@ -594,7 +594,7 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
             yield
         
         log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
-        prev_state = ""
+        prev_state = None
         prev_pc = 0x0
         while True:
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))

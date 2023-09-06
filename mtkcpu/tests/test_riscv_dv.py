@@ -43,7 +43,7 @@ def riscv_dv_sim_process(cpu : MtkCpu, iss_csv : Path, compare_every: int, csv_o
             instr : int = yield cpu.instr
             pc : int = yield cpu.pc
 
-            if (yield cpu.fetch):
+            if (yield cpu.main_fsm.ongoing("DECODE")):
                 total_num_processed += 1
                 if do_compare():
                     csv_output_fd.flush()

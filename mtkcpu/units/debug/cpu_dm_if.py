@@ -9,6 +9,23 @@ class CpuRunningState:
         # self.unavail     = Const(0)
 
 class CpuRunningStateExternalInterface(Elaboratable):
+    """
+    Protocol Specification:
+
+    Master - controls {halt/resume}req.  E.g. a Debug Module
+    Slave - controls {halt/resume}ack.   E.g. a CPU
+
+    * {halt/resume}req is kept high until {halt/resume}ack is received - deasserting it before ack is invalid.
+    * {halt/resume}ack is high only for a single clock cycle - master polls for it.
+    * {halt/resume}ack can only be asserted one cycle after the {halt/resume}req or later
+    * {halt/resume}req must be deasserted in the next cycle after the respective ack was asserted.
+    * haltreq and resumereq cannot be assrted both in same cycle.
+    * no timeouts are defined - every Xreq will eventually be acked
+    * haltreq on halted hart *is valid* (resumereq on running hart as well), and must be eventually acked.
+    * it's slave's responsibility to assure, that no spurious ack are asserted
+      (e.g. when core halts for different reason than master's request)
+     
+    """
     def __init__(self):
         # In.
         self.haltreq = Signal()
@@ -44,15 +61,17 @@ class CpuRunningStateExternalInterface(Elaboratable):
         haltack_with_no_delay = ~prev(self.haltreq) & self.haltreq & self.haltack
         resumeack_with_no_delay = ~prev(self.resumereq) & self.resumereq & self.resumeack
 
+        # with m.If(~self.haltreq & ~prev(self.haltreq) & self.haltack):
+        #     m.d.sync += self.error_sticky.eq(1)
+
         with m.If(
-            resumeack_takes_two
-            | haltack_takes_two
-            | haltack_with_no_delay
-            | resumeack_with_no_delay
-            # NOTE: it is possible to get haltack without prior haltreq,
-            # as EBREAK may cause halt as well.
-            # | (~self.haltreq & self.haltack) |
+            # resumeack_takes_two
+            # | haltack_takes_two
+            # | haltack_with_no_delay
+            # | resumeack_with_no_delay
+            (~self.haltreq & self.haltack)
             # | (~self.resumereq & self.resumeack)
+            #  | prev(self.haltack) & self.haltreq  <- this one is not necessary an error, but shouldn't happen in real life.
         ):
             m.d.sync += self.error_sticky.eq(1)
 

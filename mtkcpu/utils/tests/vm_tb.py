@@ -17,8 +17,7 @@ def basic_vm_test():
 
 	def wait_decode() -> int: # returns pc of instr being decoded
 		while True:
-			is_decode = yield cpu.fetch
-			if is_decode:
+			if (yield cpu.main_fsm.ongoing("DECODE")):
 				return (yield cpu.pc)
 			yield
 
