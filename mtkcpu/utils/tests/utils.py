@@ -380,7 +380,11 @@ def cpu_testbench_test(case : CpuTestbenchCase):
     )
 
     cpu = MtkCpu(
-        with_debug=False,
+        cpu_config=CPU_Config(
+            dev_mode=False,
+            with_debug=False,
+            pc_reset_value=MEM_START_ADDR,
+        ),
         mem_config=mem_cfg
     )
 
@@ -683,9 +687,13 @@ def assert_jtag_test(
     with_checkpoints=False,
 ):
     cpu = MtkCpu(
-        reg_init=[0x0 for i in range(32)],
+        reg_init=[0x0 for _ in range(32)],
         mem_config=EBRMemConfig(mem_size_words=60, mem_addr=0x8000, mem_content_words=None, simulate=True),
-        with_debug=True,
+        cpu_config=CPU_Config(
+            dev_mode=False,
+            with_debug=True,
+            pc_reset_value=0x8000,
+        )
     )
 
     sw_project_path = get_git_root() / "sw" / "just_loop"

@@ -198,7 +198,7 @@ def get_sim_jtag_controller(
     timeout_cycles: int,
 ):
 
-    if not cpu.with_debug:
+    if not cpu.cpu_config.with_debug:
         raise ValueError("CPU must be initialized with Debug Module present!")
 
     def jtag_controller(timeout=15000):
