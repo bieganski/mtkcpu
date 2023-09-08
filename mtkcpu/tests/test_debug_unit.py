@@ -310,6 +310,7 @@ def test_core_halt_resume(
         main_process,
         *error_monitors(dmi_monitor),
         *informative_monitors(dmi_monitor),
+        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
     ]
 
     for p in processes:
