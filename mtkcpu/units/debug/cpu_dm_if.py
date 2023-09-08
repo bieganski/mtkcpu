@@ -61,17 +61,14 @@ class CpuRunningStateExternalInterface(Elaboratable):
         haltack_with_no_delay = ~prev(self.haltreq) & self.haltreq & self.haltack
         resumeack_with_no_delay = ~prev(self.resumereq) & self.resumereq & self.resumeack
 
-        # with m.If(~self.haltreq & ~prev(self.haltreq) & self.haltack):
-        #     m.d.sync += self.error_sticky.eq(1)
-
         with m.If(
-            # resumeack_takes_two
-            # | haltack_takes_two
-            # | haltack_with_no_delay
-            # | resumeack_with_no_delay
-            (~self.haltreq & self.haltack)
-            # | (~self.resumereq & self.resumeack)
-            #  | prev(self.haltack) & self.haltreq  <- this one is not necessary an error, but shouldn't happen in real life.
+            resumeack_takes_two
+            | haltack_takes_two
+            | haltack_with_no_delay
+            | resumeack_with_no_delay
+            | ~self.haltreq & self.haltack
+            | ~self.resumereq & self.resumeack
+            | prev(self.haltack) & self.haltreq # <- this one is not necessary an error, but shouldn't happen in real life.
         ):
             m.d.sync += self.error_sticky.eq(1)
 
