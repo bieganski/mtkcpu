@@ -275,13 +275,37 @@ class MtkCpu(Elaboratable):
                     comb += cpu_state_if.haltack.eq(1)
                     m.next = "A"
         
+        during_single_step = Signal()
         with m.FSM():
             with m.State("A"):
                 with m.If(cpu_state_if.resumereq):
+                    with m.If(csr_unit.dcsr.step):
+                        sync += during_single_step.eq(1)
                     m.next = "B"
             with m.State("B"):
                 with m.If(~cpu_state.halted):
                     comb += cpu_state_if.resumeack.eq(1)
+                    with m.If(~during_single_step):
+                        m.next = "A"
+                    with m.Else():
+                        m.next = "STEP"
+            with m.State("STEP"):
+                with m.If(cpu_state.halted):
+                    comb += cpu_state_if.haltack.eq(1)
+                    m.next = "A"
+        
+        with m.FSM():
+            with m.State("A"):
+                with m.If(cpu_state.halted & cpu_state_if.stepreq):
+                    sync += during_single_step.eq(1)
+                    m.next = "B"
+            with m.State("B"):
+                with m.If(just_resumed):
+                    m.next = "C"
+            with m.State("C"):
+                with m.If(cpu_state.halted):
+                    comb += cpu_state_if.resumeack.eq(1)
+                    sync += during_single_step.eq(0)
                     m.next = "A"
         
         with m.If(self.running_state.halted & self.running_state_interface.resumereq):
@@ -452,6 +476,10 @@ class MtkCpu(Elaboratable):
                     Timer interrupts are disbled for now, as whole CPU halting mechainsm
                     needs rethinking.
                     """
+
+                    with m.If(~just_resumed & during_single_step):
+                        pass
+
                     # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                     with m.If(self.running_state_interface.haltreq):
                         # From specs:
