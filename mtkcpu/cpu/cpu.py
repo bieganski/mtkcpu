@@ -709,24 +709,24 @@ class MtkCpu(Elaboratable):
                     """
                     fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
             
-            if self.cpu_config.dev_mode and platform is not None:
-                debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
-                self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
+        if self.cpu_config.dev_mode and platform is not None:
+            debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
+            self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
 
-                # with m.If(self.csr_unit.dcsr.ebreakm):
-                with m.If(self.main_fsm.ongoing("TRAP")):
-                    sync += self.debug_blink_red.eq(1)
+            # with m.If(self.csr_unit.dcsr.ebreakm):
+            with m.If(self.main_fsm.ongoing("TRAP")):
+                sync += self.debug_blink_red.eq(1)
 
-                with m.If(self.running_state.halted):
-                    comb += self.debug_blink_green.eq(1)
+            with m.If(self.running_state.halted):
+                comb += self.debug_blink_green.eq(1)
 
-                ctr = Signal(22)
-                sync += ctr.eq(ctr + 1)
+            ctr = Signal(22)
+            sync += ctr.eq(ctr + 1)
 
-                with m.If(self.debug_blink_red):
-                    comb += debug_led_r.eq(ctr[-1])
+            with m.If(self.debug_blink_red):
+                comb += debug_led_r.eq(ctr[-1])
 
-                with m.If(self.debug_blink_green):
-                    comb += debug_led_g.eq(~ctr[-1])
+            with m.If(self.debug_blink_green):
+                comb += debug_led_g.eq(~ctr[-1])
 
         return m

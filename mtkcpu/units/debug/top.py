@@ -117,6 +117,11 @@ class DebugUnit(Elaboratable):
                 self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(1),
                 self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(1),
             ]
+        with m.If(self.cpu.just_halted):
+            sync += [
+                self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(0),
+                self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(0),
+            ]
 
         def on_read(addr):
             sync = self.m.d.sync
