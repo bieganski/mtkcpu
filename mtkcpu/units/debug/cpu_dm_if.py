@@ -66,9 +66,11 @@ class CpuRunningStateExternalInterface(Elaboratable):
             | haltack_takes_two
             | haltack_with_no_delay
             | resumeack_with_no_delay
-            | ~self.haltreq & self.haltack
+            # TODO:
+            # commented out that check, as we may receive sort-of-spurious 'haltack' in STEP mode.
+            # ~self.haltreq & self.haltack
             | ~self.resumereq & self.resumeack
-            | prev(self.haltack) & self.haltreq # <- this one is not necessary an error, but shouldn't happen in real life.
+            | prev(self.haltack) & self.haltreq # <- this one is not necessary an error, but shouldn't happen in real life (second request issued just after first one completes)
         ):
             m.d.sync += self.error_sticky.eq(1)
 

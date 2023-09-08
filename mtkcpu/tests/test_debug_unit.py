@@ -905,7 +905,66 @@ def test_ebreakm_halt(
         simulator.add_sync_process(p)
     
     simulator.run()
-        
+
+
+@dmi_simulator
+def test_single_step(
+    simulator: Simulator,
+    cpu: MtkCpu,
+    dmi_monitor: DMI_Monitor,
+):
+    def main_process():
+
+        yield from activate_DM(dmi_monitor=dmi_monitor)
+
+        ebreak = encode_ins(instructions.Ebreak())
+        if not all([x == ebreak for x in cpu.mem_config.mem_content_words]):
+            raise NotImplementedError("for now only code full of ebreaks supported!")
+
+        def resume_core_via_dmi():
+            yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+            yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
+            yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
+            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+            yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        yield from few_ticks(20) # go to trap (that consists of EBREAKs only)
+        # make sure that core is still running
+        assert not (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
+
+        # halt core by decoding EBREAK when 'ebreakm' bit asserted
+        yield dmi_monitor.cpu.csr_unit.dcsr.ebreakm.eq(1)
+        mtvec = yield dmi_monitor.cpu.csr_unit.mtvec.as_value()
+        mem_cfg = cpu.mem_config
+        assert mtvec >= mem_cfg.mem_addr
+        assert mtvec < mem_cfg.mem_addr + mem_cfg.mem_size_words * mem_cfg.word_size
+        yield from few_ticks(20) # go to trap (that consists of EBREAKs only)
+
+        assert (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
+
+        yield dmi_monitor.cpu.csr_unit.dcsr.step.eq(1)
+        yield
+        yield from resume_core_via_dmi()
+
+        assert not (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
+        for _ in range(20):
+            halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
+            if halted:
+                return # success! eventually hart halted - single step works as expected
+
+    processes = [
+        main_process,
+        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        monitor_cmderr(dmi_monitor),
+        monitor_cpu_dm_if_error(dmi_monitor),
+        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+    ]
+    for p in processes:
+        simulator.add_sync_process(p)
+    
+    simulator.run()
+
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
@@ -921,6 +980,7 @@ if __name__ == "__main__":
     test_access_debug_csr_regs_in_debug_mode()
     test_abstracauto_autoexecdata()
     test_ebreakm_halt()
+    test_single_step()
     logging.critical("ALL TESTS PASSED!")
 
 

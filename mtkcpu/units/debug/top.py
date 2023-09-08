@@ -117,7 +117,8 @@ class DebugUnit(Elaboratable):
                 self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(1),
                 self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(1),
             ]
-        with m.If(self.cpu.just_halted):
+        halted_by_haltreq_not_by_single_step = cpu_state_if.haltreq & cpu_state_if.haltack
+        with m.If(halted_by_haltreq_not_by_single_step):
             sync += [
                 self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(0),
                 self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(0),

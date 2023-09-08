@@ -292,19 +292,6 @@ class MtkCpu(Elaboratable):
             with m.State("STEP"):
                 with m.If(cpu_state.halted):
                     comb += cpu_state_if.haltack.eq(1)
-                    m.next = "A"
-        
-        with m.FSM():
-            with m.State("A"):
-                with m.If(cpu_state.halted & cpu_state_if.stepreq):
-                    sync += during_single_step.eq(1)
-                    m.next = "B"
-            with m.State("B"):
-                with m.If(just_resumed):
-                    m.next = "C"
-            with m.State("C"):
-                with m.If(cpu_state.halted):
-                    comb += cpu_state_if.resumeack.eq(1)
                     sync += during_single_step.eq(0)
                     m.next = "A"
         
@@ -477,11 +464,10 @@ class MtkCpu(Elaboratable):
                     needs rethinking.
                     """
 
-                    with m.If(~just_resumed & during_single_step):
-                        pass
+                    single_step_finished = during_single_step & ~just_resumed
 
                     # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
-                    with m.If(self.running_state_interface.haltreq):
+                    with m.If(self.running_state_interface.haltreq | single_step_finished):
                         # From specs:
                         # Upon entry to debug mode, dpc is updated with the virtual address of
                         # the next instruction to be executed.
