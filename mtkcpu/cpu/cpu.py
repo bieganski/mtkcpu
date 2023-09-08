@@ -713,6 +713,7 @@ class MtkCpu(Elaboratable):
                 debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
                 self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
 
+                # with m.If(self.csr_unit.dcsr.ebreakm):
                 with m.If(self.main_fsm.ongoing("TRAP")):
                     sync += self.debug_blink_red.eq(1)
 

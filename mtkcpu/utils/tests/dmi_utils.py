@@ -575,7 +575,12 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
                     if csr_idx == dcsr_addr:
                         logging.critical(f"------       DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
                     elif csr_idx == dpc_addr:
-                        raise ValueError(f"------       DPC write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
+                        logging.critical(f"------       DPC write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
+                if funct3 in [Funct3.CSRRW]:
+                    if csr_idx == dcsr_addr:
+                        logging.critical(f"------       DCSR write: {Funct3(funct3)}, rs1 {rs1}, rs1val {rs1val}")
+                if funct3 in [Funct3.CSRRWI]:
+                    raise NotImplementedError()
             yield
     return aux
 
