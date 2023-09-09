@@ -223,6 +223,8 @@ class MtkCpu(Elaboratable):
         opcode = self.opcode = Signal(InstrType)
         pc = self.pc = Signal(32, reset=self.cpu_config.pc_reset_value)
 
+        in_trap = Signal()
+
         # at most one active_unit at any time
         active_unit = ActiveUnit()
 
@@ -429,7 +431,10 @@ class MtkCpu(Elaboratable):
         ]
 
         def trap(cause: Optional[Union[TrapCause, IrqCause]], interrupt=False):
-            m.d.sync += active_unit.eq(0)
+            m.d.sync += [
+                active_unit.eq(0),
+                in_trap.eq(1),
+            ]
             with m.If(self.is_debug_mode):
                 m.next = "FETCH"
                 m.d.sync += self.running_state.halted.eq(1)
@@ -475,9 +480,32 @@ class MtkCpu(Elaboratable):
                         # TODO
                         # From specs, we need to implement 'cause' write as well:
                         # 'When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
+
+                        # DCSR_DM_Entry_Cause
+                        from mtkcpu.units.debug.types import DCSR_DM_Entry_Cause
+                        from mtkcpu.units.loadstore import PriorityEncoder
+
+                        dpc, dcsr = map(lambda x: self.csr_unit.reg_by_addr(x).rec.r, [CSRIndex.DPC, CSRIndex.DCSR])
+
+                        pe = PriorityEncoder(width=2**dcsr.cause.shape().width)
+
+                        associate_cause_and_signal = {
+                            # TODO
+                            # EBREAK is hard to implement right now, it probably requires
+                            # moving that part of code outside the FSM.
+                            # DCSR_DM_Entry_Cause.EBREAK: ...,
+                            DCSR_DM_Entry_Cause.HALTREQ: self.running_state_interface.haltreq,
+                            DCSR_DM_Entry_Cause.STEP: single_step_finished,
+                        }
+
+                        for cause in range(pe.width):
+                            if cause in associate_cause_and_signal:
+                                comb += pe.i[cause].eq(1)
+
                         sync += [
                             self.running_state.halted.eq(1),
-                            self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(self.pc),
+                            dpc.eq(self.pc),
+                            dcsr.cause.eq(pe.o),
                         ]
                     with m.Else():
                         with m.If(pc & 0b11):
@@ -568,6 +596,7 @@ class MtkCpu(Elaboratable):
                         with m.If(halt_on_ebreak):
                             # enter Debug Mode.
                             sync += self.running_state.halted.eq(1)
+                            sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.EBREAK)  # TODO - move it to priority encoder defined above
                             m.next = "FETCH"
                         with m.Else():
                             # EBREAK description from Privileged specs:
@@ -635,6 +664,7 @@ class MtkCpu(Elaboratable):
                     with m.Elif(active_unit.mret):
                         comb += exception_unit.m_mret.eq(1)
                         fetch_with_new_pc(exception_unit.mepc)
+                        sync += in_trap.eq(0)
                     with m.Else():
                         # all units not specified by default take 1 cycle
                         m.next = "WRITEBACK"
@@ -727,11 +757,12 @@ class MtkCpu(Elaboratable):
             debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
             self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
 
-            # with m.If(self.csr_unit.dcsr.ebreakm):
+            
             with m.If(self.main_fsm.ongoing("TRAP")):
                 sync += self.debug_blink_red.eq(1)
 
-            with m.If(self.running_state.halted):
+            # with m.If(self.running_state.halted):
+            with m.If(self.csr_unit.dcsr.ebreakm):
                 comb += self.debug_blink_green.eq(1)
 
             ctr = Signal(22)
