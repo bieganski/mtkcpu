@@ -12,7 +12,7 @@ from mtkcpu.utils.common import EBRMemConfig
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
 from mtkcpu.units.compare import CompareUnit, match_compare_unit
 from mtkcpu.units.loadstore import (MemoryArbiter, MemoryUnit,
-                                    match_load, match_loadstore_unit)
+                                    match_load, match_loadstore_unit, PriorityEncoder)
 from mtkcpu.units.logic import LogicUnit, match_logic_unit
 from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
@@ -22,6 +22,7 @@ from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
 from mtkcpu.cpu.priv_isa import CSRIndex
+from mtkcpu.units.debug.types import DCSR_DM_Entry_Cause
 
 match_jal = matcher(
     [
@@ -296,22 +297,6 @@ class MtkCpu(Elaboratable):
                     comb += cpu_state_if.haltack.eq(1)
                     sync += during_single_step.eq(0)
                     m.next = "A"
-        
-        with m.If(self.running_state.halted & self.running_state_interface.resumereq):
-            # from specs:
-            # 
-            # When a debugger writes 1 to resumereq, each selected hart’s resume ack bit 
-            # is cleared and each selected, halted hart is sent a resume request. 
-
-            # From specs;
-            # When resuming, the hart’s PC is updated to the virtual address stored in dpc. 
-            # A debugger may write dpc to change where the hart resumes.
-            sync += [
-                self.running_state.halted.eq(0),
-                self.pc.eq(
-                    self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
-                )
-            ]
 
         comb += [
             exception_unit.m_instruction.eq(instr),
@@ -455,303 +440,316 @@ class MtkCpu(Elaboratable):
             | exception_unit.m_load_error
         )
 
+        # From specs:
+        # 'Upon entry to debug mode, dpc is updated with the virtual address of
+        # the next instruction to be executed.'
+        # 
+        # 'When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
+
+
+        dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
+        pe = PriorityEncoder(width=2**dcsr.cause.shape().width)
+        single_step_finished = during_single_step & ~just_resumed
+
+        associate_cause_and_signal = {
+            DCSR_DM_Entry_Cause.EBREAK: ...,
+            DCSR_DM_Entry_Cause.HALTREQ: self.running_state_interface.haltreq,
+            DCSR_DM_Entry_Cause.STEP: single_step_finished,
+        }
+        for cause in range(pe.width):
+            if cause in associate_cause_and_signal:
+                comb += pe.i[cause].eq(1)
+        
+        halt_cause_latch = Signal.like(pe.o)
+        with m.If(~pe.none):
+            # some Debug Mode-entry source is active.
+            sync += [
+                halt_cause_latch.eq(pe.o)
+            ]
+        
+        
         def fetch_with_new_pc(pc : Signal):
             m.next = "FETCH"
             m.d.sync += self.pc.eq(pc)
             m.d.sync += active_unit.eq(0)
 
-        with m.If(~self.running_state.halted):
-            with m.FSM() as self.main_fsm:
-                with m.State("FETCH"):
-                    """
-                    TODO
-                    Timer interrupts are disbled for now, as whole CPU halting mechainsm
-                    needs rethinking.
-                    """
-
-                    single_step_finished = during_single_step & ~just_resumed
-
-                    # trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
-                    with m.If(self.running_state_interface.haltreq | single_step_finished):
-                        # From specs:
-                        # Upon entry to debug mode, dpc is updated with the virtual address of
-                        # the next instruction to be executed.
-
-                        # TODO
-                        # From specs, we need to implement 'cause' write as well:
-                        # 'When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
-
-                        # DCSR_DM_Entry_Cause
-                        from mtkcpu.units.debug.types import DCSR_DM_Entry_Cause
-                        from mtkcpu.units.loadstore import PriorityEncoder
-
-                        dpc, dcsr = map(lambda x: self.csr_unit.reg_by_addr(x).rec.r, [CSRIndex.DPC, CSRIndex.DCSR])
-
-                        pe = PriorityEncoder(width=2**dcsr.cause.shape().width)
-
-                        associate_cause_and_signal = {
-                            # TODO
-                            # EBREAK is hard to implement right now, it probably requires
-                            # moving that part of code outside the FSM.
-                            # DCSR_DM_Entry_Cause.EBREAK: ...,
-                            DCSR_DM_Entry_Cause.HALTREQ: self.running_state_interface.haltreq,
-                            DCSR_DM_Entry_Cause.STEP: single_step_finished,
-                        }
-
-                        for cause in range(pe.width):
-                            if cause in associate_cause_and_signal:
-                                comb += pe.i[cause].eq(1)
-
-                        sync += [
-                            self.running_state.halted.eq(1),
-                            dpc.eq(self.pc),
-                            dcsr.cause.eq(pe.o),
-                        ]
+        with m.FSM() as self.main_fsm:
+            with m.State("FETCH"): # TODO - rename to CHECK_HALTREQ
+                should_halt = cpu_state_if.haltreq
+                with m.If(should_halt):
+                    m.next = "HALTED"
+                with m.Else():
+                    # maybe next time..
+                    m.next = "FETCH2"
+            with m.State("HALTED"):
+                # from specs:
+                # 
+                # 'When a debugger writes 1 to resumereq, each selected hart’s resume ack bit 
+                # is cleared and each selected, halted hart is sent a resume request.'
+                #
+                # 'When resuming, the hart’s PC is updated to the virtual address stored in dpc.
+                # A debugger may write dpc to change where the hart resumes.'
+                
+                with m.If(cpu_state_if.resumereq):
+                    m.next = "FETCH2"
+                    sync += [
+                        self.pc.eq(
+                            self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
+                        )
+                    ]
+            with m.State("FETCH2"): # TODO - rename to FETCH.
+                """
+                TODO
+                Timer interrupts are disbled for now, as whole CPU halting mechainsm
+                needs rethinking.
+                """
+                
+                with m.If(pc & 0b11):
+                    trap(TrapCause.FETCH_MISALIGNED)
+                with m.Else():
+                    comb += [
+                        ibus.en.eq(1),
+                        ibus.store.eq(0),
+                        ibus.addr.eq(pc),
+                        ibus.mask.eq(0b1111),
+                        ibus.is_fetch.eq(1),
+                    ]
+                with m.If(interconnect_error):
+                    trap(cause=None)
+                with m.If(ibus.ack):
+                    sync += [
+                        instr.eq(ibus.read_data),
+                    ]
+                    m.next = "DECODE"
+            with m.State("DECODE"):
+                m.next = "EXECUTE"
+                # here, we have registers already fetched into rs1val, rs2val.
+                with m.If(instr & 0b11 != 0b11):
+                    trap(TrapCause.ILLEGAL_INSTRUCTION)
+                with m.If(match_logic_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.logic.eq(1),
+                    ]
+                with m.Elif(match_adder_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.adder.eq(1),
+                        adder.sub.eq(
+                            (opcode == InstrType.ALU) & (funct7 == Funct7.SUB)
+                        ),
+                    ]
+                with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.shifter.eq(1),
+                    ]
+                with m.Elif(match_loadstore_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.mem_unit.eq(1),
+                    ]
+                with m.Elif(match_compare_unit(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.compare.eq(1),
+                        adder.sub.eq(1),
+                    ]
+                with m.Elif(match_lui(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.lui.eq(1),
+                    ]
+                    comb += [
+                        reg_read_port1.addr.eq(rd),
+                        # rd will be available in next cycle in rs1val
+                    ]
+                with m.Elif(match_auipc(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.auipc.eq(1),
+                    ]
+                with m.Elif(match_jal(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.jal.eq(1),
+                    ]
+                with m.Elif(match_jalr(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.jalr.eq(1),
+                    ]
+                with m.Elif(match_branch(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.branch.eq(1),
+                        adder.sub.eq(1),
+                    ]
+                with m.Elif(match_csr(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.csr.eq(1)
+                    ]
+                with m.Elif(match_mret(opcode, funct3, funct7)):
+                    sync += [
+                        active_unit.mret.eq(1)
+                    ]
+                with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
+                    pass # sfence.vma
+                with m.Elif(opcode == 0b0001111):
+                    pass # fence - do nothing, as we are a simple implementation.
+                with m.Elif(opcode == 0b1110011):
+                    # ebreak
+                    with m.If(halt_on_ebreak):
+                        # enter Debug Mode.
+                        m.next = "FETCH"
+                        sync += self.running_state.halted.eq(1)
+                        sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.EBREAK)  # TODO - move it to priority encoder defined above
+                        m.next = "FETCH"
                     with m.Else():
-                        with m.If(pc & 0b11):
-                            trap(TrapCause.FETCH_MISALIGNED)
-                        with m.Else():
-                            comb += [
-                                ibus.en.eq(1),
-                                ibus.store.eq(0),
-                                ibus.addr.eq(pc),
-                                ibus.mask.eq(0b1111),
-                                ibus.is_fetch.eq(1),
-                            ]
-                        with m.If(interconnect_error):
-                            trap(cause=None)
-                        with m.If(ibus.ack):
-                            sync += [
-                                instr.eq(ibus.read_data),
-                            ]
-                            m.next = "DECODE"
-                with m.State("DECODE"):
-                    m.next = "EXECUTE"
-                    # here, we have registers already fetched into rs1val, rs2val.
-                    with m.If(instr & 0b11 != 0b11):
-                        trap(TrapCause.ILLEGAL_INSTRUCTION)
-                    with m.If(match_logic_unit(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.logic.eq(1),
-                        ]
-                    with m.Elif(match_adder_unit(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.adder.eq(1),
-                            adder.sub.eq(
-                                (opcode == InstrType.ALU) & (funct7 == Funct7.SUB)
-                            ),
-                        ]
-                    with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.shifter.eq(1),
-                        ]
-                    with m.Elif(match_loadstore_unit(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.mem_unit.eq(1),
-                        ]
-                    with m.Elif(match_compare_unit(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.compare.eq(1),
-                            adder.sub.eq(1),
-                        ]
-                    with m.Elif(match_lui(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.lui.eq(1),
-                        ]
-                        comb += [
-                            reg_read_port1.addr.eq(rd),
-                            # rd will be available in next cycle in rs1val
-                        ]
-                    with m.Elif(match_auipc(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.auipc.eq(1),
-                        ]
-                    with m.Elif(match_jal(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.jal.eq(1),
-                        ]
-                    with m.Elif(match_jalr(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.jalr.eq(1),
-                        ]
-                    with m.Elif(match_branch(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.branch.eq(1),
-                            adder.sub.eq(1),
-                        ]
-                    with m.Elif(match_csr(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.csr.eq(1)
-                        ]
-                    with m.Elif(match_mret(opcode, funct3, funct7)):
-                        sync += [
-                            active_unit.mret.eq(1)
-                        ]
-                    with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
-                        pass # sfence.vma
-                    with m.Elif(opcode == 0b0001111):
-                        pass # fence - do nothing, as we are a simple implementation.
-                    with m.Elif(opcode == 0b1110011):
-                        # ebreak
-                        with m.If(halt_on_ebreak):
-                            # enter Debug Mode.
-                            sync += self.running_state.halted.eq(1)
-                            sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.EBREAK)  # TODO - move it to priority encoder defined above
-                            m.next = "FETCH"
-                        with m.Else():
-                            # EBREAK description from Privileged specs:
-                            # It generates a breakpoint exception and performs no other operation.
-                            trap(TrapCause.BREAKPOINT)
-                    with m.Else():
-                        trap(TrapCause.ILLEGAL_INSTRUCTION)
-                with m.State("EXECUTE"):
-                    with m.If(active_unit.logic):
-                        sync += [
-                            rdval.eq(logic.res),
-                        ]
-                    with m.Elif(active_unit.adder):
-                        sync += [
-                            rdval.eq(adder.res),
-                        ]
-                    with m.Elif(active_unit.shifter):
-                        sync += [
-                            rdval.eq(shifter.res),
-                        ]
-                    with m.Elif(active_unit.mem_unit):
-                        sync += [
-                            rdval.eq(mem_unit.res),
-                        ]
-                    with m.Elif(active_unit.compare):
-                        sync += [
-                            rdval.eq(compare.condition_met),
-                        ]
-                    with m.Elif(active_unit.lui):
-                        sync += [
-                            rdval.eq(Cat(Const(0, 12), uimm)),
-                        ]
-                    with m.Elif(active_unit.auipc):
-                        sync += [
-                            rdval.eq(pc + Cat(Const(0, 12), uimm)),
-                        ]
-                    with m.Elif(active_unit.jal | active_unit.jalr):
-                        sync += [
-                            rdval.eq(pc + 4),
-                        ]
-                    with m.Elif(active_unit.csr):
-                        sync += [
-                            rdval.eq(csr_unit.rd_val)
-                        ]
+                        # EBREAK description from Privileged specs:
+                        # It generates a breakpoint exception and performs no other operation.
+                        trap(TrapCause.BREAKPOINT)
+                with m.Else():
+                    trap(TrapCause.ILLEGAL_INSTRUCTION)
+            with m.State("EXECUTE"):
+                with m.If(active_unit.logic):
+                    sync += [
+                        rdval.eq(logic.res),
+                    ]
+                with m.Elif(active_unit.adder):
+                    sync += [
+                        rdval.eq(adder.res),
+                    ]
+                with m.Elif(active_unit.shifter):
+                    sync += [
+                        rdval.eq(shifter.res),
+                    ]
+                with m.Elif(active_unit.mem_unit):
+                    sync += [
+                        rdval.eq(mem_unit.res),
+                    ]
+                with m.Elif(active_unit.compare):
+                    sync += [
+                        rdval.eq(compare.condition_met),
+                    ]
+                with m.Elif(active_unit.lui):
+                    sync += [
+                        rdval.eq(Cat(Const(0, 12), uimm)),
+                    ]
+                with m.Elif(active_unit.auipc):
+                    sync += [
+                        rdval.eq(pc + Cat(Const(0, 12), uimm)),
+                    ]
+                with m.Elif(active_unit.jal | active_unit.jalr):
+                    sync += [
+                        rdval.eq(pc + 4),
+                    ]
+                with m.Elif(active_unit.csr):
+                    sync += [
+                        rdval.eq(csr_unit.rd_val)
+                    ]
 
-                    # control flow mux - all traps need to be here, otherwise it will overwrite m.next statement.
-                    with m.If(active_unit.mem_unit):
-                        with m.If(mem_unit.ack):
+                # control flow mux - all traps need to be here, otherwise it will overwrite m.next statement.
+                with m.If(active_unit.mem_unit):
+                    with m.If(mem_unit.ack):
+                        m.next = "WRITEBACK"
+                        sync += active_unit.eq(0)
+                    
+                    with m.If(interconnect_error):
+                        # NOTE: 
+                        # the order of that 'If' is important.
+                        # In case of error overwrite m.next above.
+                        trap(cause=None)
+                with m.Elif(active_unit.csr):
+                    with m.If(csr_unit.illegal_insn):
+                        trap(TrapCause.ILLEGAL_INSTRUCTION)
+                    with m.Else():
+                        with m.If(csr_unit.vld):
                             m.next = "WRITEBACK"
                             sync += active_unit.eq(0)
                         
-                        with m.If(interconnect_error):
-                            # NOTE: 
-                            # the order of that 'If' is important.
-                            # In case of error overwrite m.next above.
-                            trap(cause=None)
-                    with m.Elif(active_unit.csr):
-                        with m.If(csr_unit.illegal_insn):
-                            trap(TrapCause.ILLEGAL_INSTRUCTION)
-                        with m.Else():
-                            with m.If(csr_unit.vld):
-                                m.next = "WRITEBACK"
-                                sync += active_unit.eq(0)
-                            
-                    with m.Elif(active_unit.mret):
-                        comb += exception_unit.m_mret.eq(1)
-                        fetch_with_new_pc(exception_unit.mepc)
-                        sync += in_trap.eq(0)
-                    with m.Else():
-                        # all units not specified by default take 1 cycle
-                        m.next = "WRITEBACK"
-                        sync += active_unit.eq(0)
+                with m.Elif(active_unit.mret):
+                    comb += exception_unit.m_mret.eq(1)
+                    fetch_with_new_pc(exception_unit.mepc)
+                    sync += in_trap.eq(0)
+                with m.Else():
+                    # all units not specified by default take 1 cycle
+                    m.next = "WRITEBACK"
+                    sync += active_unit.eq(0)
 
-                    jal_offset = Signal(signed(21))
-                    comb += jal_offset.eq(
-                        Cat(
-                            Const(0, 1),
-                            instr[21:31],
-                            instr[20],
-                            instr[12:20],
-                            instr[31],
-                        ).as_signed()
-                    )
-                    
-                    pc_addend = Signal(signed(32))
-                    sync += pc_addend.eq(
-                        Mux(active_unit.jal, jal_offset, 4)
-                    )
-
-                    branch_addend = Signal(signed(13))
-                    comb += branch_addend.eq(
-                        Cat(
-                            Const(0, 1),
-                            instr[8:12],
-                            instr[25:31],
-                            instr[7],
-                            instr[31],
-                        ).as_signed() # TODO is it ok that it's signed?
-                    )
-
-                    with m.If(active_unit.branch):
-                        with m.If(compare.condition_met):
-                            sync += pc_addend.eq(branch_addend)
-
-                    new_pc = Signal(32)
-                    is_jalr_latch = Signal() # that's bad workaround
-                    with m.If(active_unit.jalr):
-                        sync += is_jalr_latch.eq(1)
-                        sync += new_pc.eq(rs1val.as_signed() + imm)
+                jal_offset = Signal(signed(21))
+                comb += jal_offset.eq(
+                    Cat(
+                        Const(0, 1),
+                        instr[21:31],
+                        instr[20],
+                        instr[12:20],
+                        instr[31],
+                    ).as_signed()
+                )
                 
-                with m.State("WRITEBACK"):
-                    with m.If(is_jalr_latch):
-                        sync += pc.eq(new_pc)
-                    with m.Else():
-                        sync += pc.eq(pc + pc_addend)
-                    sync += is_jalr_latch.eq(0)
+                pc_addend = Signal(signed(32))
+                sync += pc_addend.eq(
+                    Mux(active_unit.jal, jal_offset, 4)
+                )
 
-                    # Here, rdval is already calculated. If neccessary, put it into register file.
-                    should_write_rd = self.should_write_rd = Signal()
-                    writeback = self.writeback = Signal()
-                    # for riscv-dv simulation:
-                    # detect that instruction does not perform register write to avoid infinite loop
-                    # by checking writeback & should_write_rd
-                    # TODO it will break for trap-causing instructions.
-                    comb += writeback.eq(1)
-                    comb += should_write_rd.eq(
-                        reduce(
-                            or_,
-                            [
-                                match_shifter_unit(opcode, funct3, funct7),
-                                match_adder_unit(opcode, funct3, funct7),
-                                match_logic_unit(opcode, funct3, funct7),
-                                match_load(opcode, funct3, funct7),
-                                match_compare_unit(opcode, funct3, funct7),
-                                match_lui(opcode, funct3, funct7),
-                                match_auipc(opcode, funct3, funct7),
-                                match_jal(opcode, funct3, funct7),
-                                match_jalr(opcode, funct3, funct7),
-                                match_csr(opcode, funct3, funct7),
-                            ],
-                        )
-                        & (rd != 0)
+                branch_addend = Signal(signed(13))
+                comb += branch_addend.eq(
+                    Cat(
+                        Const(0, 1),
+                        instr[8:12],
+                        instr[25:31],
+                        instr[7],
+                        instr[31],
+                    ).as_signed() # TODO is it ok that it's signed?
+                )
+
+                with m.If(active_unit.branch):
+                    with m.If(compare.condition_met):
+                        sync += pc_addend.eq(branch_addend)
+
+                new_pc = Signal(32)
+                is_jalr_latch = Signal() # that's bad workaround
+                with m.If(active_unit.jalr):
+                    sync += is_jalr_latch.eq(1)
+                    sync += new_pc.eq(rs1val.as_signed() + imm)
+            
+            with m.State("WRITEBACK"):
+                with m.If(is_jalr_latch):
+                    sync += pc.eq(new_pc)
+                with m.Else():
+                    sync += pc.eq(pc + pc_addend)
+                sync += is_jalr_latch.eq(0)
+
+                # Here, rdval is already calculated. If neccessary, put it into register file.
+                should_write_rd = self.should_write_rd = Signal()
+                writeback = self.writeback = Signal()
+                # for riscv-dv simulation:
+                # detect that instruction does not perform register write to avoid infinite loop
+                # by checking writeback & should_write_rd
+                # TODO it will break for trap-causing instructions.
+                comb += writeback.eq(1)
+                comb += should_write_rd.eq(
+                    reduce(
+                        or_,
+                        [
+                            match_shifter_unit(opcode, funct3, funct7),
+                            match_adder_unit(opcode, funct3, funct7),
+                            match_logic_unit(opcode, funct3, funct7),
+                            match_load(opcode, funct3, funct7),
+                            match_compare_unit(opcode, funct3, funct7),
+                            match_lui(opcode, funct3, funct7),
+                            match_auipc(opcode, funct3, funct7),
+                            match_jal(opcode, funct3, funct7),
+                            match_jalr(opcode, funct3, funct7),
+                            match_csr(opcode, funct3, funct7),
+                        ],
                     )
+                    & (rd != 0)
+                )
 
-                    with m.If(should_write_rd):
-                        comb += reg_write_port.en.eq(True)
-                    m.next = "FETCH"
+                with m.If(should_write_rd):
+                    comb += reg_write_port.en.eq(True)
+                m.next = "FETCH"
 
-                with m.State("TRAP"):
-                    """
-                    NOTE: First implementation didn't have TRAP state. It was added to fix ibus issue,
-                    as there were situations that the ibus.en was high 100% time (e.g. trap and fetch from non-existing mtvec),
-                    so that the debug bus couldn't take the bus ownership.
-                    """
-                    fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+            with m.State("TRAP"):
+                """
+                NOTE: First implementation didn't have TRAP state. It was added to fix ibus issue,
+                as there were situations that the ibus.en was high 100% time (e.g. trap and fetch from non-existing mtvec),
+                so that the debug bus couldn't take the bus ownership.
+                """
+                fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+
             
         if self.cpu_config.dev_mode and platform is not None:
             debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
