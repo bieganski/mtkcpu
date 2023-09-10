@@ -253,9 +253,14 @@ class HandlerCOMMAND(HandlerDMI):
                                         # CPU executed ebreak.
                                         comb += done.eq(1)
                                         m.next = "SANITY_CHECK"
-                                        sync += cpu.is_debug_mode.eq(0)
+                                        sync += cpu.is_debug_mode.eq(0) # TODO - this is bad, isn't it???
                                     
-                                    # NOTE: Slippery here.
+                                    # NOTE: Slippery here - as in case of trap during execution both
+                                    # error_on_progbuf_execution
+                                    # and
+                                    # cpu.running_state.halted
+                                    # will hold - however, the 'error_on_progbuf_execution' will appear first - that's why that 'Elif' works.
+                                    # It's very implementation-dependent and breaks encapsulation.
                                     with m.Elif(cpu.running_state_interface.error_on_progbuf_execution):
                                         # Exception occured during PROGBUF execution. 
                                         comb += done.eq(1)

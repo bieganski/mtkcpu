@@ -106,19 +106,25 @@ class DebugUnit(Elaboratable):
 
         cpu_state : CpuRunningState = self.cpu.running_state
         cpu_state_if : CpuRunningStateExternalInterface = self.cpu.running_state_interface
+        
         sync += [
             self.dmi_regs[DMIReg.DMSTATUS].allhalted.eq(cpu_state.halted),
             self.dmi_regs[DMIReg.DMSTATUS].anyhalted.eq(cpu_state.halted),
             self.dmi_regs[DMIReg.DMSTATUS].anyrunning.eq(~cpu_state.halted),
             self.dmi_regs[DMIReg.DMSTATUS].allrunning.eq(~cpu_state.halted),
         ]
+
+        # TODO - though that If+Elif seems to work fine, i'm not very keen of that impl.
+        # Instead, the 'resume ack' bit from Debug Specs should be more explicitly stated.
         with m.If(cpu_state_if.resumeack):
             sync += [
                 self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(1),
                 self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(1),
             ]
-        halted_by_haltreq_not_by_single_step = cpu_state_if.haltreq & cpu_state_if.haltack
-        with m.If(halted_by_haltreq_not_by_single_step):
+        with m.Elif(cpu_state_if.resumereq):
+            # NOTE: here we rely on fact, that master complies to 'resumereq' interface,
+            # and doesn't assert ack for lonfer than a single cycle. It should be changed
+            # when Debug Module will become standalone unit to be used with different cores.
             sync += [
                 self.dmi_regs[DMIReg.DMSTATUS].allresumeack.eq(0),
                 self.dmi_regs[DMIReg.DMSTATUS].anyresumeack.eq(0),

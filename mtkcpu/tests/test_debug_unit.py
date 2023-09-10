@@ -665,7 +665,8 @@ def test_access_debug_csr_regs_in_debug_mode(
     def main_process():
         yield from few_ticks()
 
-        expected_dcsr_reset_value = DCSR()._reset_value.value
+        # TODO: hardcoded 'cause' field offset.
+        expected_dcsr_reset_value = DCSR()._reset_value.value | (DCSR_DM_Entry_Cause.HALTREQ << 6)
 
         DCSR_ins = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
 

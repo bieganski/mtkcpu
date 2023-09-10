@@ -251,12 +251,28 @@ class MtkCpu(Elaboratable):
             res = Signal()
             m.d.sync += res.eq(sig)
             return res
+        
+        # NOTE: it's not enough to lookup dcsr.step, as it might have just been written by Debug Module,
+        # and the core hasn't halted since that time - in such case we should not enter Debug Mode.
+        # TODO - make it Const(0) when not Debug Module (DM) present.
+        single_step_is_active = Signal()
+        just_resumed = self.just_resumed = Signal()
+        just_halted  = self.just_halted  = Signal()
+        dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
+        dpc  = self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
 
+        with m.If(just_resumed):
+            sync += single_step_is_active.eq(dcsr.step)
+
+        
+        # NOTE - in order to ensure condition 'it's slave's responsibility to assure, that no spurious ack are asserted'
+        # from CPU haltreq/resumereq protocol, we cannot assert {halt|resume}ack on 'just_{halt|resum}ed', as it would
+        # ACK not only for HALTREQ cause, but e.g. STEP or EBREAK as well.
         cpu_state_if = self.running_state_interface
         cpu_state = self.running_state
-        # NOTE - such logic turnt out not to be enough - 2 FMSs seems to be needed to handle {halt/resume}req.
-        # comb += self.running_state_interface.resumeack.eq(just_resumed)
-        # comb += self.running_state_interface.haltack.eq(just_halted)
+        comb += cpu_state_if.haltack.eq(cpu_state_if.haltreq & just_halted)
+        # comb += cpu_state_if.haltack.eq(cpu_state_if.haltreq & just_halted)
+
         with m.FSM():
             with m.State("A"):
                 with m.If(cpu_state_if.haltreq):
@@ -270,8 +286,6 @@ class MtkCpu(Elaboratable):
         with m.FSM():
             with m.State("A"):
                 with m.If(cpu_state_if.resumereq):
-                    with m.If(csr_unit.dcsr.step):
-                        sync += during_single_step.eq(1)
                     m.next = "B"
             with m.State("B"):
                 with m.If(~cpu_state.halted):
@@ -283,7 +297,6 @@ class MtkCpu(Elaboratable):
             with m.State("STEP"):
                 with m.If(cpu_state.halted):
                     comb += cpu_state_if.haltack.eq(1)
-                    sync += during_single_step.eq(0)
                     m.next = "A"
 
         comb += [
@@ -424,25 +437,10 @@ class MtkCpu(Elaboratable):
             | exception_unit.m_load_error
         )
 
-
-        just_resumed = self.just_resumed = Signal()
-        just_halted  = self.just_halted  = Signal()
-
-        dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
-        dpc  = self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
-        
         def fetch_with_new_pc(pc : Signal):
             m.next = "FETCH"
             m.d.sync += self.pc.eq(pc)
             m.d.sync += active_unit.eq(0)
-
-        # NOTE: it's not enough to lookup dcsr.step, as it might have just been written by Debug Module,
-        # and the core hasn't halted since that time - in such case we should not enter Debug Mode.
-        single_step_is_active = Signal()
-
-        with m.If(just_resumed):
-            sync += single_step_is_active.eq(dcsr.step)
-
 
         with m.FSM() as self.main_fsm:
             with m.State("FETCH"): # TODO - rename to CHECK_ASYNC_HALTREQ
@@ -478,7 +476,7 @@ class MtkCpu(Elaboratable):
                 with m.If(cpu_state_if.resumereq):
                     sync += [
                         self.pc.eq(dpc),
-                        dcsr.cause.eq(0), # TODO - is that ok to zero it, or should we leave it as is?
+                        # dcsr.cause.eq(0), # TODO - is that ok to zero it, or should we leave it as is?
                     ]
                     m.next = "FETCH2"
             
