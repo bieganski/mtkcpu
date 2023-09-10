@@ -40,7 +40,7 @@ CSR_TESTS = [
         """,
         out_reg=3,
         out_val=0b1011,
-        timeout=20,
+        timeout=50,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
     ),

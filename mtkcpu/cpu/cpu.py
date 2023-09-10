@@ -224,8 +224,6 @@ class MtkCpu(Elaboratable):
         opcode = self.opcode = Signal(InstrType)
         pc = self.pc = Signal(32, reset=self.cpu_config.pc_reset_value)
 
-        in_trap = Signal()
-
         # at most one active_unit at any time
         active_unit = ActiveUnit()
 
@@ -254,18 +252,8 @@ class MtkCpu(Elaboratable):
             m.d.sync += res.eq(sig)
             return res
 
-        just_resumed = self.just_resumed = Signal()
-        just_halted  = self.just_halted  = Signal()
-
-        comb += [
-            just_resumed.eq(prev(self.running_state.halted) & ~self.running_state.halted),
-            just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
-        ]
-
         cpu_state_if = self.running_state_interface
         cpu_state = self.running_state
-
-
         # NOTE - such logic turnt out not to be enough - 2 FMSs seems to be needed to handle {halt/resume}req.
         # comb += self.running_state_interface.resumeack.eq(just_resumed)
         # comb += self.running_state_interface.haltack.eq(just_halted)
@@ -416,13 +404,9 @@ class MtkCpu(Elaboratable):
         ]
 
         def trap(cause: Optional[Union[TrapCause, IrqCause]], interrupt=False):
-            m.d.sync += [
-                active_unit.eq(0),
-                in_trap.eq(1),
-            ]
+            m.d.sync += active_unit.eq(0)
             with m.If(self.is_debug_mode):
-                m.next = "FETCH"
-                m.d.sync += self.running_state.halted.eq(1)
+                m.next = "HALTED"
                 m.d.comb += self.running_state_interface.error_on_progbuf_execution.eq(1)
             with m.Else():
                 m.next = "TRAP"
@@ -440,63 +424,64 @@ class MtkCpu(Elaboratable):
             | exception_unit.m_load_error
         )
 
-        # From specs:
-        # 'Upon entry to debug mode, dpc is updated with the virtual address of
-        # the next instruction to be executed.'
-        # 
-        # 'When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
 
+        just_resumed = self.just_resumed = Signal()
+        just_halted  = self.just_halted  = Signal()
 
         dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
-        pe = PriorityEncoder(width=2**dcsr.cause.shape().width)
-        single_step_finished = during_single_step & ~just_resumed
-
-        associate_cause_and_signal = {
-            DCSR_DM_Entry_Cause.EBREAK: ...,
-            DCSR_DM_Entry_Cause.HALTREQ: self.running_state_interface.haltreq,
-            DCSR_DM_Entry_Cause.STEP: single_step_finished,
-        }
-        for cause in range(pe.width):
-            if cause in associate_cause_and_signal:
-                comb += pe.i[cause].eq(1)
-        
-        halt_cause_latch = Signal.like(pe.o)
-        with m.If(~pe.none):
-            # some Debug Mode-entry source is active.
-            sync += [
-                halt_cause_latch.eq(pe.o)
-            ]
-        
+        dpc  = self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
         
         def fetch_with_new_pc(pc : Signal):
             m.next = "FETCH"
             m.d.sync += self.pc.eq(pc)
             m.d.sync += active_unit.eq(0)
 
+        # NOTE: it's not enough to lookup dcsr.step, as it might have just been written by Debug Module,
+        # and the core hasn't halted since that time - in such case we should not enter Debug Mode.
+        single_step_is_active = Signal()
+
+        with m.If(just_resumed):
+            sync += single_step_is_active.eq(dcsr.step)
+
+
         with m.FSM() as self.main_fsm:
-            with m.State("FETCH"): # TODO - rename to CHECK_HALTREQ
-                should_halt = cpu_state_if.haltreq
-                with m.If(should_halt):
+            with m.State("FETCH"): # TODO - rename to CHECK_ASYNC_HALTREQ
+
+                # We consider 'haltreq' DM-entry method to be the only 'asynchronous' one, that
+                # needs to be pending for some amount of cycles before being handled.
+                #
+                # Rest of causes we may consider as a synchronous ones, that can cause 'main_fsm' state
+                # to jump into HALTED state directly
+                with m.If(cpu_state_if.haltreq):
+                    sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.HALTREQ)
+                    m.next = "HALTED"
+                with m.Elif(single_step_is_active):
+                    # NOTE: 'Elif' is not accidental here - HALTREQ has higher priority than STEP.
+                    sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.STEP)
                     m.next = "HALTED"
                 with m.Else():
                     # maybe next time..
                     m.next = "FETCH2"
             with m.State("HALTED"):
-                # from specs:
-                # 
-                # 'When a debugger writes 1 to resumereq, each selected hart’s resume ack bit 
-                # is cleared and each selected, halted hart is sent a resume request.'
-                #
+                # From specs:
+                # 'Upon entry to debug mode, dpc is updated with the virtual address of
+                # the next instruction to be executed. (...) When taking this jump, pc is saved to dpc and cause is updated in dcsr.'
+                # NOTE:
+                # statement 'address *next* instruction' is vital here - since the HALTED is entered just before next instruction executed,
+                # the 'self.pc' is already updated, so we conform to the specs.
+                with m.If(just_halted):
+                    sync += dpc.eq(pc)
+                # From specs:
                 # 'When resuming, the hart’s PC is updated to the virtual address stored in dpc.
                 # A debugger may write dpc to change where the hart resumes.'
                 
                 with m.If(cpu_state_if.resumereq):
-                    m.next = "FETCH2"
                     sync += [
-                        self.pc.eq(
-                            self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
-                        )
+                        self.pc.eq(dpc),
+                        dcsr.cause.eq(0), # TODO - is that ok to zero it, or should we leave it as is?
                     ]
+                    m.next = "FETCH2"
+            
             with m.State("FETCH2"): # TODO - rename to FETCH.
                 """
                 TODO
@@ -591,10 +576,8 @@ class MtkCpu(Elaboratable):
                     # ebreak
                     with m.If(halt_on_ebreak):
                         # enter Debug Mode.
-                        m.next = "FETCH"
-                        sync += self.running_state.halted.eq(1)
-                        sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.EBREAK)  # TODO - move it to priority encoder defined above
-                        m.next = "FETCH"
+                        m.next = "HALTED"
+                        sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.EBREAK)
                     with m.Else():
                         # EBREAK description from Privileged specs:
                         # It generates a breakpoint exception and performs no other operation.
@@ -661,7 +644,6 @@ class MtkCpu(Elaboratable):
                 with m.Elif(active_unit.mret):
                     comb += exception_unit.m_mret.eq(1)
                     fetch_with_new_pc(exception_unit.mepc)
-                    sync += in_trap.eq(0)
                 with m.Else():
                     # all units not specified by default take 1 cycle
                     m.next = "WRITEBACK"
@@ -749,6 +731,43 @@ class MtkCpu(Elaboratable):
                 so that the debug bus couldn't take the bus ownership.
                 """
                 fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
+        
+        # TODO
+        # https://lists.riscv.org/g/tech-debug/message/576
+
+        comb += self.running_state.halted.eq(self.main_fsm.ongoing("HALTED"))
+
+        comb += [
+            just_resumed.eq(prev(self.running_state.halted) & ~self.running_state.halted),
+            just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
+        ]
+
+        # dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
+        # pe = PriorityEncoder(width=2**dcsr.cause.shape().width)
+        
+
+        # single_step_finished = Signal()
+
+        # # NOTE: word 'finished' is valid only when accessing the signal in FETCH
+        # sync += single_step_finished.eq(just_resumed & dcsr.step)
+
+        # associate_cause_and_signal = {
+        #     DCSR_DM_Entry_Cause.EBREAK: ...,
+        #     DCSR_DM_Entry_Cause.HALTREQ: self.running_state_interface.haltreq,
+        #     DCSR_DM_Entry_Cause.STEP: single_step_finished, # TODO - what if i stepped upon EBREAK?
+        # }
+        # for cause in range(pe.width):
+        #     if cause in associate_cause_and_signal:
+        #         comb += pe.i[cause].eq(1)
+        
+        # halt_cause_latch = Signal.like(pe.o)
+        # with m.If(~pe.none):
+        #     # some Debug Mode-entry source is active.
+        #     sync += [
+        #         halt_cause_latch.eq(pe.o)
+        #     ]
+
+
 
             
         if self.cpu_config.dev_mode and platform is not None:
