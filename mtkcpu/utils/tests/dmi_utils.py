@@ -604,19 +604,20 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
-def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
+def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor, wait_for_first_haltreq: bool = True):
     from mtkcpu.utils.tests.sim_tests import get_state_name
     def aux():
         yield Passive()
 
         cpu = dmi_monitor.cpu
         
-        # To avoid spam, wait till first haltreq debugger event.
-        while True:
-            haltreq = yield cpu.running_state_interface.haltreq
-            if haltreq:
-                break
-            yield
+        if wait_for_first_haltreq:
+            # To avoid spam, wait till first haltreq debugger event.
+            while True:
+                haltreq = yield cpu.running_state_interface.haltreq
+                if haltreq:
+                    break
+                yield
         
         log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
         prev_state = None

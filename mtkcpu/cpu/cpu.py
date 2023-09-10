@@ -467,7 +467,7 @@ class MtkCpu(Elaboratable):
                 # NOTE:
                 # statement 'address *next* instruction' is vital here - since the HALTED is entered just before next instruction executed,
                 # the 'self.pc' is already updated, so we conform to the specs.
-                with m.If(just_halted):
+                with m.If(~self.is_debug_mode & just_halted):
                     sync += dpc.eq(pc)
                 # From specs:
                 # 'When resuming, the hart’s PC is updated to the virtual address stored in dpc.

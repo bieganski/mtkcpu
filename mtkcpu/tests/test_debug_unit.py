@@ -590,11 +590,30 @@ def test_progbuf_gets_executed(
 
         if x != val:
             raise ValueError(f"expected x{gpr_reg_num} to contain {hex(val)}, got {hex(x)} instead")
+        
+        # make sure that after successfull PROGBUF execution, PC is properly restored.
+        
+        def resume_core_via_dmi():
+            yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
+            yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
+            yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
+            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
+            yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
+
+        yield from resume_core_via_dmi()
+            
+        pc = yield cpu.pc
+        min_incl, max_excl = PROGBUF_MMIO_ADDR, PROGBUF_MMIO_ADDR + 4 * PROGBUFSIZE
+        progbuf_pc_range = range(min_incl, max_excl, 4)
+        assert MEM_START_ADDR not in progbuf_pc_range
+        if pc in progbuf_pc_range:
+            raise ValueError(f"After successfull PROGBUF execution hart was sent resumereq, but the PC was not updated back! pc={hex(pc)}")
 
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
+        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor, wait_for_first_haltreq=False),
     ]
     
     for p in processes:
