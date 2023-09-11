@@ -112,10 +112,27 @@ def monitor_cpu_dm_if_error(dmi_monitor: DMI_Monitor):
     def aux():
         yield Passive()
 
+        cpu_if = dmi_monitor.cpu.running_state_interface
+        
         while True:
-            err = yield dmi_monitor.cpu.running_state_interface.error_sticky
-            if err:
-                raise ValueError("CpuRunningStateExternalInterface misuse detected!")
+            
+            related_signals = ["haltreq", "haltack", "resumereq", "resumeack"]
+
+            for x in related_signals:
+                val = yield getattr(cpu_if, x)
+                locals()[x] = val
+            
+            if (yield cpu_if.error_sticky):
+                lst = []
+                for name in related_signals:
+                    lst.append(f"{name}={locals()[name]}({locals()[f'prev_{name}']})")
+
+                msg = ", ".join(lst)
+                raise ValueError(f"CpuRunningStateExternalInterface misuse detected! {msg}")
+            
+            for x in related_signals:
+                locals()[f"prev_{x}"] = val
+                
             yield
     return aux
 
@@ -462,11 +479,14 @@ def DMSTATUS_read(dmi_monitor: DMI_Monitor):
     yield from few_ticks(100)
 
 
-def activate_DM_and_halt_via_dmi(dmi_monitor: DMI_Monitor):
-    # Only assert 'dmactive'.
+def activate_DM(dmi_monitor: DMI_Monitor):
     yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
     yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
     yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=20)
+
+def activate_DM_and_halt_via_dmi(dmi_monitor: DMI_Monitor):
+    # Only assert 'dmactive'.
+    yield from activate_DM(dmi_monitor=dmi_monitor)
 
     # Once 'dmactive' is hight, select hart 0 and halt it.
     yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
@@ -584,19 +604,20 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
-def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor):
+def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor, wait_for_first_haltreq: bool = True):
     from mtkcpu.utils.tests.sim_tests import get_state_name
     def aux():
         yield Passive()
 
         cpu = dmi_monitor.cpu
         
-        # To avoid spam, wait till first haltreq debugger event.
-        while True:
-            haltreq = yield cpu.running_state_interface.haltreq
-            if haltreq:
-                break
-            yield
+        if wait_for_first_haltreq:
+            # To avoid spam, wait till first haltreq debugger event.
+            while True:
+                haltreq = yield cpu.running_state_interface.haltreq
+                if haltreq:
+                    break
+                yield
         
         log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
         prev_state = None

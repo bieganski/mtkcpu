@@ -214,3 +214,12 @@ for k, v in DMI_reg_kinds.items():
     layout_obj = data.Layout.cast(v)
     if layout_obj.size != 32:
         raise ValueError(f"Width of '{k}' DMI register ({v}) is {layout_obj.size}, not 32!")
+
+
+class DCSR_DM_Entry_Cause(enum.IntEnum, shape=unsigned(3)):
+    EBREAK = 1
+    TRIGGER = 2
+    HALTREQ = 3
+    STEP = 4
+    RESETHALTREQ = 5
+    GROUP = 6
