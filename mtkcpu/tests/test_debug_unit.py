@@ -239,6 +239,12 @@ def test_dmi_try_read_not_implemented_register(
 def cpu_core_is_halted(dmi_monitor: DMI_Monitor):
     return (yield dmi_monitor.cpu.running_state.halted)
 
+def check_dmstatus_field_values(dmstatus: data.View, fields: Sequence[str], expected: int):
+    for x in fields:
+        val = yield getattr(dmstatus, x)
+        if val != expected:
+            raise ValueError(f"dmstatus.{x}=={val}, expected {expected}")
+
 
 @dmi_simulator
 def test_core_halt_resume(
@@ -284,17 +290,12 @@ def test_core_halt_resume(
         
         assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
         data_read_via_dmi = data.View(DMSTATUS_Layout, dmi_monitor.cur_dmi_read_data)
-        def check_dmstatus_field_values(fields: Sequence[str], expected: int):
-            for x in fields:
-                val = yield getattr(data_read_via_dmi, x)
-                if val != expected:
-                    raise ValueError(f"dmstatus.{x}=={val}, expected {expected}")
         
         halted_expected_low = ["allrunning", "anyrunning", "allresumeack", "anyresumeack"]
         halted_expected_high = ["allhalted", "anyhalted"]
         
-        yield from check_dmstatus_field_values(halted_expected_low, 0)
-        yield from check_dmstatus_field_values(halted_expected_high, 1)
+        yield from check_dmstatus_field_values(data_read_via_dmi, halted_expected_low, 0)
+        yield from check_dmstatus_field_values(data_read_via_dmi, halted_expected_high, 1)
         
         yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
         yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
@@ -303,8 +304,8 @@ def test_core_halt_resume(
         yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
 
         yield from DMSTATUS_read(dmi_monitor=dmi_monitor)
-        yield from check_dmstatus_field_values(halted_expected_low, 1)
-        yield from check_dmstatus_field_values(halted_expected_high, 0)
+        yield from check_dmstatus_field_values(data_read_via_dmi, halted_expected_low, 1)
+        yield from check_dmstatus_field_values(data_read_via_dmi, halted_expected_high, 0)
     
     processes = [
         main_process,
@@ -958,7 +959,20 @@ def test_single_step(
         mem_cfg = cpu.mem_config
         assert mtvec >= mem_cfg.mem_addr
         assert mtvec < mem_cfg.mem_addr + mem_cfg.mem_size_words * mem_cfg.word_size
-        yield from few_ticks(20) # go to trap (that consists of EBREAKs only)
+        yield from few_ticks(20) # halt core
+
+        yield from DMSTATUS_read(dmi_monitor=dmi_monitor)
+        assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
+        dmstatus = data.View(DMSTATUS_Layout, dmi_monitor.cur_dmi_read_data)
+
+        fields = {
+            "running": ["allrunning", "anyrunning"],
+            "resumeack": ["allresumeack", "anyresumeack"],
+            "halted": ["allhalted", "anyhalted"],
+        }
+        
+        yield from check_dmstatus_field_values(dmstatus, fields["running"] + fields["resumeack"], 0)
+        yield from check_dmstatus_field_values(dmstatus, fields["halted"], 1)
 
         assert (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
 
@@ -970,7 +984,16 @@ def test_single_step(
         for _ in range(20):
             halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
             if halted:
-                return # success! eventually hart halted - single step works as expected
+                break # success! eventually hart halted - single step works as expected
+
+        yield from few_ticks()
+        yield from DMSTATUS_read(dmi_monitor=dmi_monitor)
+        assert dmi_monitor.cur_dmi_read_data.shape() == unsigned(32)
+        dmstatus = data.View(DMSTATUS_Layout, dmi_monitor.cur_dmi_read_data)
+        
+        yield from check_dmstatus_field_values(dmstatus, fields["halted"] + fields["resumeack"], 1)
+        yield from check_dmstatus_field_values(dmstatus, fields["running"], 0)
+
 
     processes = [
         main_process,

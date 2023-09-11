@@ -269,10 +269,12 @@ class MtkCpu(Elaboratable):
         # from CPU haltreq/resumereq protocol, we cannot assert {halt|resume}ack on 'just_{halt|resum}ed', as it would
         # ACK not only for HALTREQ cause, but e.g. STEP or EBREAK as well.
         cpu_state_if = self.running_state_interface
-        cpu_state = self.running_state
-        comb += cpu_state_if.haltack.eq(cpu_state_if.haltreq & just_halted)
+        # TODO - for some unknown reason lines below breaks openOCD+GDB - we use two FSMs instead.
+        # TODO - it might be timing related, as currently timing checks during place&route fail - though
+        # the issue is fully reproducible build-to-build...
         # comb += cpu_state_if.haltack.eq(cpu_state_if.haltreq & just_halted)
-
+        # comb += cpu_state_if.resumeack.eq(cpu_state_if.resumereq & just_resumed)
+        cpu_state = self.running_state
         with m.FSM():
             with m.State("A"):
                 with m.If(cpu_state_if.haltreq):
@@ -281,8 +283,6 @@ class MtkCpu(Elaboratable):
                 with m.If(cpu_state.halted):
                     comb += cpu_state_if.haltack.eq(1)
                     m.next = "A"
-        
-        during_single_step = Signal()
         with m.FSM():
             with m.State("A"):
                 with m.If(cpu_state_if.resumereq):
@@ -290,13 +290,6 @@ class MtkCpu(Elaboratable):
             with m.State("B"):
                 with m.If(~cpu_state.halted):
                     comb += cpu_state_if.resumeack.eq(1)
-                    with m.If(~during_single_step):
-                        m.next = "A"
-                    with m.Else():
-                        m.next = "STEP"
-            with m.State("STEP"):
-                with m.If(cpu_state.halted):
-                    comb += cpu_state_if.haltack.eq(1)
                     m.next = "A"
 
         comb += [
