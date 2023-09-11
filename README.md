@@ -3,17 +3,25 @@
 
 # mtkCPU
 
-mtkCPU is as simple and as clear as possible implementation of RiscV ISA in [Amaranth HDL](https://github.com/amaranth-hdl/amaranth). There is one main file [cpu.py](mtkcpu/cpu/cpu.py), that is including specific [units](./mtkcpu/units) (i.a. decoder, adder etc.)
+`mtkCPU` is a **simple, clear, hackable and very inefficient** implementation of RiscV ISA in [Amaranth HDL](https://github.com/amaranth-hdl/amaranth). There is one main file [cpu.py](mtkcpu/cpu/cpu.py), that is including specific [units](./mtkcpu/units) (i.a. decoder, adder etc.)
 
 
 ### Features
 * implements basic ISA `rv32i`
 * `Machine` mode and `User` mode
 * traps and interrupts
-* CSR registers support
-* optional Virtual Memory System - allows for memory translation in `User` mode
-* Debug Module - can connect openOCD and GDB, compatible with [Risc-V Debug Spec](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf)
 * bsp (board specific files) generation - based on RTL code it generates proper `.h` and `.cc` files
+* CSR registers support
+* Virtual Memory System - allows for memory translation in `User` mode
+* **Debug Module - connect GDB to the CPU!**
+
+### Debug Module?
+Debug Module (DM) is a part of a CPU that exposes things like CPU registers, or memory bus via JTAG interface, so that one can **control the running CPU from the host PC**.
+
+
+**The DM implementation is compatible with [RISC-V Debug Specs 1.0](https://raw.githubusercontent.com/riscv/riscv-debug-spec/master/riscv-debug-stable.pdf)**, which means that you can use mainstream `openOCD` and `GDB` and it will Just Work™. 
+
+**NOTE:** There are more serious future plans going for `DM` implementation - we are going to move it to a separate repository and form as a **plugin that can be used with any other CPU implementation**. Read more about future plans [here](docs/future.md).
 
 ### Supported hardware
 The design was tested on [`ice40`](https://www.latticesemi.com/iCE40) FPGA on the [`iCEBreaker`](https://1bitsquared.com/products/icebreaker) board.
@@ -22,6 +30,13 @@ The design was tested on [`ice40`](https://www.latticesemi.com/iCE40) FPGA on th
 ### Quick Start
 See [Quick Start Page](doc/run.md) and find out how simple it is to deploy fully functional `mtkCPU` with one command!
 We provide one-liner that generates a bitstream with Block RAM memory initialized with a specified .elf's content!
+
+
+### And.. what if I want to try it with openOCD and GDB?
+
+So the [Quick start](#quick-start) is really quick to start with, but it "embeds" program embedded in bitstream and loaded during board programming. In order to change the program, full bitstream rebuild is required. 
+
+For flexibility Thanks to `Debug Module` implementation, `mtkcpu` gives you such possibility
 
 
 ### Test coverage
