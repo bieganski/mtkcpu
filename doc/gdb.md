@@ -1,5 +1,15 @@
 # openOCD and GDB bringup
 
+- [openOCD and GDB bringup](#openocd-and-gdb-bringup)
+  * [Prerequisites](#prerequisites)
+    + [Software](#software)
+    + [Hardware](#hardware)
+  * [Bitstream generation](#bitstream-generation)
+  * [Hardware wiring](#hardware-wiring)
+  * [openOCD](#openocd)
+  * [GDB](#gdb)
+
+
 
 ## Prerequisites
 
