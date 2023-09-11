@@ -765,8 +765,6 @@ class MtkCpu(Elaboratable):
         #         halt_cause_latch.eq(pe.o)
         #     ]
 
-
-
             
         if self.cpu_config.dev_mode and platform is not None:
             debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
