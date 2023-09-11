@@ -21,7 +21,7 @@ Debug Module (DM) is a part of a CPU that exposes things like CPU registers, or 
 
 **The DM implementation is compatible with [RISC-V Debug Specs 1.0](https://raw.githubusercontent.com/riscv/riscv-debug-spec/master/riscv-debug-stable.pdf)**, which means that you can use mainstream `openOCD` and `GDB` and it will Just Work™. 
 
-**NOTE:** There are more serious future plans going for `DM` implementation - we are going to move it to a separate repository and form as a **plugin that can be used with any other CPU implementation**. Read more about future plans [here](docs/future.md).
+**NOTE:** There are more serious future plans going for `DM` implementation - we are going to move it to a separate repository and form as a **plugin that can be used with any other CPU implementation**. Read more about future plans [here](doc/future.md).
 
 ### Supported hardware
 The design was tested on [`ice40`](https://www.latticesemi.com/iCE40) FPGA on the [`iCEBreaker`](https://1bitsquared.com/products/icebreaker) board.
@@ -34,9 +34,10 @@ We provide one-liner that generates a bitstream with Block RAM memory initialize
 
 ### And.. what if I want to try it with openOCD and GDB?
 
-So the [Quick start](#quick-start) is really quick to start with, but it "embeds" program embedded in bitstream and loaded during board programming. In order to change the program, full bitstream rebuild is required. 
+So the [Quick start](#quick-start) is really quick to start with, but it "embeds" program embedded in bitstream and loaded during board programming. In order to change the program, full bitstream 
+rebuild is required. 
 
-For flexibility Thanks to `Debug Module` implementation, `mtkcpu` gives you such possibility
+Due to the fact, that `mtkcpu` implements `Debug Module`, we may load the program using GDB+openOCD. Changing program that is running is possible during runtime, without bitstream reprogramming. Also, **you have full GDB debugging capabilities, like breakpoints and single-stepping**. See [openOCD+GDB Quick Start guide](./doc/gdb.md) for more details.
 
 
 ### Test coverage
