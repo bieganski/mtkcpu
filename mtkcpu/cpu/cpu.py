@@ -431,12 +431,12 @@ class MtkCpu(Elaboratable):
         )
 
         def fetch_with_new_pc(pc : Signal):
-            m.next = "FETCH"
+            m.next = "CHECK_SHOULD_HALT"
             m.d.sync += self.pc.eq(pc)
             m.d.sync += active_unit.eq(0)
 
         with m.FSM() as self.main_fsm:
-            with m.State("FETCH"): # TODO - rename to CHECK_ASYNC_HALTREQ
+            with m.State("CHECK_SHOULD_HALT"):
 
                 # We consider 'haltreq' DM-entry method to be the only 'asynchronous' one, that
                 # needs to be pending for some amount of cycles before being handled.
@@ -454,7 +454,7 @@ class MtkCpu(Elaboratable):
                     m.next = "HALTED"
                 with m.Else():
                     # maybe next time..
-                    m.next = "FETCH2"
+                    m.next = "FETCH"
             with m.State("HALTED"):
                 # From specs:
                 # 'Upon entry to debug mode, dpc is updated with the virtual address of
@@ -473,9 +473,9 @@ class MtkCpu(Elaboratable):
                         self.pc.eq(dpc),
                         # dcsr.cause.eq(0), # TODO - is that ok to zero it, or should we leave it as is?
                     ]
-                    m.next = "FETCH2"
+                    m.next = "FETCH"
             
-            with m.State("FETCH2"): # TODO - rename to FETCH.
+            with m.State("FETCH"):
                 """
                 TODO
                 Timer interrupts are disbled for now, as whole CPU halting mechainsm
@@ -715,7 +715,7 @@ class MtkCpu(Elaboratable):
 
                 with m.If(should_write_rd):
                     comb += reg_write_port.en.eq(True)
-                m.next = "FETCH"
+                m.next = "CHECK_SHOULD_HALT"
 
             with m.State("TRAP"):
                 """
