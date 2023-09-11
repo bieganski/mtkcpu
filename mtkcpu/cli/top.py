@@ -154,13 +154,13 @@ def main():
     
     args = parser.parse_args()
 
-    cpu_config = CPU_Config(
-        with_debug=(not args.no_dm),
-        dev_mode=args.dev_mode,
-        pc_reset_value=CODE_START_ADDR,
-    )
 
     if args.command == "build":
+        cpu_config = CPU_Config(
+            with_debug=(not args.no_dm),
+            dev_mode=args.dev_mode,
+            pc_reset_value=CODE_START_ADDR,
+        )
         build(
             elf_path=args.elf,
             do_program=args.program,
