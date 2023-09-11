@@ -451,6 +451,8 @@ class MtkCpu(Elaboratable):
                 # Rest of causes we may consider as a synchronous ones, that can cause 'main_fsm' state
                 # to jump into HALTED state directly
                 with m.If(cpu_state_if.haltreq):
+                    # NOTE: dcsr.cause is ambiguous, if it comes to priorities. See a comment (and a whole discussion):
+                    # https://lists.riscv.org/g/tech-debug/message/576
                     sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.HALTREQ)
                     m.next = "HALTED"
                 with m.Elif(single_step_is_active):
@@ -731,40 +733,14 @@ class MtkCpu(Elaboratable):
                 fetch_with_new_pc(Cat(Const(0, 2), self.csr_unit.mtvec.base))
         
         # TODO
-        # https://lists.riscv.org/g/tech-debug/message/576
-
+        # I would love to have all CPU running/halted manipulation in a single place,
+        # but pieces of code below require self.main_fsm to be already defined.
         comb += self.running_state.halted.eq(self.main_fsm.ongoing("HALTED"))
 
         comb += [
             just_resumed.eq(prev(self.running_state.halted) & ~self.running_state.halted),
             just_halted.eq(~prev(self.running_state.halted) &  self.running_state.halted),
         ]
-
-        # dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
-        # pe = PriorityEncoder(width=2**dcsr.cause.shape().width)
-        
-
-        # single_step_finished = Signal()
-
-        # # NOTE: word 'finished' is valid only when accessing the signal in FETCH
-        # sync += single_step_finished.eq(just_resumed & dcsr.step)
-
-        # associate_cause_and_signal = {
-        #     DCSR_DM_Entry_Cause.EBREAK: ...,
-        #     DCSR_DM_Entry_Cause.HALTREQ: self.running_state_interface.haltreq,
-        #     DCSR_DM_Entry_Cause.STEP: single_step_finished, # TODO - what if i stepped upon EBREAK?
-        # }
-        # for cause in range(pe.width):
-        #     if cause in associate_cause_and_signal:
-        #         comb += pe.i[cause].eq(1)
-        
-        # halt_cause_latch = Signal.like(pe.o)
-        # with m.If(~pe.none):
-        #     # some Debug Mode-entry source is active.
-        #     sync += [
-        #         halt_cause_latch.eq(pe.o)
-        #     ]
-
             
         if self.cpu_config.dev_mode and platform is not None:
             debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
