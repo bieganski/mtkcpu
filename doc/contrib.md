@@ -8,6 +8,7 @@ We are actively seeking for contributors, and are very happy with everyone inter
 ### Pull Requests that likely will be accepted
 
 * Bug fixes
+* Ports to common devkits/platforms, e.g. Artix or Spartan.
 * Anything that improves Debug Module - in terms of functionality, tests coverage, resource usage etc.
 * Anything that improves CPU resource usage
 * New CPU functionalities, that bring us closer for `mtkCPU` to run more and more software (e.g. Linux kernel), but are not resource-hungry. We target `ice40` platform for now.
@@ -19,4 +20,4 @@ We are actively seeking for contributors, and are very happy with everyone inter
 
 * New CPU functionalities, whose main benefit is to improve execution time, e.g. `div` op implementation - we don't mind the fact that the CPU is slow.
 
-* New supported hardware platforms, if there is no other maintainer able to verify PR due to lack of proper hardware. 
+* Support for (esoteric?) FPGA platforms, if there is no other maintainer able to verify PR due to lack of proper hardware.
