@@ -34,11 +34,17 @@ We provide one-liner that generates a bitstream with Block RAM memory initialize
 
 ### And.. what if I want to try it with openOCD and GDB?
 
+[Watch the GDB Demo on YouTube!](https://www.youtube.com/watch?v=Erod5Yj1vxA)
+
 So the [Quick start](#quick-start) is really quick to start with, but it "embeds" program embedded in bitstream and loaded during board programming. In order to change the program, full bitstream 
 rebuild is required. 
 
 Due to the fact, that `mtkcpu` implements `Debug Module`, we may load the program using GDB+openOCD. Changing program that is running is possible during runtime, without bitstream reprogramming. Also, **you have full GDB debugging capabilities, like breakpoints and single-stepping**. See [openOCD+GDB Quick Start guide](./doc/gdb.md) for more details.
 
+
+### Contributing
+
+mtkCPU is under active and keen development, and you are invited to become part of it! Just make sure first to read [the contribution page](./doc/contrib.md).
 
 ### Test coverage
 * pure-assembly unit tests (more than 80 tests present, each instruction covered)
