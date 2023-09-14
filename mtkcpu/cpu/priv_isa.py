@@ -2,12 +2,10 @@
 # https://github.com/minerva-cpu/minerva
 
 from enum import IntEnum, unique
-
-from mtkcpu.cpu.csr import *
-
-
 # TODO move me to proper location
 from typing import List, Tuple
+
+
 def get_layout_field_offset(layout : List[Tuple[str, int]], field : str):
     offset = 0
     for name, width, *_ in layout:
@@ -98,7 +96,7 @@ class IrqCause(IntEnum):
 # CSR layouts
 
 flat_layout = [
-    ("value", 32, CSRAccess.RW),
+    ("value", 32),
 ]
 
 
@@ -115,112 +113,112 @@ class MtvecModeBits(IntEnum):
     VECTORED = 1 # Asynchronous interrupts set pc to BASE+4×cause.
 
 misa_layout = [
-    ("extensions", 26, CSRAccess.RW),
-    ("zero",        4, CSRAccess.RO),
-    ("mxl",         2, CSRAccess.RW),
+    ("extensions", 26),
+    ("zero",        4),
+    ("mxl",         2),
 ]
 
 mstatus_layout = [
-    ("uie",   1, CSRAccess.RO), # User Interrupt Enable
-    ("sie",   1, CSRAccess.RO), # Supervisor Interrupt Enable
-    ("zero0", 1, CSRAccess.RO),
-    ("mie",   1, CSRAccess.RW), # Machine Interrupt Enable
-    ("upie",  1, CSRAccess.RO), # User Previous Interrupt Enable
-    ("spie",  1, CSRAccess.RO), # Supervisor Previous Interrupt Enable
-    ("zero1", 1, CSRAccess.RO),
-    ("mpie",  1, CSRAccess.RW), # Machine Previous Interrupt Enable
-    ("spp",   1, CSRAccess.RO), # Supervisor Previous Privilege
-    ("zero2", 2, CSRAccess.RO),
-    ("mpp",   2, CSRAccess.RW), # Machine Previous Privilege
-    ("fs",    2, CSRAccess.RO), # FPU Status
-    ("xs",    2, CSRAccess.RO), # user-mode eXtensions Status
-    ("mprv",  1, CSRAccess.RO), # Modify PRiVilege
-    ("sum",   1, CSRAccess.RO), # Supervisor User Memory access
-    ("mxr",   1, CSRAccess.RO), # Make eXecutable Readable
-    ("tvm",   1, CSRAccess.RO), # Trap Virtual Memory
-    ("tw",    1, CSRAccess.RO), # Timeout Wait
-    ("tsr",   1, CSRAccess.RO), # Trap SRET
-    ("zero3", 8, CSRAccess.RO),
-    ("sd",    1, CSRAccess.RO), # State Dirty (set if XS or FS are set to dirty)
+    ("uie",   1), # User Interrupt Enable
+    ("sie",   1), # Supervisor Interrupt Enable
+    ("zero0", 1),
+    ("mie",   1), # Machine Interrupt Enable
+    ("upie",  1), # User Previous Interrupt Enable
+    ("spie",  1), # Supervisor Previous Interrupt Enable
+    ("zero1", 1),
+    ("mpie",  1), # Machine Previous Interrupt Enable
+    ("spp",   1), # Supervisor Previous Privilege
+    ("zero2", 2),
+    ("mpp",   2), # Machine Previous Privilege
+    ("fs",    2), # FPU Status
+    ("xs",    2), # user-mode eXtensions Status
+    ("mprv",  1), # Modify PRiVilege
+    ("sum",   1), # Supervisor User Memory access
+    ("mxr",   1), # Make eXecutable Readable
+    ("tvm",   1), # Trap Virtual Memory
+    ("tw",    1), # Timeout Wait
+    ("tsr",   1), # Trap SRET
+    ("zero3", 8),
+    ("sd",    1), # State Dirty (set if XS or FS are set to dirty)
 ]
 
 mtvec_layout = [
-    ("mode",  2, CSRAccess.RW),
-    ("base", 30, CSRAccess.RW),
+    ("mode",  2),
+    ("base", 30),
 ]
 
 mip_layout = [
-    ("usip",   1, CSRAccess.RO),
-    ("ssip",   1, CSRAccess.RO),
-    ("zero0",  1, CSRAccess.RO),
-    ("msip",   1, CSRAccess.RW),
-    ("utip",   1, CSRAccess.RO),
-    ("stip",   1, CSRAccess.RO),
-    ("zero1",  1, CSRAccess.RO),
-    ("mtip",   1, CSRAccess.RW),
-    ("ueip",   1, CSRAccess.RO),
-    ("seip",   1, CSRAccess.RO),
-    ("zero2",  1, CSRAccess.RO),
-    ("meip",   1, CSRAccess.RW),
-    ("zero3", 20, CSRAccess.RO),
+    ("usip",   1),
+    ("ssip",   1),
+    ("zero0",  1),
+    ("msip",   1),
+    ("utip",   1),
+    ("stip",   1),
+    ("zero1",  1),
+    ("mtip",   1),
+    ("ueip",   1),
+    ("seip",   1),
+    ("zero2",  1),
+    ("meip",   1),
+    ("zero3", 20),
 ]
 
 
 mie_layout = [
-    ("usie",   1, CSRAccess.RO),
-    ("ssie",   1, CSRAccess.RO),
-    ("zero0",  1, CSRAccess.RO),
-    ("msie",   1, CSRAccess.RW),
-    ("utie",   1, CSRAccess.RO),
-    ("stie",   1, CSRAccess.RO),
-    ("zero1",  1, CSRAccess.RO),
-    ("mtie",   1, CSRAccess.RW),
-    ("ueie",   1, CSRAccess.RO),
-    ("seie",   1, CSRAccess.RO),
-    ("zero2",  1, CSRAccess.RO),
-    ("meie",   1, CSRAccess.RW),
-    ("zero3", 20, CSRAccess.RO),
+    ("usie",   1),
+    ("ssie",   1),
+    ("zero0",  1),
+    ("msie",   1),
+    ("utie",   1),
+    ("stie",   1),
+    ("zero1",  1),
+    ("mtie",   1),
+    ("ueie",   1),
+    ("seie",   1),
+    ("zero2",  1),
+    ("meie",   1),
+    ("zero3", 20),
 ]
 
 
 mcause_layout = [
-    ("ecode",    31, CSRAccess.RW),
-    ("interrupt", 1, CSRAccess.RW),
+    ("ecode",    31),
+    ("interrupt", 1),
 ]
 
 
 dcsr_layout = [
-    ("prv",        2, CSRAccess.RW),
-    ("step",       1, CSRAccess.RW),
-    ("nmip",       1, CSRAccess.RO),
-    ("mprven",     1, CSRAccess.RW),
-    ("v",          1, CSRAccess.RW),
-    ("cause",      3, CSRAccess.RO),
-    ("stoptime",   1, CSRAccess.RW),
-    ("stopcount",  1, CSRAccess.RW),
-    ("stepie",     1, CSRAccess.RW),
-    ("ebreaku",    1, CSRAccess.RW),
-    ("ebreaks",    1, CSRAccess.RW),
-    ("zero1",      1, CSRAccess.RO),
-    ("ebreakm",    1, CSRAccess.RW),
-    ("ebreakvu",   1, CSRAccess.RW),
-    ("ebreakvs",   1, CSRAccess.RW),
-    ("zero2",     10, CSRAccess.RO),
-    ("debugver",   4, CSRAccess.RO), 
+    ("prv",        2),
+    ("step",       1),
+    ("nmip",       1),
+    ("mprven",     1),
+    ("v",          1),
+    ("cause",      3),
+    ("stoptime",   1),
+    ("stopcount",  1),
+    ("stepie",     1),
+    ("ebreaku",    1),
+    ("ebreaks",    1),
+    ("zero1",      1),
+    ("ebreakm",    1),
+    ("ebreakvu",   1),
+    ("ebreakvs",   1),
+    ("zero2",     10),
+    ("debugver",   4), 
 ]
 
 
 tdata1_layout = [
-    ("data",  27, CSRAccess.RW),
-    ("dmode",  1, CSRAccess.RW),
-    ("type",   4, CSRAccess.RW),
+    ("data",  27),
+    ("dmode",  1),
+    ("type",   4),
 ]
 
 
 satp_layout = [
-    ("ppn", 22, CSRAccess.RW),
-    ("asid", 9, CSRAccess.RW),
-    ("mode", 1, CSRAccess.RW),
+    ("ppn", 22),
+    ("asid", 9),
+    ("mode", 1),
 ]
 
 pte_layout = [

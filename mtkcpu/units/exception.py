@@ -4,12 +4,7 @@
 from amaranth import *
 from amaranth.lib.coding import PriorityEncoder
 
-from mtkcpu.cpu.csr import *
 from mtkcpu.cpu.priv_isa import *
-
-
-__all__ = ["ExceptionUnit"]
-
 from mtkcpu.units.csr import CsrUnit
 
 class ExceptionUnit(Elaboratable):
