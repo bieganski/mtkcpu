@@ -87,12 +87,6 @@ class CsrUnit(Elaboratable):
         self.in_debug_mode = in_debug_mode
         self.with_virtual_memory = with_virtual_memory
 
-        # Debug
-        self.ONREAD = Signal()
-        self.ONWRITE = Signal()
-        self.ONSET = Signal()
-        self.ONCLEAR = Signal()
-        
         # Output signals.
         self.rd_val = Signal(32)
         self.vld = Signal()
@@ -111,7 +105,7 @@ class CsrUnit(Elaboratable):
         func3_latch = Signal.like(self.func3)
         csr_idx_latch = Signal.like(self.csr_idx)
         
-        with m.FSM() as fsm:
+        with m.FSM():
             with m.State("IDLE"):
                 with m.If(self.en):
                     with m.If(~self.in_machine_mode):

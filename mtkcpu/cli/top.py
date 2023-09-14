@@ -129,7 +129,9 @@ def generate_bsp():
         dev_mode=False,
         with_debug=True,
         pc_reset_value=0xdeadbeef,
+        with_virtual_memory=False,
     )
+    
     cpu = get_board_cpu(elf_path=None, cpu_config=cpu_config)
     platform = get_platform()
     dummy_elaborate(cpu, platform)

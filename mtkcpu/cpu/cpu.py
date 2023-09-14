@@ -262,8 +262,8 @@ class MtkCpu(Elaboratable):
         single_step_is_active = Signal()
         just_resumed = self.just_resumed = Signal()
         just_halted  = self.just_halted  = Signal()
-        dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
-        dpc  = self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
+        dcsr = self.csr_unit.dcsr
+        dpc  = self.csr_unit.dpc
 
         with m.If(just_resumed):
             sync += single_step_is_active.eq(dcsr.step)

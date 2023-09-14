@@ -1,10 +1,43 @@
 from typing import Dict
 
-from amaranth import Signal, Module
+from amaranth import Signal, Module, Elaboratable
 from amaranth.hdl.rec import Record
 
 from mtkcpu.cpu.priv_isa import *
 from mtkcpu.utils.common import CODE_START_ADDR
+
+
+
+class Controller():
+    def __init__(self) -> None:
+        self.command_finished   = Signal()
+
+
+
+
+class CSR_Write_Handler(Elaboratable):
+    def __init__(self, command_finished: Signal):
+        # -- Input signals
+        # 
+        # Needs to be deasserted in cycle following 'controller.cmd_finished' asserted.
+        self.active = Signal()
+        self.write_value = Signal(32)
+
+    def elaborate(self):
+        raise NotImplementedError()
+    
+
+
+
+
+
+
+
+
+
+
+
+
 
 class RegisterResetValue:
     def __init__(self, layout) -> None:
