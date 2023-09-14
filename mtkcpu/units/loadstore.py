@@ -401,7 +401,8 @@ class MemoryArbiter(Elaboratable, AddressManager):
             with m.State("IDLE"):
                 with m.If(start_translation):
                     sync += sv32_i.eq(1)
-                    sync += root_ppn.eq(self.csr_unit.satp.ppn)
+                    if self.with_addr_translation:
+                        sync += root_ppn.eq(self.csr_unit.satp.ppn)
                     m.next = "TRANSLATE"
             with m.State("TRANSLATE"):
                 vpn = self.vpn = Signal(10)

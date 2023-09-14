@@ -43,6 +43,7 @@ def create_simulator() -> DebugUnitSimulationContext:
             with_debug=True,
             dev_mode=False,
             pc_reset_value=MEM_START_ADDR,
+            with_virtual_memory=False,
         )
     )
 
