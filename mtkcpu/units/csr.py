@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Union
+from typing import Sequence
 
 from amaranth import Signal, Elaboratable, Module
 
@@ -18,57 +18,48 @@ class ControllerInterface():
     def __init__(self):
         self.handler_done = Signal()
 
+from mtkcpu.units.csr_handlers import CSR_Write_Handler
+
 
 class CsrUnit(Elaboratable):
-    def enabled_csr_regs(self, controller : ControllerInterface):
-        regs : set[RegisterCSR] = {
-            MISA(),
-            MTVEC(),
-            MTVAL(),
-            MEPC(),
-            DPC(),
-            MSCRATCH(),
-            MHARTID(),
-            MCAUSE(),
-            MTIME(),
-            MTIMECMP(),
-            MSTATUS(),
-            MIE(),
-            MIP(),
-            DCSR(),
+    @staticmethod
+    def enabled_csr_regs(with_virtual_memory: bool) -> Sequence[type]:
+        regs = {
+            MISA,
+            MTVEC,
+            MTVAL,
+            MEPC,
+            DPC,
+            MSCRATCH,
+            MHARTID,
+            MCAUSE,
+            MTIME,
+            MTIMECMP,
+            MSTATUS,
+            MIE,
+            MIP,
+            DCSR,
         }
-
-        if self.with_virtual_memory:
-            regs.add(SATP())
-        
-        def sanity_check():
-            for r in regs:
-                r.associate_with_csr_unit(controller, self)
-            for r in regs:
-                assert len(r.rec.r) == 32
-        sanity_check()
+        if with_virtual_memory:
+            regs.add(SATP)
         return regs
 
-    def reg_by_addr(self, addr : Union[CSRIndex, CSRNonStandardIndex]) -> RegisterCSR:
-        all = [x for x in self.csr_regs if x.csr_idx == addr]
-        if not all:
-            raise ValueError(f"CSR with address {hex(addr)} not defined!")
-        return all[0]
+    def reg_by_addr(self, addr : CSRNonStandardIndex | CSRIndex) -> CSR_Write_Handler:
+        matches = [x for x in self.csr_regs if x.addr == addr]
+        if len(matches) != 1:
+            raise ValueError(f"Expected to find a single CSR with address {hex(addr)}, got {matches} instead!")
+        return matches[0]
 
     # simplify direct access, e.g. csr_unit.mtvec
-    def __getattr__(self, name):
-        for reg in self.csr_regs:
-            if reg.name == name:
-                if isinstance(reg, WriteOnlyRegisterCSR):
-                    return reg.rec.w
-                elif isinstance(reg, ReadOnlyRegisterCSR):
-                    return reg.rec.r
-                elif isinstance(reg, RegisterCSR):
-                    return reg.rec.r
-                else:
-                    assert False
-        raise ValueError(f"CSRUnit: Not found register named {name}")
-
+    def __getattr__(self, name: str) -> data.View:
+        def get_name(handler: CSR_Write_Handler) -> str:
+            raise ValueError(dir(handler))
+        names = [get_name(x) for x in self.csr_regs]
+        matches = [x for x in names if x.lower() == name.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"Expected to find a single CSR named {name}, got {matches} instead!")
+        match = matches[0]
+        return data.View(match.layout, match.my_reg_latch)
 
     def __init__(self,
                  in_machine_mode : Signal,
@@ -93,7 +84,7 @@ class CsrUnit(Elaboratable):
         self.illegal_insn = Signal()
 
         self.controller = ControllerInterface()
-        self.csr_regs = self.enabled_csr_regs(self.controller)
+        self.csr_regs = [x() for x in __class__.enabled_csr_regs()]
     
     def elaborate(self, platform):
         m = self.m = Module()
