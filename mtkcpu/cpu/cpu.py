@@ -101,6 +101,9 @@ class CPU_Config:
     # Address of first instruction to be executed after CPU reset.
     pc_reset_value: int
 
+    # Enable SATP register and enable address translatation in USER mode.
+    with_virtual_memory: bool
+
 class MtkCpu(Elaboratable):
     def __init__(
             self,
@@ -180,6 +183,7 @@ class MtkCpu(Elaboratable):
         csr_unit = self.csr_unit = m.submodules.csr_unit = CsrUnit(
             in_machine_mode=self.current_priv_mode==PrivModeBits.MACHINE,
             in_debug_mode=self.is_debug_mode,
+            with_virtual_memory=self.cpu_config.with_virtual_memory,
         )
 
         halt_on_ebreak = self.halt_on_ebreak = Signal()
@@ -191,7 +195,7 @@ class MtkCpu(Elaboratable):
         )
         arbiter = self.arbiter = m.submodules.arbiter = MemoryArbiter(
             mem_config=self.mem_config, 
-            with_addr_translation=True, 
+            with_addr_translation=self.cpu_config.with_virtual_memory,
             csr_unit=csr_unit, # SATP register
             exception_unit=exception_unit, # current privilege mode
         )
