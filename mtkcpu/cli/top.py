@@ -146,6 +146,7 @@ def main():
     build_p = sp.add_parser("build", help="Build the IceBreaker bitstream containing full SoC.")
     build_p.add_argument("--no_dm", action="store_true")
     build_p.add_argument("--dev_mode", action="store_true")
+    build_p.add_argument("--with_virtual_memory", action="store_true")
     build_p.add_argument("-e", "--elf", type=Path, help="Path to an .elf file to initialize Block RAM with.")
     build_p.add_argument("-p", "--program", action="store_true")
     
@@ -160,6 +161,7 @@ def main():
             with_debug=(not args.no_dm),
             dev_mode=args.dev_mode,
             pc_reset_value=CODE_START_ADDR,
+            with_virtual_memory=args.with_virtual_memory,
         )
         build(
             elf_path=args.elf,

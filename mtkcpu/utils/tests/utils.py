@@ -103,6 +103,7 @@ def reg_test(
             dev_mode=False,
             with_debug=False,
             pc_reset_value=CODE_START_ADDR,
+            with_virtual_memory=True,
         )
     )
 

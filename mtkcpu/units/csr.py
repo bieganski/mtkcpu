@@ -36,8 +36,10 @@ class CsrUnit(Elaboratable):
             MIE(),
             MIP(),
             DCSR(),
-            SATP(),
         }
+
+        if self.with_virtual_memory:
+            regs.add(SATP())
         
         def sanity_check():
             for r in regs:
@@ -68,7 +70,11 @@ class CsrUnit(Elaboratable):
         raise ValueError(f"CSRUnit: Not found register named {name}")
 
 
-    def __init__(self, in_machine_mode : Signal, in_debug_mode : Signal):
+    def __init__(self,
+                 in_machine_mode : Signal,
+                 in_debug_mode : Signal,
+                 with_virtual_memory: bool,
+                ):
         # Input signals.
         self.csr_idx = Signal(CSRIndex)
         assert self.csr_idx.width == 12
@@ -79,6 +85,7 @@ class CsrUnit(Elaboratable):
         self.en = Signal()
         self.in_machine_mode = in_machine_mode
         self.in_debug_mode = in_debug_mode
+        self.with_virtual_memory = with_virtual_memory
 
         # Debug
         self.ONREAD = Signal()
