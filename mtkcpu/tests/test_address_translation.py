@@ -4,8 +4,18 @@ from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
 
-from mtkcpu.cpu.priv_isa import PrivModeBits, pte_layout, satp_layout
-from mtkcpu.units.csr.csr import RegisterResetValue
+# from mtkcpu.cpu.priv_isa import PrivModeBits, pte_layout, satp_layout
+
+
+from mtkcpu.units.csr.csr import SATP_Layout
+from amaranth import *
+from amaranth.lib import data
+from inspect import getmembers
+from pprint import pformat
+l = lambda x: pformat(getmembers(x))
+x = SATP_Layout(Signal(32))
+# raise ValueError((x._View__layout)._fields)
+# from mtkcpu.units.csr.csr import RegisterResetValue
 
 # page tables phys. addresses must be aligned to 4K == 0x1000 bytes
 root_pt_offset = 0x2000
@@ -14,22 +24,31 @@ leaf_pt_offset = root_pt_offset + 0x1000
 root_pt_addr = MEM_START_ADDR + root_pt_offset
 leaf_pt_addr = MEM_START_ADDR + leaf_pt_offset
 
-def get_flat_value_generator(layout):
-    return lambda fields: RegisterResetValue.calc_reset_value(fields, layout)
+# def get_flat_value_generator(layout):
+#     return lambda fields: RegisterResetValue.calc_reset_value(fields, layout)
 
-def get_field_values_generator(layout):
-    return lambda value: RegisterResetValue.value_to_fields(value, layout)
+# def get_field_values_generator(layout):
+#     return lambda value: RegisterResetValue.value_to_fields(value, layout)
 
-satp_get_flat_value = get_flat_value_generator(satp_layout)
-satp_get_field_values = get_field_values_generator(satp_layout)
+# satp_get_flat_value = get_flat_value_generator(satp_layout)
+# satp_get_field_values = get_field_values_generator(satp_layout)
 
-pte_get_flat_value = get_flat_value_generator(pte_layout)
-pte_get_fields_values = get_field_values_generator(pte_layout)
+# pte_get_flat_value = get_flat_value_generator(pte_layout)
+# pte_get_fields_values = get_field_values_generator(pte_layout)
 
-satp_value = satp_get_flat_value({
+# satp_value = satp_get_flat_value({
+#     "mode": 1, # enable address translation in user mode
+#     "ppn": root_pt_addr >> 12,
+# })
+
+satp_value = SATP_Layout.const({
     "mode": 1, # enable address translation in user mode
     "ppn": root_pt_addr >> 12,
-})
+}).value
+
+from mtkcpu.units.csr.types import MSTATUS_Layout
+raise ValueError(dir(MSTATUS_Layout(Signal(32))))
+mpp_offset_in_MSTATUS = ...
 
 virt_addr_high = 0x111
 virt_addr_low = 0x222

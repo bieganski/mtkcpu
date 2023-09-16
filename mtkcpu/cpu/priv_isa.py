@@ -111,3 +111,24 @@ virt_addr_layout = [
     ("vpn0", 10),
     ("vpn1", 10),
 ]
+
+from amaranth.lib import data
+from amaranth import unsigned
+
+class PTE_Layout(data.Struct):
+    v       : unsigned(1)
+    r       : unsigned(1)
+    w       : unsigned(1)
+    x       : unsigned(1)
+    u       : unsigned(1)
+    g       : unsigned(1)
+    a       : unsigned(1)
+    d       : unsigned(1)
+    rsw     : unsigned(2)
+    ppn0    : unsigned(10)
+    ppn1    : unsigned(12)
+
+class Virt_Addr_Layout(data.Struct):
+    page_offset : unsigned(12)
+    vpn0        : unsigned(10)
+    vpn1        : unsigned(10)
