@@ -21,6 +21,7 @@ satp_value = SATP_Layout.const({
 
 pte_const = lambda fields: PTE_Layout.const(fields).value
 
+# https://github.com/amaranth-lang/amaranth/issues/786
 mpp_offset_in_MSTATUS = MSTATUS_Layout(Signal(32))._View__layout._fields["mpp"].offset
 
 virt_addr_high = 0x111

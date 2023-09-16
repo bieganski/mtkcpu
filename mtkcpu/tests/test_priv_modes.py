@@ -3,10 +3,14 @@ from mtkcpu.utils.common import CODE_START_ADDR
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
-
 from mtkcpu.units.csr.csr_handlers import MISA
-
+from mtkcpu.units.csr.types import MSTATUS_Layout
 from mtkcpu.cpu.priv_isa import PrivModeBits
+
+from amaranth import Signal
+
+# https://github.com/amaranth-lang/amaranth/issues/786
+mpp_offset_in_MSTATUS = MSTATUS_Layout(Signal(32))._View__layout._fields["mpp"].offset
 
 PRIV_TESTS = [
     MemTestCase(
@@ -19,7 +23,7 @@ PRIV_TESTS = [
                 csrw mepc, x5
                 // set 'previous priv.' mstatus's field to user mode 
                 li x4, {PrivModeBits.USER}
-                slli x4, x4, {get_layout_field_offset(mstatus_layout, 'mpp')}
+                slli x4, x4, {mpp_offset_in_MSTATUS}
                 csrw mstatus, x4
                 // set machine mode trap
                 la x4, mmode_trap
@@ -35,7 +39,7 @@ PRIV_TESTS = [
                 csrr x3, mstatus
         """,
         out_reg=3,
-        out_val=lambda x : x & (1 << get_layout_field_offset(mstatus_layout, 'mpp')) == PrivModeBits.USER,
+        out_val=lambda x : x & (1 << mpp_offset_in_MSTATUS) == PrivModeBits.USER,
         timeout=150,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -51,7 +55,7 @@ PRIV_TESTS = [
                 csrw mepc, x5
                 // set 'previous priv.' mstatus's field to user mode 
                 li x4, {PrivModeBits.USER}
-                slli x4, x4, {get_layout_field_offset(mstatus_layout, 'mpp')}
+                slli x4, x4, {mpp_offset_in_MSTATUS}
                 csrw mstatus, x4
                 // set machine mode trap
                 la x4, mmode_trap
