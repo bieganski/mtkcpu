@@ -3,18 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
-from typing import Optional, OrderedDict, Tuple
+from typing import Optional, OrderedDict, Tuple, Callable, Generator
 import pytest
 from pathlib import Path
 import subprocess
 from tempfile import NamedTemporaryFile
+import inspect
 
 from amaranth.hdl.ast import Signal, Const
 from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
-from amaranth.sim.core import Active, Passive
-from amaranth.hdl import rec
-from amaranth import Module, Cat, Signal
+from amaranth.sim.core import Passive
+from amaranth import Signal
+from amaranth.sim._pycoro import PyCoroProcess
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -35,6 +36,7 @@ from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
 from mtkcpu.cpu.cpu import CPU_Config
+
 
 logging = get_color_logging_object()
 
@@ -738,70 +740,169 @@ def assert_jtag_test(
         get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
         monitor_abstractauto(dmi_monitor=dmi_monitor),
-        # bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
+        bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
     ]
 
-    def timeouted(fn, timeout: int):
+    def tck_timeouted(generator_fn: Callable, timeout: int):
         def aux():
-            for i, x in enumerate(fn):
+            i, prev_tck = 0, 0
+            generator = generator_fn()
+            fn_name = str(generator) if not hasattr(generator, "__name__") else generator.__name__
+            
+
+            response = None
+            # for _ in range(10):
+            while True:
+                try:
+                    command = generator.send(response)
+                    response = yield command
+                    if isinstance(response, int) and response > 0:
+                        print(command, response)
+                except StopIteration:
+                    return # success!
+                
+                # Detect TCK rising edge.
+                tck = yield cpu.debug.jtag.tck
+                if not(prev_tck) and tck:
+                    i += 1
+                prev_tck = tck
+
                 if i == timeout:
-                    fn_name = fn if not hasattr(fn, "__name__") else fn.__name__
-                    raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for function '{fn_name}'!")
-                yield x
+                    raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for Checkpoint Checker '{fn_name}'!")
+
+
+                # print(input, output)
+            raise ValueError("OK")
+            for ii, x in enumerate(generator):
+                # if ii == 0:
+                #     generator.send(None)
+                result = yield x
+                if isinstance(result, int) and result > 0:
+                    raise ValueError("AAA")
+                print(x, result)
+                # if "slice" in str(result):
+                #     generator.send(result)
+                generator.send(result)
+
+                if ii == 3:
+                    next(generator)
+                    result = yield x
+                    print(x, result)
+                    raise ValueError("done")
+            
+                # Detect TCK rising edge.
+                tck = yield cpu.debug.jtag.tck
+                if not(prev_tck) and tck:
+                    i += 1
+                prev_tck = tck
+
+                if i == timeout:
+                    raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for Checkpoint Checker '{fn_name}'!")
+                
+                # y = yield x
+                # generator.send(y)
+            raise ValueError("koniec kurwa")
         return aux
     
     def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list):
+        """
+        What are sausages made of? Code of that function answers this questions.
+        
+        
+        NOTE: The 'active_processes' is a mutable list, gradually modified by simulator engine.
+        """
+
+        
         def aux():
+            yield Passive()
+
+            # NOTE: to determine 'current' we use caller frame, which is bad, as it limits our code reusability.
+            current : Callable = inspect.currentframe().f_back.f_locals["process"]
+
+            initial_checkpoint_checkers_names = []
             while True:
-                active_processes_code_objs = [x.run.__code__ for x in active_processes]
-                ckpt_processes_code_objs   = [x.__code__     for x in ckpt_processes]
-                # raise ValueError([x.__name__ for x in fns])
-                if all([x not in active_processes_code_objs for x in ckpt_processes_code_objs]):
-                    from pprint import pformat
-                    from inspect import getmembers
-                    l = lambda x: pformat(getmembers(x))
-                    print("NAJS!", [type(x) for x in active_processes])
-                    # raise ValueError(f"OK {l(fns.pop())}")
-                    return # success! all ckpt checker finished
-                print("not yet..")
+                first_iteration = (len(initial_checkpoint_checkers_names) == 0)
+                
+                user_coroutines_still_running = [x for x in active_processes if isinstance(x, PyCoroProcess)]
+                user_processes_still_running = [x.coroutine.gi_frame.f_locals["process"] for x in user_coroutines_still_running]
+
+                supervisor_matches = [x for x in user_processes_still_running if x == current]
+
+                assert len(supervisor_matches) == 1, "internal error: bad supervisor detection"
+                checkpoint_checkers = [x for x in user_processes_still_running if x not in supervisor_matches]
+
+                # names are formed like this: check_abc.<locals>.aux
+                # TODO heuristics: if <locals> present, take word just before <locals>, otherwise take full name.
+                checkpoint_checkers_names = [x.__qualname__ for x in checkpoint_checkers]
+
+                if first_iteration:
+                    if len(checkpoint_checkers_names) == 0:
+                        raise ValueError("Supervisor process is running, but no Checkpoint Checkers were run!")
+
+                    from copy import copy
+                    initial_checkpoint_checkers_names = copy(checkpoint_checkers_names)
+                else:
+                    if len(checkpoint_checkers_names) == 0:
+                        # all Checkpoint Checker processes finished - success!
+                        print("~~~ SUCCESS!")
+                        return
+                
+                # from pprint import pformat
+                # print("---------------------------------------")
+                # print(pformat(initial_checkpoint_checkers_names))
+                # print("---------------------------------------")
+                # print(pformat(checkpoint_checkers_names))
+                # print("---------------------------------------")
+
                 yield
         return aux
-    
+
+    def dmcontrol_written(dmi_monitor: DMI_Monitor):
+        def aux():
+            yield Passive()
+            while True:
+                cmd = yield dmi_monitor.cur_dmi_bus.op
+                if cmd == DMIOp.WRITE:
+                    return # success!
+                from amaranth.sim import Tick
+                yield Tick()
+        return aux
+
     if with_checkpoints:
-        ckpt_processes = bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
-        pass
-        # raise ValueError("with_checkpts")
+        ckpt_processes = [
+            tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
+        ]
         processes += ckpt_processes
-        
-        # [
-        #     timeouted(dmcontrol_written(dmi_monitor), 10)
-        # ]
 
-    
-        
-    
-
-    # def dmcontrol_written(dmi_monitor: DMI_Monitor):
-    #     yield Passive()
-    #     while True:
-    #         cmd = yield dmi_monitor.cur_COMMAND.control.write
-    #         if cmd:
-    #             raise ValueError("OK")
-
-
-    for p in processes:
-        sim.add_sync_process(p)
-    
-    if with_checkpoints:
+        # NOTE: we can use 'sim._engine._processes' *before* all 'add_sync_process', as it handles list reference anyway.
         sim.add_sync_process(ckpt_processses_supervisor(
             active_processes=sim._engine._processes,
             ckpt_processes=ckpt_processes)
         )
 
+    for p in processes:
+        sim.add_sync_process(p)
+    
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
-        while sim.advance():
-            pass
-        # sim.run()
+        sim.run()
+
+if __name__ == "__main__":
+    openocd_executable = get_git_root() / ".." / "riscv-openocd" / "src" / "openocd"
+
+    gdb_executable = get_git_root() / "xpack-riscv-none-embed-gcc-8.3.0-2.3" / "bin" / "riscv-none-embed-gdb"
+
+    for x in openocd_executable, gdb_executable:
+        if not x.exists():
+            raise ValueError(f"{x} executable does not exists!")
+    
+    assert_jtag_test(
+        timeout_cycles=1000, # TODO timeout not used
+        with_checkpoints=True,
+        openocd_executable=openocd_executable,
+        gdb_executable=gdb_executable,
+    )
+
+    exit(0)
 
 @parametrized
 def component_testbench(f, cases: list[ComponentTestbenchCase]):
