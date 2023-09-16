@@ -126,7 +126,7 @@ from typing import List, Tuple, Any
 
 @dataclass(frozen=True)
 class Checkpoint:
-    deadline : int # must occur before 'deadline' CPU clock cycle
+    timeout_tck : int
     signals : List[Tuple[Signal, Any]] # all sig==Value must hold
 
 
