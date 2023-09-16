@@ -1,11 +1,11 @@
-from typing import Callable, Dict, List, Union
+from typing import Sequence
 
 from amaranth import Signal, Elaboratable, Module
 
 from mtkcpu.utils.common import matcher
 from mtkcpu.cpu.isa import Funct3, InstrType
 from mtkcpu.cpu.priv_isa import *
-from mtkcpu.units.csr_handlers import *
+from mtkcpu.units.csr.csr_handlers import *
 
 
 def _is(x, ys):
@@ -13,62 +13,45 @@ def _is(x, ys):
     from operator import or_
     return reduce(or_, [x == y for y in ys])
 
-# RegisterCSR handlers do communicate with CsrUnit via signals defined here.
-class ControllerInterface():
-    def __init__(self):
-        self.handler_done = Signal()
-
 
 class CsrUnit(Elaboratable):
-    def enabled_csr_regs(self, controller : ControllerInterface):
-        regs : set[RegisterCSR] = {
-            MISA(),
-            MTVEC(),
-            MTVAL(),
-            MEPC(),
-            DPC(),
-            MSCRATCH(),
-            MHARTID(),
-            MCAUSE(),
-            MTIME(),
-            MTIMECMP(),
-            MSTATUS(),
-            MIE(),
-            MIP(),
-            DCSR(),
+    @staticmethod
+    def enabled_csr_regs(with_virtual_memory: bool) -> Sequence[type]:
+        regs = {
+            MISA,
+            MTVEC,
+            MTVAL,
+            MEPC,
+            DPC,
+            MSCRATCH,
+            MHARTID,
+            MCAUSE,
+            MTIME,
+            MTIMECMP,
+            MSTATUS,
+            MIE,
+            MIP,
+            DCSR,
         }
-
-        if self.with_virtual_memory:
-            regs.add(SATP())
-        
-        def sanity_check():
-            for r in regs:
-                r.associate_with_csr_unit(controller, self)
-            for r in regs:
-                assert len(r.rec.r) == 32
-        sanity_check()
+        if with_virtual_memory:
+            regs.add(SATP)
         return regs
 
-    def reg_by_addr(self, addr : Union[CSRIndex, CSRNonStandardIndex]) -> RegisterCSR:
-        all = [x for x in self.csr_regs if x.csr_idx == addr]
-        if not all:
-            raise ValueError(f"CSR with address {hex(addr)} not defined!")
-        return all[0]
+    def reg_by_addr(self, addr : CSRNonStandardIndex | CSRIndex) -> CSR_Write_Handler:
+        matches = [x for x in self.csr_regs if x.addr == addr]
+        if len(matches) != 1:
+            raise ValueError(f"Expected to find a single CSR with address {hex(addr)}, got {matches} instead!")
+        return matches[0]
 
     # simplify direct access, e.g. csr_unit.mtvec
-    def __getattr__(self, name):
-        for reg in self.csr_regs:
-            if reg.name == name:
-                if isinstance(reg, WriteOnlyRegisterCSR):
-                    return reg.rec.w
-                elif isinstance(reg, ReadOnlyRegisterCSR):
-                    return reg.rec.r
-                elif isinstance(reg, RegisterCSR):
-                    return reg.rec.r
-                else:
-                    assert False
-        raise ValueError(f"CSRUnit: Not found register named {name}")
-
+    def __getattr__(self, name: str) -> data.View:
+        def get_name(handler: CSR_Write_Handler) -> str:
+            return handler.__class__.__name__
+        matches = [x for x in self.csr_regs if get_name(x).lower() == name.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"Expected to find a single CSR named {name}, got {matches} instead!")
+        match = matches[0]
+        return data.View(match.layout, match.my_reg_latch)
 
     def __init__(self,
                  in_machine_mode : Signal,
@@ -87,22 +70,19 @@ class CsrUnit(Elaboratable):
         self.in_debug_mode = in_debug_mode
         self.with_virtual_memory = with_virtual_memory
 
-        # Debug
-        self.ONREAD = Signal()
-        self.ONWRITE = Signal()
-        self.ONSET = Signal()
-        self.ONCLEAR = Signal()
-        
         # Output signals.
         self.rd_val = Signal(32)
         self.vld = Signal()
         self.illegal_insn = Signal()
-
-        self.controller = ControllerInterface()
-        self.csr_regs = self.enabled_csr_regs(self.controller)
+        self.csr_regs = [
+            reg_constructor(my_reg_latch=Signal(32, reset=reg_constructor.const()))
+            for reg_constructor in
+            __class__.enabled_csr_regs(with_virtual_memory=with_virtual_memory)
+        ]
     
     def elaborate(self, platform):
         m = self.m = Module()
+        m.submodules += self.csr_regs
         sync = m.d.sync
         comb = m.d.comb
 
@@ -111,7 +91,7 @@ class CsrUnit(Elaboratable):
         func3_latch = Signal.like(self.func3)
         csr_idx_latch = Signal.like(self.csr_idx)
         
-        with m.FSM() as fsm:
+        with m.FSM():
             with m.State("IDLE"):
                 with m.If(self.en):
                     with m.If(~self.in_machine_mode):
@@ -119,7 +99,7 @@ class CsrUnit(Elaboratable):
                     with m.Else():
                         with m.Switch(self.csr_idx):
                             for reg in self.csr_regs:
-                                with m.Case(reg.csr_idx):
+                                with m.Case(reg.addr):
                                     sync += [
                                         rd_latch.eq(self.rd),
                                         rs1_latch.eq(self.rs1),
@@ -130,7 +110,7 @@ class CsrUnit(Elaboratable):
 
                                     # Debug Specs 1.0, 4.10:
                                     # 'These registers are only accessible from Debug Mode.'
-                                    if reg.csr_idx in range(0x7b0, 0x7b4):
+                                    if reg.addr in range(0x7b0, 0x7b4):
                                         with m.If(~self.in_debug_mode):
                                             # TODO: slippery code here - needs to be reverified.
                                             m.d.comb += self.illegal_insn.eq(1)
@@ -142,21 +122,18 @@ class CsrUnit(Elaboratable):
                 # NOTE from doc:
                 # If rd=x0, then the instruction shall not read the CSR and shall not 
                 # cause any of the side effects that might occur on a CSR read.
-                # however, we don't support read side-effects, so we can save one mux here.
+                # however, we don't support read side-effects, so we skip that check (and save on resources).
                 with m.Switch(csr_idx_latch):
                     for reg in self.csr_regs:
-                        with m.Case(reg.csr_idx):
-                            register = reg.rec.w if isinstance(reg, WriteOnlyRegisterCSR) else reg.rec.r
-                            m.d.sync += self.rd_val.eq(register)
+                        with m.Case(reg.addr):
+                            m.d.sync += self.rd_val.eq(reg.my_reg_latch)
 
+                dst = Signal(32)
+                
                 with m.Switch(csr_idx_latch):
                     for reg in self.csr_regs:
-                        with m.Case(reg.csr_idx):
-                            if isinstance(reg, ReadOnlyRegisterCSR):
-                                continue
-                            src = reg.rec.w if isinstance(reg, WriteOnlyRegisterCSR) else reg.rec.r
-                            dst = reg.rec.w # always exists
-                            # TODO it needs to use rec.r
+                        with m.Case(reg.addr):
+                            src = reg.my_reg_latch
                             with m.If(_is(func3_latch, [Funct3.CSRRS, Funct3.CSRRSI])):
                                 m.d.sync += dst.eq(src | self.rs1val)
                             with m.Elif(_is(func3_latch, [Funct3.CSRRC, Funct3.CSRRCI])):
@@ -167,26 +144,20 @@ class CsrUnit(Elaboratable):
             with m.State("REG_SPECIFIC"):
                 with m.Switch(csr_idx_latch):
                     for reg in self.csr_regs:
-                        with m.Case(reg.csr_idx):
+                        with m.Case(reg.addr):
                             # NOTE from doc:
                             # For both CSRRS and CSRRC, if rs1=x0, then the instruction will not write 
                             # to the CSR at all, and so shall not cause any of the side effects 
                             # that might otherwise occur on a CSR write,
-                            need_wait = Signal()
-                            with m.If(need_wait):
-                                with m.If(self.controller.handler_done):
-                                    m.next = "FINISH"
-                            with m.Else():
-                                # covers all non-waiting paths.
+                            with m.If(_is(func3_latch, [Funct3.CSRRS, Funct3.CSRRC]) & (rs1_latch == 0)):
                                 m.next = "FINISH"
-                            
-                            with m.If(_is(func3_latch, [Funct3.CSRRS, Funct3.CSRRC])):
-                                with m.If(rs1_latch != 0):
-                                    reg.handle_write()
-                                    comb += need_wait.eq(1)
                             with m.Else():
-                                reg.handle_write()
-                                comb += need_wait.eq(1)
+                                comb += [
+                                    reg.active.eq(1),
+                                    reg.write_value.eq(dst)
+                                ]
+                                with m.If(reg.write_finished):
+                                    m.next = "FINISH"
             with m.State("FINISH"):
                 m.next = "IDLE"
                 comb += [

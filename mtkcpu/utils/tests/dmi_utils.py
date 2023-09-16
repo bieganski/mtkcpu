@@ -9,6 +9,8 @@ from mtkcpu.utils.misc import get_color_logging_object, get_members
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.units.debug.types import DMI_reg_kinds
 from mtkcpu.utils.tests.sim_tests import get_state_name
+from mtkcpu.cpu.isa import Funct3
+from mtkcpu.units.csr.csr_handlers import DCSR, DPC
 
 logging = get_color_logging_object()
 
@@ -573,10 +575,9 @@ def monitor_writes_to_gpr(dmi_monitor: DMI_Monitor, gpr_num: int):
     return aux
 
 def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
-    from mtkcpu.cpu.isa import Funct3
-    from mtkcpu.units.csr_handlers import DCSR, DPC
-    dcsr_addr = DCSR().csr_idx
-    dpc_addr = DPC().csr_idx
+
+    dcsr_addr = DCSR().addr
+    dpc_addr = DPC().addr
     
     def aux():
         yield Passive()

@@ -6,7 +6,7 @@ from typing import Union, Optional
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
 
-from mtkcpu.units.csr import CsrUnit, match_csr
+from mtkcpu.units.csr.csr import CsrUnit, match_csr
 from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import EBRMemConfig
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
@@ -150,6 +150,7 @@ class MtkCpu(Elaboratable):
 
         self.running_state = CpuRunningState()
         self.running_state_interface = CpuRunningStateExternalInterface()
+        self.running_state_interface._MustUse__used = True
 
 
     def elaborate(self, platform):
@@ -262,8 +263,8 @@ class MtkCpu(Elaboratable):
         single_step_is_active = Signal()
         just_resumed = self.just_resumed = Signal()
         just_halted  = self.just_halted  = Signal()
-        dcsr = self.csr_unit.reg_by_addr(CSRIndex.DCSR).rec.r
-        dpc  = self.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r
+        dcsr = self.csr_unit.dcsr
+        dpc  = self.csr_unit.dpc
 
         with m.If(just_resumed):
             sync += single_step_is_active.eq(dcsr.step)

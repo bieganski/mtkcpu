@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Annotated, Sequence, Tuple, List, Type
 from enum import IntEnum
 
 from amaranth.lib import data, enum

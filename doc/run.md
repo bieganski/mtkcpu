@@ -60,13 +60,12 @@ file build/$PROJ_NAME.elf # make sure it exists
 
 #### Dependencies
 
-For `Ubuntu 22.04` and newer:
+* yosys
+* nextpnr-ice40
+* fpga-icestorm
 
-```sh
-sudo apt-get install yosys nextpnr-ice40 fpga-icestorm
-```
-
-For different distros follow the instructions in project references.
+In theory `yosys` and `nextpnr` are available to install as `apt-get install` from Ubuntu 22.04 and newer, however it ships a very old version. 
+I recommend compiling it from sources instead. Using old `yosys` may cause too much resources being used and `mtkcpu` won't synthesize at all!
 
 #### Bitstream generation
 

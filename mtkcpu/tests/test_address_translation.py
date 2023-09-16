@@ -3,9 +3,9 @@ from mtkcpu.utils.common import MEM_START_ADDR, CODE_START_ADDR
 from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
+from mtkcpu.units.csr.types import MSTATUS_Layout, SATP_Layout
 
-from mtkcpu.cpu.priv_isa import PrivModeBits, pte_layout, satp_layout
-from mtkcpu.units.csr import RegisterResetValue
+from amaranth import Signal
 
 # page tables phys. addresses must be aligned to 4K == 0x1000 bytes
 root_pt_offset = 0x2000
@@ -14,22 +14,15 @@ leaf_pt_offset = root_pt_offset + 0x1000
 root_pt_addr = MEM_START_ADDR + root_pt_offset
 leaf_pt_addr = MEM_START_ADDR + leaf_pt_offset
 
-def get_flat_value_generator(layout):
-    return lambda fields: RegisterResetValue.calc_reset_value(fields, layout)
-
-def get_field_values_generator(layout):
-    return lambda value: RegisterResetValue.value_to_fields(value, layout)
-
-satp_get_flat_value = get_flat_value_generator(satp_layout)
-satp_get_field_values = get_field_values_generator(satp_layout)
-
-pte_get_flat_value = get_flat_value_generator(pte_layout)
-pte_get_fields_values = get_field_values_generator(pte_layout)
-
-satp_value = satp_get_flat_value({
+satp_value = SATP_Layout.const({
     "mode": 1, # enable address translation in user mode
     "ppn": root_pt_addr >> 12,
-})
+}).value
+
+pte_const = lambda fields: PTE_Layout.const(fields).value
+
+# https://github.com/amaranth-lang/amaranth/issues/786
+mpp_offset_in_MSTATUS = MSTATUS_Layout(Signal(32))._View__layout._fields["mpp"].offset
 
 virt_addr_high = 0x111
 virt_addr_low = 0x222
@@ -66,7 +59,7 @@ MMU_TESTS = [
 
                 // set 'previous priv.' mstatus's field to user mode 
                 li x4, {PrivModeBits.USER}
-                slli x4, x4, {get_layout_field_offset(mstatus_layout, 'mpp')}
+                slli x4, x4, {mpp_offset_in_MSTATUS}
                 csrw mstatus, x4
                 // set machine mode trap
                 la x4, mmode_trap
@@ -89,13 +82,13 @@ MMU_TESTS = [
         # when usermode starts, it's expected to perform address translation
         # and jump to MEM_START_ADDR + 0x1000 + offset (address of symbol 'usermode').
         mem_init=MemoryContents(memory={
-            root_page_phys_addr: pte_get_flat_value({
+            root_page_phys_addr: pte_const({
                 "v": 1,
                 # {ppn0, ppn1} is a pointer to the next level pte
                 "ppn1": hi_pn(leaf_pt_addr >> 12),
                 "ppn0": lo_pn(leaf_pt_addr >> 12),
             }),
-            leaf_page_phys_addr: pte_get_flat_value({
+            leaf_page_phys_addr: pte_const({
                 "v": 1,
                 "r": 1,
                 "w": 1,
