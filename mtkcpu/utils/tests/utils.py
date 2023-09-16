@@ -753,14 +753,15 @@ def assert_jtag_test(
     def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list):
         def aux():
             while True:
-                fns = [x.run for x in active_processes]
-                raise ValueError(fns)
-                if all([x not in active_processes for x in ckpt_processes]):
+                active_processes_code_objs = [x.run.__code__ for x in active_processes]
+                ckpt_processes_code_objs   = [x.__code__     for x in ckpt_processes]
+                # raise ValueError([x.__name__ for x in fns])
+                if all([x not in active_processes_code_objs for x in ckpt_processes_code_objs]):
                     from pprint import pformat
                     from inspect import getmembers
                     l = lambda x: pformat(getmembers(x))
                     print("NAJS!", [type(x) for x in active_processes])
-                    raise ValueError(f"OK {l(active_processes.pop())}")
+                    # raise ValueError(f"OK {l(fns.pop())}")
                     return # success! all ckpt checker finished
                 print("not yet..")
                 yield
