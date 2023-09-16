@@ -753,6 +753,8 @@ def assert_jtag_test(
     def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list):
         def aux():
             while True:
+                fns = [x.run for x in active_processes]
+                raise ValueError(fns)
                 if all([x not in active_processes for x in ckpt_processes]):
                     from pprint import pformat
                     from inspect import getmembers
