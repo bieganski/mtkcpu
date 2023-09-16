@@ -4,7 +4,7 @@ from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
 
-from mtkcpu.units.csr_handlers import MISA
+from mtkcpu.units.csr.csr_handlers import MISA
 
 from mtkcpu.cpu.priv_isa import PrivModeBits
 
