@@ -4,7 +4,7 @@ from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
 
-from mtkcpu.units.csr_handlers import MISA
+from mtkcpu.units.csr.csr_handlers import MISA
 
 # some registers (e.g. mcause) are tested in test_exception.py file.
 CSR_TESTS = [
@@ -53,7 +53,7 @@ CSR_TESTS = [
                 csrr x3, misa
         """,
         out_reg=3,
-        out_val=MISA().reset_value,
+        out_val=MISA.const(),
         timeout=5,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -68,7 +68,7 @@ CSR_TESTS = [
                 csrr x2, misa
         """,
         out_reg=2,
-        out_val=MISA().reset_value,
+        out_val=MISA.const(),
         timeout=5,
         mem_init=MemoryContents.empty(),
         reg_init=RegistryContents.fill(),
@@ -269,7 +269,7 @@ CSR_TESTS = [
     # ),
 
     MemTestCase(
-        name="basic csrrc",
+        name="basic csrrs - misa",
         source_type=MemTestSourceType.RAW,
         source=f"""
             start:

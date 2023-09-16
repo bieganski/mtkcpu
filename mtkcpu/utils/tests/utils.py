@@ -19,7 +19,7 @@ from amaranth import Module, Cat, Signal
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
-from mtkcpu.units.csr import CsrUnit
+from mtkcpu.units.csr.csr import CsrUnit
 from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import CODE_START_ADDR, MEM_START_ADDR, EBRMemConfig, read_elf
 from mtkcpu.utils.decorators import parametrized, rename
@@ -144,8 +144,8 @@ def reg_test(
         # csr_unit.mtvec.base,
         # csr_unit.mtvec.mode,
         # *csr_unit.mepc.fields.values(),
-        *csr_unit.mcause.fields.values(),
-        *csr_unit.satp.fields.values(),
+        # *csr_unit.mcause.members.values(),
+        # *csr_unit.satp.fields.values(),
         # *csr_unit.mie.fields.values(),
         # *csr_unit.mstatus.fields.values(),
         # *csr_unit.mtime.fields.values(),

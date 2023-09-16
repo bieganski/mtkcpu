@@ -6,7 +6,7 @@ from typing import Union, Optional
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
 
-from mtkcpu.units.csr import CsrUnit, match_csr
+from mtkcpu.units.csr.csr import CsrUnit, match_csr
 from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import EBRMemConfig
 from mtkcpu.units.adder import AdderUnit, match_adder_unit

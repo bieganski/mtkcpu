@@ -5,7 +5,7 @@ from amaranth import *
 from amaranth.lib.coding import PriorityEncoder
 
 from mtkcpu.cpu.priv_isa import *
-from mtkcpu.units.csr import CsrUnit
+from mtkcpu.units.csr.csr import CsrUnit
 
 class ExceptionUnit(Elaboratable):
     def __init__(self, current_priv_mode: Signal, csr_unit : CsrUnit):

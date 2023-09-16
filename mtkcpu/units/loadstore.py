@@ -4,7 +4,7 @@ from typing import Tuple, OrderedDict
 from amaranth import Cat, Signal, Const, Elaboratable, Module, signed, Mux
 from amaranth.hdl.rec import Record, DIR_FANOUT, DIR_FANIN
 from mtkcpu.cpu.priv_isa import PrivModeBits, pte_layout, virt_addr_layout
-from mtkcpu.units.csr import CsrUnit
+from mtkcpu.units.csr.csr import CsrUnit
 from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import matcher, EBRMemConfig
 from mtkcpu.cpu.isa import Funct3, InstrType

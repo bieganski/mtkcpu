@@ -6,6 +6,7 @@ from mtkcpu.cpu.priv_isa import CSRIndex, CSRNonStandardIndex
 from amaranth.lib import data
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 class CSR_Write_Handler(ABC, Elaboratable):
 
@@ -18,41 +19,45 @@ class CSR_Write_Handler(ABC, Elaboratable):
     def addr(self) -> int:
         pass
     
-    def __init__(self, command_finished: Signal, my_reg_latch: Signal):
+    def __init__(self, my_reg_latch: Optional[Signal] = None):
         # -- Input signals
         # 
         # Needs to be deasserted in cycle following 'controller.cmd_finished' asserted.
         self.active = Signal()
         self.write_value = Signal(32)
+        self.write_finished = Signal()
 
-        self.command_finished = command_finished
-        self.my_reg_latch = my_reg_latch
-
-        assert my_reg_latch.width == 32
+        if my_reg_latch is not None:
+            self.my_reg_latch = my_reg_latch
+            assert my_reg_latch.width == 32
 
     def latch_whole_value_with_no_side_effect(self):
         m = Module()
 
         with m.If(self.active):
             m.d.sync += self.my_reg_latch.eq(self.write_value)
-            m.d.comb += self.command_finished.eq(1)
+            m.d.comb += self.write_finished.eq(1)
 
         return m
+
+    @classmethod
+    def const(cls) -> int:
+        return cls.layout.const(init=None)
     
+    @staticmethod
     def reset() -> dict[str, int]:
         return {}
-    
     
     def latch_partial_value_with_no_side_effect(self, fields: list[str]):
         m = Module()
 
-        lhs = data.Value(self.layout, self.my_reg_latch)
+        lhs = data.View(self.layout, self.my_reg_latch)
         rhs = data.View(self.layout, self.write_value)
 
         with m.If(self.active):
             for x in fields:
                 m.d.sync += getattr(lhs, x).eq(getattr(rhs, x))
-            m.d.comb += self.command_finished.eq(1)
+            m.d.comb += self.write_finished.eq(1)
 
         return m
 
@@ -164,7 +169,7 @@ class MIE(CSR_Write_Handler):
 
 class MIP(CSR_Write_Handler):
     addr = CSRIndex.MIE
-    layout = MIE_Layout
+    layout = MIP_Layout
 
     # TODO
     # For now it's fully readonly - doesn't support software interrupts,

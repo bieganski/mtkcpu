@@ -6,7 +6,7 @@ from amaranth import unsigned
 
 
 class MISA_Layout(data.Struct):
-    extensions: unsigned(6)
+    extensions: unsigned(26)
     zero:       unsigned(4)
     mxl:        unsigned(2)
 
