@@ -5,7 +5,7 @@ from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.utils import (MemTestCase, MemTestSourceType, mem_test)
 
 from mtkcpu.cpu.priv_isa import PrivModeBits, pte_layout, satp_layout
-from mtkcpu.units.csr import RegisterResetValue
+from mtkcpu.units.csr.csr import RegisterResetValue
 
 # page tables phys. addresses must be aligned to 4K == 0x1000 bytes
 root_pt_offset = 0x2000

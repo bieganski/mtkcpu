@@ -74,8 +74,11 @@ class CsrUnit(Elaboratable):
         self.rd_val = Signal(32)
         self.vld = Signal()
         self.illegal_insn = Signal()
-        # raise ValueError((hex(MISA.const().value)))
-        self.csr_regs = [x(my_reg_latch=Signal(32, reset=x.const().value)) for x in __class__.enabled_csr_regs(with_virtual_memory=with_virtual_memory)]
+        self.csr_regs = [
+            reg_constructor(my_reg_latch=Signal(32, reset=reg_constructor.const()))
+            for reg_constructor in
+            __class__.enabled_csr_regs(with_virtual_memory=with_virtual_memory)
+        ]
     
     def elaborate(self, platform):
         m = self.m = Module()

@@ -150,6 +150,7 @@ class MtkCpu(Elaboratable):
 
         self.running_state = CpuRunningState()
         self.running_state_interface = CpuRunningStateExternalInterface()
+        self.running_state_interface._MustUse__used = True
 
 
     def elaborate(self, platform):

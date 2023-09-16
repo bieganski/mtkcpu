@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import Sequence
 from dataclasses import dataclass
 
 from amaranth.sim import Simulator, Settle
@@ -15,7 +16,7 @@ from mtkcpu.cpu.cpu import CPU_Config
 from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
 from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
 from mtkcpu.units.debug.impl_config import DATASIZE
-from mtkcpu.units.csr_handlers import DCSR
+from mtkcpu.units.csr.csr_handlers import DCSR
 
 logging = get_color_logging_object()
 
@@ -526,7 +527,7 @@ def test_halt_resume_with_new_dpc(
         new_pc = pc // 2 + 0x1000
         assert new_pc != pc
 
-        yield dmi_monitor.cpu.csr_unit.reg_by_addr(CSRIndex.DPC).rec.r.eq(new_pc)
+        yield dmi_monitor.cpu.csr_unit.dpc.eq(new_pc)
 
         yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
         yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
@@ -656,7 +657,7 @@ def test_progbuf_cmderr_on_runtime_error(
         yield Passive()
         while True:
             pc = yield cpu.pc
-            mepc = yield cpu.csr_unit.mepc.value
+            mepc = yield cpu.csr_unit.mepc.as_value()
             instr = yield cpu.instr
             print("mepc", hex(mepc), "pc", hex(pc), "instr", hex(instr))
             yield
@@ -687,7 +688,7 @@ def test_access_debug_csr_regs_in_debug_mode(
         yield from few_ticks()
 
         # TODO: hardcoded 'cause' field offset.
-        expected_dcsr_reset_value = DCSR()._reset_value.value | (DCSR_DM_Entry_Cause.HALTREQ << 6)
+        expected_dcsr_reset_value = DCSR.const() | (DCSR_DM_Entry_Cause.HALTREQ << 6)
 
         DCSR_ins = instructions.RiscvCsrRegister("dcsr", num=0x7b0)
 
