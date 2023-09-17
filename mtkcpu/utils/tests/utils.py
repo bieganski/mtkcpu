@@ -773,11 +773,9 @@ def assert_jtag_test(
         """
         What are sausages made of? Code of that function answers this questions.
         
-        
         NOTE: The 'active_processes' is a mutable list, gradually modified by simulator engine.
         """
 
-        
         def aux():
             yield Passive()
 
@@ -792,38 +790,44 @@ def assert_jtag_test(
                 user_processes_still_running = [x.coroutine.gi_frame.f_locals["process"] for x in user_coroutines_still_running]
 
                 supervisor_matches = [x for x in user_processes_still_running if x == current]
-                assert len(supervisor_matches) == 1, "internal error: bad supervisor detection"
+                assert len(supervisor_matches) == 1, f"internal error: bad supervisor detection: got {supervisor_matches}"
                 
                 user_processes_without_supervisor = [x for x in user_processes_still_running if x not in supervisor_matches]
                 ckpt_checkers_still_running = [x for x in user_processes_without_supervisor if x in ckpt_processes]
                 
+                def _get_name(f: Callable):
+                    """
+                    If function is wrapped into tck_timeouted then it unwraps it's real name.
+                    Othwerise, just 'f.__qualname__' is returned.
+                    """
+                    if tck_timeouted.__name__ in f.__qualname__:
+                        try:
+                            closure = f.__closure__
+                            names = f.__code__.co_freevars
+                            # https://stackoverflow.com/a/32221772
+                            assert len(closure) == len(names)
+                            mapping = dict(zip(names, closure))
+                            orig_fname = mapping["generator_fn"].cell_contents.__qualname__
+                        except Exception:
+                            orig_fname = "ERROR WHEN DECODING NAME"
+                        return orig_fname
+                    else:
+                        return f.__qualname__
                 
-                print(f"---- checkpoint_checkers {ckpt_checkers_still_running}")
+                checkpoint_checkers_names = [_get_name(x) for x in ckpt_checkers_still_running]
 
-                # names are formed like this: check_abc.<locals>.aux
-                # TODO heuristics: if <locals> present, take word just before <locals>, otherwise take full name.
-                checkpoint_checkers_names = [x.__qualname__ for x in ckpt_checkers_still_running]
+                print(f"---- checkpoint_checkers {checkpoint_checkers_names}")
+
 
                 if first_iteration:
                     if len(checkpoint_checkers_names) == 0:
                         raise ValueError("Supervisor process is running, but no Checkpoint Checkers were run!")
-
-                    from copy import copy
-                    initial_checkpoint_checkers_names = copy(checkpoint_checkers_names)
+                    initial_checkpoint_checkers_names = checkpoint_checkers_names
                     print(f"---- initial_checkpoint_checkers_names {initial_checkpoint_checkers_names}")
                 else:
                     if len(checkpoint_checkers_names) == 0:
                         # all Checkpoint Checker processes finished - success!
-                        print("~~~ SUCCESS!")
                         return
-                
-                # from pprint import pformat
-                # print("---------------------------------------")
-                # print(pformat(initial_checkpoint_checkers_names))
-                # print("---------------------------------------")
-                # print(pformat(checkpoint_checkers_names))
-                # print("---------------------------------------")
-
                 yield
         return aux
 
@@ -840,6 +844,7 @@ def assert_jtag_test(
 
     if with_checkpoints:
         ckpt_processes = [
+            tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
             tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
         ]
         processes += ckpt_processes
