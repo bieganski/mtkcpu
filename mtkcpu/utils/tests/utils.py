@@ -749,9 +749,7 @@ def assert_jtag_test(
             generator = generator_fn()
             fn_name = str(generator) if not hasattr(generator, "__name__") else generator.__name__
             
-
             response = None
-            # for _ in range(10):
             while True:
                 try:
                     command = generator.send(response)
@@ -769,39 +767,6 @@ def assert_jtag_test(
 
                 if i == timeout:
                     raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for Checkpoint Checker '{fn_name}'!")
-
-
-                # print(input, output)
-            raise ValueError("OK")
-            for ii, x in enumerate(generator):
-                # if ii == 0:
-                #     generator.send(None)
-                result = yield x
-                if isinstance(result, int) and result > 0:
-                    raise ValueError("AAA")
-                print(x, result)
-                # if "slice" in str(result):
-                #     generator.send(result)
-                generator.send(result)
-
-                if ii == 3:
-                    next(generator)
-                    result = yield x
-                    print(x, result)
-                    raise ValueError("done")
-            
-                # Detect TCK rising edge.
-                tck = yield cpu.debug.jtag.tck
-                if not(prev_tck) and tck:
-                    i += 1
-                prev_tck = tck
-
-                if i == timeout:
-                    raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for Checkpoint Checker '{fn_name}'!")
-                
-                # y = yield x
-                # generator.send(y)
-            raise ValueError("koniec kurwa")
         return aux
     
     def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list):
@@ -823,17 +788,21 @@ def assert_jtag_test(
             while True:
                 first_iteration = (len(initial_checkpoint_checkers_names) == 0)
                 
-                user_coroutines_still_running = [x for x in active_processes if isinstance(x, PyCoroProcess)]
+                user_coroutines_still_running = [x for x in active_processes if isinstance(x, PyCoroProcess) and x.coroutine is not None]
                 user_processes_still_running = [x.coroutine.gi_frame.f_locals["process"] for x in user_coroutines_still_running]
 
                 supervisor_matches = [x for x in user_processes_still_running if x == current]
-
                 assert len(supervisor_matches) == 1, "internal error: bad supervisor detection"
-                checkpoint_checkers = [x for x in user_processes_still_running if x not in supervisor_matches]
+                
+                user_processes_without_supervisor = [x for x in user_processes_still_running if x not in supervisor_matches]
+                ckpt_checkers_still_running = [x for x in user_processes_without_supervisor if x in ckpt_processes]
+                
+                
+                print(f"---- checkpoint_checkers {ckpt_checkers_still_running}")
 
                 # names are formed like this: check_abc.<locals>.aux
                 # TODO heuristics: if <locals> present, take word just before <locals>, otherwise take full name.
-                checkpoint_checkers_names = [x.__qualname__ for x in checkpoint_checkers]
+                checkpoint_checkers_names = [x.__qualname__ for x in ckpt_checkers_still_running]
 
                 if first_iteration:
                     if len(checkpoint_checkers_names) == 0:
@@ -841,6 +810,7 @@ def assert_jtag_test(
 
                     from copy import copy
                     initial_checkpoint_checkers_names = copy(checkpoint_checkers_names)
+                    print(f"---- initial_checkpoint_checkers_names {initial_checkpoint_checkers_names}")
                 else:
                     if len(checkpoint_checkers_names) == 0:
                         # all Checkpoint Checker processes finished - success!
