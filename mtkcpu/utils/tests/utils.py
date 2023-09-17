@@ -674,10 +674,7 @@ def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     return elf_path
 
 
-
-
 def assert_jtag_test(
-    timeout_cycles: Optional[int],
     openocd_executable: Path,
     gdb_executable: Path,
     with_checkpoints: bool,
@@ -715,8 +712,8 @@ def assert_jtag_test(
                 run_gdb(
                     gdb_executable=gdb_executable,
                     elf_file=elf_path,
-                    stdout=Path("GDB_STDOUT"),
-                    stderr=Path("GDB_STDERR"),
+                    stdout=Path("gdb_stdout.log"),
+                    stderr=Path("gdb_stderr.log"),
                 )
     
     from multiprocessing import Process
@@ -737,7 +734,7 @@ def assert_jtag_test(
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
-        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
+        get_sim_jtag_controller(cpu=cpu),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
         monitor_abstractauto(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),

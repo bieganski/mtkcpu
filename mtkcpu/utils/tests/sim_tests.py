@@ -124,10 +124,7 @@ def get_state_name(fsm, num):
 # sim threads communication via global variable
 FINISH_SIM_OK = False
 
-def get_sim_jtag_controller(
-    cpu: MtkCpu,
-    timeout_cycles: int,
-):
+def get_sim_jtag_controller(cpu: MtkCpu):
 
     if not cpu.cpu_config.with_debug:
         raise ValueError("CPU must be initialized with Debug Module present!")
@@ -151,9 +148,6 @@ def get_sim_jtag_controller(
 
         CPU_JTAG_CLK_FACTOR = 4 # how many times JTAG clock is slower than CPU clock.
 
-        from termcolor import colored
-
-        # cmd_gen = remote_jtag_get_cmd(conn)
         def inf(i = 0):
             while(True):
                 yield i
@@ -161,11 +155,8 @@ def get_sim_jtag_controller(
                 if (i % 1000 == 0):
                     print(f"clk = {i}")                    
                 if FINISH_SIM_OK:
-                    print("XXX finishing sim")
+                    print("== End Of Simulation Notification received, finishing with success..")
                     return # checkpoint checker catched all configurations
-                # if i == 120000:
-                #     # TODO exit gracefully
-                #     exit(1) # finish manual test or catch bug if automated test
         timeout = None
         iter = inf() if not timeout else range(timeout)
         SETUP_CYCLES = 10
