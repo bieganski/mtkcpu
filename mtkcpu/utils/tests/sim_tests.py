@@ -114,84 +114,15 @@ def remote_jtag_send_response(conn, tdo):
     assert len(tdo) == 1
     conn.sendall(tdo)
 
-from amaranth import Signal
-
 def get_state_name(fsm, num):
     states = fsm.encoding
     rev = lambda xy: (xy[1],xy[0])
     mapping = dict(map(rev, states.items()))
     return mapping[num]
 
-from typing import List, Tuple, Any
-
-@dataclass(frozen=True)
-class Checkpoint:
-    timeout_tck : int
-    signals : List[Tuple[Signal, Any]] # all sig==Value must hold
-
-
-# assert that each signal from 'signals[0]' till 'deadline' JTAG clock cycle will have value 'signals[1]' 
-CHECKPOINTS = lambda cpu: [
-    Checkpoint(
-        deadline=0x14000,
-        signals=[
-            (cpu.debug.dmi_address, DMIReg.PROGBUF0) # FENCE instr. pushed into progbuf
-        ]
-    ),
-    Checkpoint(
-        deadline=0x15000,
-        signals=[
-            (cpu.debug.dmi_regs[DMIReg.COMMAND].w.control, 0x221001) # GDB starts reading registers
-        ]
-    ),
-    Checkpoint(
-        deadline=0x28000,
-        signals=[
-            # program uploading started (from GDB): instruction 'sw x9,0(x8)', like in 
-            # openocd/src/target/riscv/riscv-013.c, in function 'write_memory_progbuf'
-            (cpu.debug.dmi_address, DMIReg.PROGBUF0),
-            (cpu.debug.dmi_data, 0x942023), 
-        ]
-    )
-]
 
 # sim threads communication via global variable
 FINISH_SIM_OK = False
-
-def get_ocd_checkpoint_checker(
-    cpu: MtkCpu,
-):
-    def aux():
-        global FINISH_SIM_OK
-        yield Passive()
-
-        clk = 0
-        checkpoints = CHECKPOINTS(cpu)
-        finished = [False for _ in checkpoints]
-
-        while True:
-            for i, c in enumerate(checkpoints):
-                if finished[i]:
-                    continue
-                if clk == c.deadline:
-                    raise ValueError(f"checkpoint failed: event {c} not holded!")
-                ok = True
-                for sig, expected in c.signals:
-                    actual = yield sig
-                    if actual != expected:
-                        ok = False
-                        break
-                if ok:
-                    print(f"OK, checkpoint {c} matched...")
-                    finished[i] = True
-
-            if (clk != 0 and clk % 1000 == 0):
-                if all(finished):
-                    FINISH_SIM_OK = True
-            clk += 1
-            yield
-    return aux
-
 
 def get_sim_jtag_controller(
     cpu: MtkCpu,

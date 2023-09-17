@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
-from typing import Optional, OrderedDict, Tuple, Callable, Generator
+from typing import Optional, OrderedDict, Tuple, Callable, Generator, TextIO
 import pytest
 from pathlib import Path
 import subprocess
@@ -29,7 +29,7 @@ from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_controller,
-                                          get_ocd_checkpoint_checker)
+                                          FINISH_SIM_OK)
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
@@ -754,8 +754,6 @@ def assert_jtag_test(
                 try:
                     command = generator.send(response)
                     response = yield command
-                    if isinstance(response, int) and response > 0:
-                        print(command, response)
                 except StopIteration:
                     return # success!
                 
@@ -769,21 +767,31 @@ def assert_jtag_test(
                     raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for Checkpoint Checker '{fn_name}'!")
         return aux
     
-    def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list):
+    def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list, log_sink: Optional[TextIO]):
         """
-        What are sausages made of? Code of that function answers this questions.
+        What are sausages made from?
         
         NOTE: The 'active_processes' is a mutable list, gradually modified by simulator engine.
         """
 
+        if log_sink is not None:
+            if not hasattr(log_sink, "write"):
+                raise ValueError("log_sink must have 'write' method!")
+        else:
+            log_sink = object()
+            log_sink.write = lambda *_ : None
+
         def aux():
             yield Passive()
+            global FINISH_SIM_OK
 
             # NOTE: to determine 'current' we use caller frame, which is bad, as it limits our code reusability.
             current : Callable = inspect.currentframe().f_back.f_locals["process"]
 
             initial_checkpoint_checkers_names = []
-            while True:
+            prev_checkpoint_checkers_names = []
+            
+            for i in count():
                 first_iteration = (len(initial_checkpoint_checkers_names) == 0)
                 
                 user_coroutines_still_running = [x for x in active_processes if isinstance(x, PyCoroProcess) and x.coroutine is not None]
@@ -816,18 +824,26 @@ def assert_jtag_test(
                 
                 checkpoint_checkers_names = [_get_name(x) for x in ckpt_checkers_still_running]
 
-                print(f"---- checkpoint_checkers {checkpoint_checkers_names}")
-
+                just_finished = [x for x in prev_checkpoint_checkers_names if x not in checkpoint_checkers_names]
+                for x in just_finished:
+                    log_sink.write(f"{x} finished in clock cycle={i}\n")
 
                 if first_iteration:
                     if len(checkpoint_checkers_names) == 0:
                         raise ValueError("Supervisor process is running, but no Checkpoint Checkers were run!")
                     initial_checkpoint_checkers_names = checkpoint_checkers_names
-                    print(f"---- initial_checkpoint_checkers_names {initial_checkpoint_checkers_names}")
+                    log_sink.write(f"-- initial checkpoint checkers:\n")
+                    for x in initial_checkpoint_checkers_names:
+                        log_sink.write(f"* {x}\n")
                 else:
                     if len(checkpoint_checkers_names) == 0:
                         # all Checkpoint Checker processes finished - success!
+                        FINISH_SIM_OK = True
+                        import time
+                        time.sleep(1)
+                        raise ValueError("kurwa!")
                         return
+                prev_checkpoint_checkers_names = checkpoint_checkers_names
                 yield
         return aux
 
@@ -839,7 +855,7 @@ def assert_jtag_test(
                 if cmd == DMIOp.WRITE:
                     return # success!
                 from amaranth.sim import Tick
-                yield Tick()
+                yield
         return aux
 
     if with_checkpoints:
@@ -852,7 +868,8 @@ def assert_jtag_test(
         # NOTE: we can use 'sim._engine._processes' *before* all 'add_sync_process', as it handles list reference anyway.
         sim.add_sync_process(ckpt_processses_supervisor(
             active_processes=sim._engine._processes,
-            ckpt_processes=ckpt_processes)
+            ckpt_processes=ckpt_processes,
+            log_sink=Path("ckpt.log").open("w")),
         )
 
     for p in processes:
