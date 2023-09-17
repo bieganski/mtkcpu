@@ -31,7 +31,6 @@ def test_openocd_gdb():
             raise ValueError(f"{x} executable does not exists!")
     
     assert_jtag_test(
-        timeout_cycles=1000, # TODO timeout not used
         with_checkpoints=True,
         openocd_executable=openocd_executable,
         gdb_executable=gdb_executable,

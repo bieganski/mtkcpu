@@ -3,18 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 from itertools import count
-from typing import Dict, List, Optional, OrderedDict
+from typing import Optional, OrderedDict, Tuple, Callable, Generator, TextIO
 import pytest
 from pathlib import Path
 import subprocess
 from tempfile import NamedTemporaryFile
+import inspect
 
 from amaranth.hdl.ast import Signal, Const
 from amaranth.hdl.ir import Elaboratable, Fragment
 from amaranth.sim import Simulator
-from amaranth.sim.core import Active, Passive
-from amaranth.hdl import rec
-from amaranth import Module, Cat, Signal
+from amaranth.sim.core import Passive
+from amaranth import Signal
+from amaranth.sim._pycoro import PyCoroProcess
 
 from mtkcpu.asm.asm_dump import dump_asm
 from mtkcpu.cpu.cpu import MtkCpu
@@ -27,14 +28,15 @@ from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
-                                          get_sim_jtag_controller,
-                                          get_ocd_checkpoint_checker)
+                                          get_sim_jtag_controller)
+import mtkcpu.utils.tests.sim_tests as GLOBAL_SIM_NAMESPACE
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
 from mtkcpu.cpu.cpu import CPU_Config
+
 
 logging = get_color_logging_object()
 
@@ -385,6 +387,7 @@ def cpu_testbench_test(case : CpuTestbenchCase):
             dev_mode=False,
             with_debug=False,
             pc_reset_value=MEM_START_ADDR,
+            with_virtual_memory=False,
         ),
         mem_config=mem_cfg
     )
@@ -484,12 +487,7 @@ def assert_mem_test(case: MemTestCase):
     )
 
 
-# Returns dict with keys:
-# "sim" - Simulator object
-# "frag" - Fragment object
-# "vcd_traces" - List of JTAG/DM signals to be traced
-# "jtag_fsm" - JTAG FSM
-def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
+def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu) -> Tuple[Simulator, list[Signal]]:
     # cursed stuff for retrieving jtag FSM state for 'traces=vcd_traces' variable
     # https://freenode.irclog.whitequark.org/amaranth/2020-07-26#27592720;
     frag = Fragment.get(monitor, platform=None)
@@ -564,11 +562,8 @@ def create_jtag_simulator(monitor: DMI_Monitor, cpu: MtkCpu):
         cpu.gprf_debug_data,
         cpu.gprf_debug_addr,
     ]
-    return {
-        "sim": sim,
-        "vcd_traces": vcd_traces,
-        # "jtag_fsm": jtag_fsm,
-    }
+
+    return sim, vcd_traces
 
 
 def run_gdb(
@@ -679,13 +674,10 @@ def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     return elf_path
 
 
-
-
 def assert_jtag_test(
-    timeout_cycles: Optional[int],
     openocd_executable: Path,
     gdb_executable: Path,
-    with_checkpoints=False,
+    with_checkpoints: bool,
 ):
     cpu = MtkCpu(
         reg_init=[0x0 for _ in range(32)],
@@ -694,6 +686,7 @@ def assert_jtag_test(
             dev_mode=False,
             with_debug=True,
             pc_reset_value=0x8000,
+            with_virtual_memory=False,
         )
     )
 
@@ -719,8 +712,8 @@ def assert_jtag_test(
                 run_gdb(
                     gdb_executable=gdb_executable,
                     elf_file=elf_path,
-                    stdout=Path("GDB_STDOUT"),
-                    stderr=Path("GDB_STDERR"),
+                    stdout=Path("gdb_stdout.log"),
+                    stderr=Path("gdb_stderr.log"),
                 )
     
     from multiprocessing import Process
@@ -730,8 +723,7 @@ def assert_jtag_test(
 
     dmi_monitor = DMI_Monitor(cpu=cpu)
 
-    sim_gadgets = create_jtag_simulator(dmi_monitor, cpu)
-    sim, vcd_traces = [sim_gadgets[k] for k in ["sim", "vcd_traces"]]
+    sim, vcd_traces = create_jtag_simulator(dmi_monitor, cpu)
 
     processes = [
         monitor_cmderr(dmi_monitor),
@@ -742,25 +734,145 @@ def assert_jtag_test(
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
-        get_sim_jtag_controller(cpu=cpu, timeout_cycles=timeout_cycles),
+        get_sim_jtag_controller(cpu=cpu),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
         monitor_abstractauto(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
     ]
 
-    with_checkpoints = False # XXX
+    def tck_timeouted(generator_fn: Callable, timeout: int):
+        def aux():
+            i, prev_tck = 0, 0
+            generator = generator_fn()
+            fn_name = str(generator) if not hasattr(generator, "__name__") else generator.__name__
+            
+            response = None
+            while True:
+                try:
+                    command = generator.send(response)
+                    response = yield command
+                except StopIteration:
+                    return # success!
+                
+                # Detect TCK rising edge.
+                tck = yield cpu.debug.jtag.tck
+                if not(prev_tck) and tck:
+                    i += 1
+                prev_tck = tck
+
+                if i == timeout:
+                    raise TimeoutError(f"Timeout of {timeout} TCK ticks expired for Checkpoint Checker '{fn_name}'!")
+        return aux
+    
+    def ckpt_processses_supervisor(active_processes: list, ckpt_processes: list, log_sink: Optional[TextIO]):
+        """
+        What are sausages made from?
+        
+        NOTE: The 'active_processes' is a mutable list, gradually modified by simulator engine.
+        """
+
+        if log_sink is not None:
+            if not hasattr(log_sink, "write"):
+                raise ValueError("log_sink must have 'write' method!")
+        else:
+            log_sink = object()
+            log_sink.write = lambda *_ : None
+
+        def aux():
+            yield Passive()
+
+            # NOTE: to determine 'current' we use caller frame, which is bad, as it limits our code reusability.
+            current : Callable = inspect.currentframe().f_back.f_locals["process"]
+
+            initial_checkpoint_checkers_names = []
+            prev_checkpoint_checkers_names = []
+            
+            for i in count():
+                first_iteration = (len(initial_checkpoint_checkers_names) == 0)
+                
+                user_coroutines_still_running = [x for x in active_processes if isinstance(x, PyCoroProcess) and x.coroutine is not None]
+                user_processes_still_running = [x.coroutine.gi_frame.f_locals["process"] for x in user_coroutines_still_running]
+
+                supervisor_matches = [x for x in user_processes_still_running if x == current]
+                assert len(supervisor_matches) == 1, f"internal error: bad supervisor detection: got {supervisor_matches}"
+                
+                user_processes_without_supervisor = [x for x in user_processes_still_running if x not in supervisor_matches]
+                ckpt_checkers_still_running = [x for x in user_processes_without_supervisor if x in ckpt_processes]
+                
+                def _get_name(f: Callable):
+                    """
+                    If function is wrapped into tck_timeouted then it unwraps it's real name.
+                    Othwerise, just 'f.__qualname__' is returned.
+                    """
+                    if tck_timeouted.__name__ in f.__qualname__:
+                        try:
+                            closure = f.__closure__
+                            names = f.__code__.co_freevars
+                            # https://stackoverflow.com/a/32221772
+                            assert len(closure) == len(names)
+                            mapping = dict(zip(names, closure))
+                            orig_fname = mapping["generator_fn"].cell_contents.__qualname__
+                        except Exception:
+                            orig_fname = "ERROR WHEN DECODING NAME"
+                        return orig_fname
+                    else:
+                        return f.__qualname__
+                
+                checkpoint_checkers_names = [_get_name(x) for x in ckpt_checkers_still_running]
+
+                just_finished = [x for x in prev_checkpoint_checkers_names if x not in checkpoint_checkers_names]
+                for x in just_finished:
+                    log_sink.write(f"{x} finished in clock cycle={i}\n")
+
+                if first_iteration:
+                    if len(checkpoint_checkers_names) == 0:
+                        raise ValueError("Supervisor process is running, but no Checkpoint Checkers were run!")
+                    initial_checkpoint_checkers_names = checkpoint_checkers_names
+                    log_sink.write(f"-- initial checkpoint checkers:\n")
+                    for x in initial_checkpoint_checkers_names:
+                        log_sink.write(f"* {x}\n")
+                else:
+                    if len(checkpoint_checkers_names) == 0:
+                        # all Checkpoint Checker processes finished - success!
+                        GLOBAL_SIM_NAMESPACE.FINISH_SIM_OK = True
+                        while True: yield
+                prev_checkpoint_checkers_names = checkpoint_checkers_names
+                yield
+        return aux
+
+    def dmcontrol_written(dmi_monitor: DMI_Monitor):
+        def aux():
+            yield Passive()
+            while True:
+                cmd = yield dmi_monitor.cur_dmi_bus.op
+                if cmd == DMIOp.WRITE:
+                    return # success!
+                yield
+        return aux
 
     if with_checkpoints:
-        processes.append(get_ocd_checkpoint_checker(cpu))
+        ckpt_processes = [
+            tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
+            tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
+        ]
+        processes += ckpt_processes
+
+        # NOTE: we can use 'sim._engine._processes' *before* all 'add_sync_process', as it handles list reference anyway.
+        sim.add_sync_process(ckpt_processses_supervisor(
+            active_processes=sim._engine._processes,
+            ckpt_processes=ckpt_processes,
+            log_sink=Path("ckpt.log").open("w")),
+        )
 
     for p in processes:
         sim.add_sync_process(p)
-
+    
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
         sim.run()
 
+
 @parametrized
-def component_testbench(f, cases: List[ComponentTestbenchCase]):
+def component_testbench(f, cases: list[ComponentTestbenchCase]):
     @pytest.mark.parametrize("test_case", cases)
     @rename(f.__name__)
     def aux(test_case):
@@ -770,7 +882,7 @@ def component_testbench(f, cases: List[ComponentTestbenchCase]):
 
 
 @parametrized
-def mem_test(f, cases: List[MemTestCase]):
+def mem_test(f, cases: list[MemTestCase]):
     @pytest.mark.parametrize("test_case", cases)
     @rename(f.__name__)
     def aux(test_case):
@@ -779,7 +891,7 @@ def mem_test(f, cases: List[MemTestCase]):
     return aux
 
 @parametrized
-def cpu_testbench(f, cases: List[CpuTestbenchCase]):
+def cpu_testbench(f, cases: list[CpuTestbenchCase]):
     @pytest.mark.parametrize("test_case", cases)
     @rename(f.__name__)
     def aux(test_case):
