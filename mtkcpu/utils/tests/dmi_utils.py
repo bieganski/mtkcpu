@@ -576,8 +576,8 @@ def monitor_writes_to_gpr(dmi_monitor: DMI_Monitor, gpr_num: int):
 
 def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
 
-    dcsr_addr = DCSR().addr
-    dpc_addr = DPC().addr
+    dcsr_addr = DCSR.addr
+    dpc_addr = DPC.addr
     
     def aux():
         yield Passive()
