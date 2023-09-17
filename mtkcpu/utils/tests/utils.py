@@ -28,8 +28,8 @@ from mtkcpu.utils.tests.memory import MemoryContents
 from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
-                                          get_sim_jtag_controller,
-                                          FINISH_SIM_OK)
+                                          get_sim_jtag_controller)
+import mtkcpu.utils.tests.sim_tests as GLOBAL_SIM_NAMESPACE
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
 from mtkcpu.units.mmio.gpio import GPIO_Wishbone
@@ -680,7 +680,7 @@ def assert_jtag_test(
     timeout_cycles: Optional[int],
     openocd_executable: Path,
     gdb_executable: Path,
-    with_checkpoints=False,
+    with_checkpoints: bool,
 ):
     cpu = MtkCpu(
         reg_init=[0x0 for _ in range(32)],
@@ -783,7 +783,6 @@ def assert_jtag_test(
 
         def aux():
             yield Passive()
-            global FINISH_SIM_OK
 
             # NOTE: to determine 'current' we use caller frame, which is bad, as it limits our code reusability.
             current : Callable = inspect.currentframe().f_back.f_locals["process"]
@@ -838,11 +837,8 @@ def assert_jtag_test(
                 else:
                     if len(checkpoint_checkers_names) == 0:
                         # all Checkpoint Checker processes finished - success!
-                        FINISH_SIM_OK = True
-                        import time
-                        time.sleep(1)
-                        raise ValueError("kurwa!")
-                        return
+                        GLOBAL_SIM_NAMESPACE.FINISH_SIM_OK = True
+                        while True: yield
                 prev_checkpoint_checkers_names = checkpoint_checkers_names
                 yield
         return aux
@@ -854,7 +850,6 @@ def assert_jtag_test(
                 cmd = yield dmi_monitor.cur_dmi_bus.op
                 if cmd == DMIOp.WRITE:
                     return # success!
-                from amaranth.sim import Tick
                 yield
         return aux
 
