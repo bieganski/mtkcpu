@@ -873,23 +873,6 @@ def assert_jtag_test(
     with sim.write_vcd("jtag.vcd", "jtag.gtkw", traces=vcd_traces):
         sim.run()
 
-if __name__ == "__main__":
-    openocd_executable = get_git_root() / ".." / "riscv-openocd" / "src" / "openocd"
-
-    gdb_executable = get_git_root() / "xpack-riscv-none-embed-gcc-8.3.0-2.3" / "bin" / "riscv-none-embed-gdb"
-
-    for x in openocd_executable, gdb_executable:
-        if not x.exists():
-            raise ValueError(f"{x} executable does not exists!")
-    
-    assert_jtag_test(
-        timeout_cycles=1000, # TODO timeout not used
-        with_checkpoints=True,
-        openocd_executable=openocd_executable,
-        gdb_executable=gdb_executable,
-    )
-
-    exit(0)
 
 @parametrized
 def component_testbench(f, cases: list[ComponentTestbenchCase]):
