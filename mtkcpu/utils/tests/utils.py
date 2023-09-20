@@ -29,6 +29,10 @@ from mtkcpu.utils.tests.registers import RegistryContents
 from mtkcpu.utils.tests.sim_tests import (get_sim_memory_test,
                                           get_sim_register_test,
                                           get_sim_jtag_controller)
+from mtkcpu.utils.tests.openocd_checkpoints import (dmcontrol_haltreq_written,
+                                                    progbuf_written_and_started,
+                                                    examination_finished_with_hart_resume,
+                                                    )
 import mtkcpu.utils.tests.sim_tests as GLOBAL_SIM_NAMESPACE
 from mtkcpu.units.debug.types import *
 from mtkcpu.units.loadstore import MemoryArbiter, WishboneBusRecord
@@ -37,6 +41,9 @@ from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
 from mtkcpu.cpu.cpu import CPU_Config
 
+
+from ppci.arch.riscv import instructions
+from mtkcpu.tests.test_debug_unit import encode_ins
 
 logging = get_color_logging_object()
 
@@ -828,9 +835,11 @@ def assert_jtag_test(
                     if len(checkpoint_checkers_names) == 0:
                         raise ValueError("Supervisor process is running, but no Checkpoint Checkers were run!")
                     initial_checkpoint_checkers_names = checkpoint_checkers_names
+                    log_sink.write(f"--------------------\n")
                     log_sink.write(f"-- initial checkpoint checkers:\n")
                     for x in initial_checkpoint_checkers_names:
                         log_sink.write(f"* {x}\n")
+                    log_sink.write(f"--------------------\n")
                 else:
                     if len(checkpoint_checkers_names) == 0:
                         # all Checkpoint Checker processes finished - success!
@@ -839,21 +848,13 @@ def assert_jtag_test(
                 prev_checkpoint_checkers_names = checkpoint_checkers_names
                 yield
         return aux
-
-    def dmcontrol_written(dmi_monitor: DMI_Monitor):
-        def aux():
-            yield Passive()
-            while True:
-                cmd = yield dmi_monitor.cur_dmi_bus.op
-                if cmd == DMIOp.WRITE:
-                    return # success!
-                yield
-        return aux
-
+    
+    # with_checkpoints = False
     if with_checkpoints:
         ckpt_processes = [
-            tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
-            tck_timeouted(dmcontrol_written(dmi_monitor), 1000),
+            tck_timeouted(dmcontrol_haltreq_written(dmi_monitor), timeout=3_000),
+            tck_timeouted(progbuf_written_and_started(dmi_monitor, progbuf_num=1, instr=encode_ins(instructions.Ebreak())), timeout=5_000),
+            tck_timeouted(examination_finished_with_hart_resume(dmi_monitor), timeout=12_000),
         ]
         processes += ckpt_processes
 
