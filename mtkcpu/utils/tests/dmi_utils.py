@@ -160,9 +160,9 @@ def debug_inspect_applied_struct(struct: data.Struct, val: int) -> str:
         layout = struct._AggregateMeta__layout
     else:
         if isinstance(struct, data.View):
-            layout = data.Layout.of(struct)
+            layout = struct.shape()
         elif isinstance(struct, data._AggregateMeta):
-            layout = data.Layout.of(struct)
+            layout = struct.shape()
         elif isinstance(struct, data.StructLayout):
             layout = struct
         else:
