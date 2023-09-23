@@ -741,7 +741,7 @@ class MtkCpu(Elaboratable):
         ]
             
         if self.cpu_config.dev_mode and platform is not None:
-            debug_led_r, debug_led_g = [platform.request(x, 1) for x in ("led_r", "led_g")]
+            debug_led_r, debug_led_g = [platform.request(x, 1).o for x in ("led_r", "led_g")]
             self.debug_blink_red, self.debug_blink_green = Signal(), Signal()
 
             

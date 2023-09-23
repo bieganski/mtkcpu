@@ -156,7 +156,7 @@ class JTAGTap(Elaboratable):
                         with m.Case(ir):
                             with m.If(rising_tck):
                                 # TODO - off by one when calculating 'upper_bound'??
-                                upper_bound = Layout.of(record.r).size
+                                upper_bound = record.r.shape().size
                                 sync += self.dr.eq(Cat(self.dr[1:upper_bound], tdi))
                 with m.If(rising_tck & tms):
                     m.next = "EXIT1-DR"

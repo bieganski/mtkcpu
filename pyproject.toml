@@ -27,7 +27,7 @@ pyelftools = "^0.27"
 bitstring = "^3.1.7"
 typer = "^0.3.2"
 termcolor = "^1.1.0"
-amaranth = { git = "https://github.com/amaranth-lang/amaranth", branch = "main", rev = "c343e879d3e30c0f071345154b9b7176c9c63fc4" }
+amaranth = { git = "https://github.com/amaranth-lang/amaranth", branch = "main", rev = "11d5bb19eb34463918c07dc5e2e0eac7dbf822b0" }
 amaranth-boards = { git = "https://github.com/amaranth-lang/amaranth-boards.git", branch = "main" }
 riscv-model = { git = "https://github.com/bieganski/riscv-python-model", branch = "master" }
 MarkupSafe = "2.0.1"
