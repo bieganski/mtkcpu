@@ -13,6 +13,5 @@ def run_cpu_tests(
         None, help="Simulate given ELF binary"
     ),
 ):
-
     generate_bsp()
-    run_tests([])
+    run_tests(args=["-n15"])

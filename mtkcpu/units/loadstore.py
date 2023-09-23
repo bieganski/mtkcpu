@@ -217,7 +217,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
 
         def gpio_gen(platform : Platform):
             if platform:
-                led_r, led_g = platform.request("led_r"), platform.request("led_g")
+                led_r, led_g = platform.request("led_r").o, platform.request("led_g").o
             else:
                 led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
             self.led_r, self.led_g = led_r, led_g # XXX: for simulation testbench.
@@ -245,15 +245,15 @@ class MemoryArbiter(Elaboratable, AddressManager):
         )
 
         self.mmio_cfg = [
-            # (
-            #     UartTX(serial_record_gen=uart_gen_serial_record, clk_freq=12_000_000, baud_rate=115200),
-            #     MMIOAddressSpace(
-            #         ws=self.word_size,
-            #         basename="uart",
-            #         first_valid_addr_incl=0x7000_0000,
-            #         last_valid_addr_excl=0x7000_1000,
-            #     )
-            # ),
+            (
+                UartTX(serial_record_gen=uart_gen_serial_record, clk_freq=12_000_000, baud_rate=115200),
+                MMIOAddressSpace(
+                    ws=self.word_size,
+                    basename="uart",
+                    first_valid_addr_incl=0x7000_0000,
+                    last_valid_addr_excl=0x7000_1000,
+                )
+            ),
             (
                 EBR_Wishbone(self.mem_config),
                 MMIOAddressSpace(

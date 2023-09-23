@@ -21,7 +21,8 @@ RUN xpm install --global @xpack-dev-tools/riscv-none-elf-gcc@latest --verbose
 ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-elf-gcc/13.2.0-1.2/.content/bin:$PATH"
 
 # Install Poetry
-RUN pip install poetry
+RUN pip3 install --upgrade pip
+RUN pip3 install poetry
 
 # Install Poetry dependencies
 ADD pyproject.toml .

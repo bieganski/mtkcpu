@@ -9,18 +9,15 @@ from mtkcpu.units.mmio.bspgen import BspGeneratable
 from mtkcpu.units.memory_interface import MMIOPeriphConfig, MMIORegister
 
 class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
-    def __init__(self) -> None:
-        raise ArgumentError()
-
     def __init__(self, signal_map_gen : Callable[[Platform], List[Signal]]) -> None:
         BusSlaveOwnerInterface.__init__(self)
         self.signal_map_gen = signal_map_gen
 
     def sanity_check(self):
-        signal_map = self.signal_map
-        if len(signal_map) > 32:
-            raise ValueError(f"Error: for now GPIO supports at most 32 signals, passed {len(signal_map)}")
-        if len(signal_map) == 0:
+        m = self.signal_map
+        if len(m) > 32:
+            raise ValueError(f"Error: for now GPIO supports at most 32 signals, passed {len(m)}")
+        if len(m) == 0:
             raise ValueError(f"Error: empty GPIO signal map passed! Disable it if not used.")
 
     def get_periph_config(self) -> MMIOPeriphConfig:
@@ -32,7 +29,6 @@ class GPIO_Wishbone(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
         bits += [
             (r['o'].name, i) for i, r in enumerate(self.signal_map) if isinstance(r, Record)
         ]
-
         cfg = MMIOPeriphConfig(
             regions=[],
             registers=[

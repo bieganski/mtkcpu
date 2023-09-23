@@ -519,7 +519,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-ena
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "28f0f8cc4bf4477d0dcfba334380069d08979818928ad4dd0bf47adc2ed4212e"
+content-hash = "80518f22c494ab49459562d3331d59b8e1acb3fcf15f797eaf6cf064ca105bf6"
 
 [metadata.files]
 amaranth = []

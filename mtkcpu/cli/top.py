@@ -114,11 +114,14 @@ def dummy_elaborate(e : Elaboratable, platform : Platform):
     root._MustUse__used = True
     if isinstance(root, Instance):
         return
-    for name in root._named_submodules:
-        e = root._named_submodules[name]
-        dummy_elaborate(e, platform)
-    for e in root._anon_submodules:
-        dummy_elaborate(e, platform)
+
+    if hasattr (root, "_named_submodules"):
+        for name in root._named_submodules:
+            e = root._named_submodules[name]
+            dummy_elaborate(e, platform)
+    if hasattr (root, "_anon_submodules"):
+        for e in root._anon_submodules:
+            dummy_elaborate(e, platform)
 
 def generate_bsp():
     sw_bsp_path = os.path.join(os.path.dirname(__file__), "..", "..", "sw", "bsp")
