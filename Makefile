@@ -26,7 +26,7 @@ build-docker:
 	bash ./build_docker_image.sh
 
 test-docker:
-	docker run docker.io/library/mtkcpu:1.0.0 tests cpu
+	docker run docker.io/library/mtkcpu:1.0.0 poetry run mtkcpu tests cpu
 
 test:
 	poetry run pytest -n 12
