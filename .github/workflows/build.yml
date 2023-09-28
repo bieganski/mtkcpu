@@ -20,3 +20,8 @@ jobs:
       - name: Run tests
         shell: bash
         run: make test-docker
+      - name: Synthesisze SoC
+        shell: bash
+        run: |
+          make -C sw/uart_tx
+          ./docker_run.py --cmd 'PROJ_NAME=uart_tx ; poetry run ./mtkcpu/cli/top.py build -e sw/$PROJ_NAME/build/$PROJ_NAME.elf'
