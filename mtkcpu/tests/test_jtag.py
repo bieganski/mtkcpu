@@ -1,9 +1,10 @@
 from pathlib import Path
 import logging
-
+from shutil import which
 import pytest
 
 from mtkcpu.utils.tests.utils import assert_jtag_test
+from mtkcpu.units.debug.impl_config import TOOLCHAIN
 
 
 def get_git_root() -> Path:
@@ -19,21 +20,21 @@ def get_git_root() -> Path:
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 
-    # openocd_executable = get_git_root() / "openocd_riscv" / "src" / "openocd"
-    # TODO https://github.com/bieganski/mtkcpu/issues/30
-    # Needs setup&build support for setup stage, to install correct tools.
+    # TODO: We really need setup&build support for setup stage, to install correct tools.
     openocd_executable = get_git_root() / ".." / "riscv-openocd" / "src" / "openocd"
 
-    gdb_executable = get_git_root() / "xpack-riscv-none-embed-gcc-8.3.0-2.3" / "bin" / "riscv-none-embed-gdb"
+    if not openocd_executable.exists():
+        raise ValueError(f"openocd executable ({openocd_executable}) does not exists!")
 
-    for x in openocd_executable, gdb_executable:
-        if not x.exists():
-            raise ValueError(f"{x} executable does not exists!")
+    gdb_executable = f"{TOOLCHAIN}-gdb"
+
+    if which(gdb_executable) is None:
+        raise ValueError(f"gdb executable ({gdb_executable}) either not found or not eXecute permissions")
     
     assert_jtag_test(
         with_checkpoints=True,
         openocd_executable=openocd_executable,
-        gdb_executable=gdb_executable,
+        gdb_executable=Path(which(gdb_executable)),
     )
 
 if __name__ == "__main__":

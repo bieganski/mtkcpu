@@ -121,7 +121,7 @@ while true:
  ```
 
 To make everything work, the [JTAG testbench](../mtkcpu/utils/tests/utils.py) does the following:
-1) runs `gdb` (`riscv-none-embed-gdb`), passing an example .elf
+1) runs `gdb` (`riscv-none-elf-gdb`), passing an example .elf
 2) runs the `openOCD`, makes connection with `gdb`
 3) GDB parses .elf and sends it content to `openOCD` via internal protocol
 4) `openOCD` translates it to JTAG instructions, there are passeed to simulator via TCP channel

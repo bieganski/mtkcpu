@@ -2,7 +2,7 @@
 asm.o
 asm.S
 *.vcd
-xpack-riscv-none-embed-gcc-*
+riscv-none-*
 *.swp
 __pycache__/
 **/__pycache__/

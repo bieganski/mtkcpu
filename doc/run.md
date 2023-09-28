@@ -5,7 +5,9 @@
 ```sh
 git clone https://github.com/bieganski/mtkcpu
 cd mtkcpu
-./install_toolchain.sh # installs riscv-none-embed-gcc
+make build-docker # create docker image, containing all required programs
+make fetch-gcc # copy proper gcc version from just-built docker image to your host filesystem.
+export PATH=... # follow instruction in 'make fetch-gcc' output.
 pip3 install . # installs mtkCPU and it's dependencies
 ```
 
@@ -49,7 +51,7 @@ INFO:root:OK, linker script written to mtkcpu/sw/common/linker.ld file!
 
 ```sh
 PROJ_NAME=blink_led
-which riscv-none-embed-gcc # make sure it's already in your PATH (you downloaded and extracted it in previous step).
+which riscv-none-elf-gcc # make sure it's already in your PATH (you downloaded and extracted it in previous step).
 cd sw/$PROJ_NAME
 make # will generate .elf file
 file build/$PROJ_NAME.elf # make sure it exists

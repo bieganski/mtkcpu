@@ -7,11 +7,11 @@ endif
 # vpath %.cc ../bsp/
 
 
-TOOLCHAIN := riscv-none-embed-
+TOOLCHAIN := riscv-none-elf-
 CC := $(TOOLCHAIN)g++
 LD := $(TOOLCHAIN)ld
 
-MARCH := rv32i
+MARCH := rv32i_zicsr
 ARCH_FLAGS := -march=$(MARCH) -mabi=ilp32 -DUSE_GP
 
 GIT_ROOT := $(shell git rev-parse --show-toplevel)

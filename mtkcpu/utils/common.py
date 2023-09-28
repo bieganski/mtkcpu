@@ -84,7 +84,8 @@ def read_elf(elf_path, verbose=False):
     
     if verbose:
         import subprocess
-        p = subprocess.Popen(["riscv-none-embed-objdump", "--disassembler-options=no-aliases",  "-M",  "numeric", "-d", elf_path], stdout=subprocess.PIPE)
+        from mtkcpu.units.debug.impl_config import TOOLCHAIN
+        p = subprocess.Popen([f"{TOOLCHAIN}-objdump", "--disassembler-options=no-aliases",  "-M",  "numeric", "-d", elf_path], stdout=subprocess.PIPE)
         out, _ = p.communicate()
         out = str(out.decode("ascii"))
         raise ValueError(out)
@@ -106,27 +107,21 @@ def read_elf(elf_path, verbose=False):
 
 # TODO pass additional param
 def compile_source(source_raw : str, output_elf : Path, mem_size_kb: int):
+
+    from mtkcpu.units.debug.impl_config import TOOLCHAIN, GCC_MARCH
     
-    COMPILERS = ["riscv-none-embed-gcc", "riscv-none-elf-gcc"]
-    for candicate in COMPILERS:
-        if which(candicate) is not None:
-            break
-    else:
-        raise ValueError(f"Could not find a suitable compiler! Seeked for {COMPILERS}")
-    
-    compiler = candicate
+    compiler = f"{TOOLCHAIN}-gcc"
+
+    if which(compiler) is None:
+        raise ValueError(f"Could not find {compiler}")
     
     with NamedTemporaryFile(suffix=".S", delete=False, mode="w+") as asm_file:
         assert asm_file.write(source_raw)
     with NamedTemporaryFile(suffix=".ld", delete=False) as ld_file:
         from mtkcpu.utils.linker import write_linker_script
         write_linker_script(Path(ld_file.name), mem_addr=CODE_START_ADDR, mem_size_kb=mem_size_kb)
-    
-    march = "rv32i"
-    if "elf" in compiler:
-        march += "_zicsr"
 
-    cmd = [compiler, f"-march={march}", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
+    cmd = [compiler, f"-march={GCC_MARCH}", "-mabi=ilp32", "-nostartfiles", f"-T{ld_file.name}", asm_file.name, "-o", output_elf]
     logging.critical(" ".join(cmd))
     p = Popen(cmd, stdout=PIPE, stderr=PIPE)
     out, err = p.communicate()

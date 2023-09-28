@@ -40,6 +40,7 @@ from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
 from mtkcpu.cpu.cpu import CPU_Config
+from mtkcpu.units.debug.impl_config import TOOLCHAIN
 
 
 from ppci.arch.riscv import instructions
@@ -200,7 +201,11 @@ def reg_test(
 
 def get_code_mem(case: MemTestCase, mem_size_kb: int) -> MemoryContents:
     if case.source_type == MemTestSourceType.TEXT:
-        code = dump_asm(case.source, verbose=False)
+        code = dump_asm(
+            code_input=case.source,
+            toolchain=TOOLCHAIN,
+            verbose=False
+        )
         return MemoryContents(
             memory=dict(zip(count(CODE_START_ADDR, 4), code)),
         )

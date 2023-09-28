@@ -15,7 +15,7 @@
 
 ### Software
 
-Make sure that you have `yosys` and `nextpnr-ice40` installed, as stated in [Quick Start tutorial](./run.md). `riscv-none-embed-gcc` or `riscv-none-elf-gcc` compiler is also required in your PATH, in order to compile default ELF to be running on board power-up.
+Make sure that you have `yosys` and `nextpnr-ice40` installed, as stated in [Quick Start tutorial](./run.md). `riscv-none-elf-gcc` compiler is also required in your PATH, in order to compile default ELF to be running on board power-up.
 
 
 ### Hardware
@@ -101,7 +101,7 @@ Info : Listening on port 3333 for gdb connections
 ## GDB
 
 ```bash
-riscv-none-embed-gdb -x board/breakpoint_example.gdb sw/blink_led/build/blink_led.elf
+riscv-none-elf-gdb -x board/breakpoint_example.gdb sw/blink_led/build/blink_led.elf
 ```
 
 Expected output contains following:
