@@ -2,3 +2,5 @@ PROGBUFSIZE = 3
 DATASIZE = 2
 PROGBUF_MMIO_ADDR = 0xde88
 
+TOOLCHAIN = "riscv-none-elf"
+GCC_MARCH = "rv32i_zicsr"

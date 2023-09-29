@@ -8,9 +8,12 @@ from ppci.api import asm, link
 
 def dump_asm_to_S_file(
     val_lst: List[int],
+    toolchain: str,
     filename: str = "asm.S",
     verbose: bool = False,
 ):
+    if not toolchain.endswith("-"):
+        toolchain = toolchain + "-"
     if os.path.isfile(filename):
         os.remove(filename)
     with open(filename, "w") as f:
@@ -27,10 +30,10 @@ def dump_asm_to_S_file(
 
     obj_filename = f"{filename.split('.')[-2]}.o"
     subprocess.getoutput(
-        f"riscv-none-embed-gcc -c {filename} -o {obj_filename}"
+        f"{toolchain}gcc -c {filename} -o {obj_filename}"
     )
     output = subprocess.getoutput(
-        f"riscv-none-embed-objdump -d {obj_filename}"
+        f"{toolchain}objdump -d {obj_filename}"
     )
     LOG(output, verbose=verbose)
 
@@ -53,6 +56,7 @@ def LOG(*args, **kwargs):
 # returns bytearray with asm.
 def dump_asm(
     code_input: str,
+    toolchain: str,
     verbose: bool = False,
 ) -> List[int]:
 
@@ -62,7 +66,7 @@ def dump_asm(
     code = obj.get_section("code").data
     code = bytes_to_u32_arr(code)
     dump_instrs(code)
-    dump_asm_to_S_file(code, verbose=verbose)
+    dump_asm_to_S_file(code, toolchain, verbose=verbose)
     return code
 
 

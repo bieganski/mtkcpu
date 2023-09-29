@@ -1,9 +1,8 @@
 from pathlib import Path
-from subprocess import Popen, PIPE
 import logging
 
 class Config:
-    git_root = Path(Popen(['git', 'rev-parse', '--show-toplevel'], stdout=PIPE).communicate()[0].rstrip().decode('utf-8'))
+    git_root = Path(__file__).parent.parent.absolute()
     sw_dir = Path(git_root / "sw")
     bsp_dir = Path(sw_dir / "bsp")
     after_main_sym_name = "mainDone"

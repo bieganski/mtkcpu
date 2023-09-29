@@ -1,3 +1,5 @@
+DOCKER_IMAGE_NAME := docker.io/library/mtkcpu:1.0.0
+
 lint:
 	poetry run black .
 	poetry run isort .
@@ -26,11 +28,24 @@ build-docker:
 	bash ./build_docker_image.sh
 
 test-docker:
-	docker run docker.io/library/mtkcpu:1.0.0 poetry run mtkcpu tests cpu
+	docker run $(DOCKER_IMAGE_NAME) poetry run mtkcpu tests cpu
 
 run-docker-it:
-	docker run -it docker.io/library/mtkcpu:1.0.0 bash
+	docker run -it $(DOCKER_IMAGE_NAME) bash
+
+fetch-gcc: export id := $(shell docker create $(DOCKER_IMAGE_NAME))
+fetch-gcc: export temp := $(shell mktemp -p .)
+fetch-gcc:
+	rm -rf riscv-none-elf-gcc
+	docker cp $(id):/root/.local/xPacks/@xpack-dev-tools/riscv-none-elf-gcc/ - > $(temp)
+	docker rm -v $(id)
+	tar xvf $(temp)
+	rm $(temp)
+	chmod -R +wx riscv-none-elf-gcc
+	@echo "== GCC downloaded from docker to host - run the following command to have it in your PATH:"
+	@echo 'export PATH=$$PATH:$(shell realpath riscv-none-elf-gcc/13.2.0-1.2/.content/bin)'
+	@echo '======'
 
 test:
 	poetry run pytest -n 12
-
+	

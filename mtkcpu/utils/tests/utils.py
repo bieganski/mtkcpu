@@ -40,6 +40,7 @@ from mtkcpu.units.mmio.gpio import GPIO_Wishbone
 from mtkcpu.utils.tests.dmi_utils import *
 from mtkcpu.utils.misc import get_color_logging_object
 from mtkcpu.cpu.cpu import CPU_Config
+from mtkcpu.units.debug.impl_config import TOOLCHAIN
 
 
 from ppci.arch.riscv import instructions
@@ -200,7 +201,11 @@ def reg_test(
 
 def get_code_mem(case: MemTestCase, mem_size_kb: int) -> MemoryContents:
     if case.source_type == MemTestSourceType.TEXT:
-        code = dump_asm(case.source, verbose=False)
+        code = dump_asm(
+            code_input=case.source,
+            toolchain=TOOLCHAIN,
+            verbose=False
+        )
         return MemoryContents(
             memory=dict(zip(count(CODE_START_ADDR, 4), code)),
         )
@@ -649,16 +654,6 @@ gdb_report_data_abort enable
     for line in iter(popen.stderr.readline, ""):
         yield line
 
-def get_git_root() -> Path:
-    """
-    WARNING: not to be used inside package!
-    """
-    import subprocess
-    process = subprocess.Popen("git rev-parse --show-toplevel", shell=True, stdout=subprocess.PIPE)
-    stdout, _ = process.communicate()
-    return Path(stdout.decode("ascii").strip())
-
-
 def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     "returns .elf path, previously asserting that it exists."
     from mtkcpu.utils.linker import write_linker_script
@@ -697,7 +692,8 @@ def assert_jtag_test(
         )
     )
 
-    sw_project_path = get_git_root() / "sw" / "just_loop"
+    from mtkcpu.global_config import Config
+    sw_project_path = Config.sw_dir / "just_loop"
     
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
 
