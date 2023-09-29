@@ -654,16 +654,6 @@ gdb_report_data_abort enable
     for line in iter(popen.stderr.readline, ""):
         yield line
 
-def get_git_root() -> Path:
-    """
-    WARNING: not to be used inside package!
-    """
-    import subprocess
-    process = subprocess.Popen("git rev-parse --show-toplevel", shell=True, stdout=subprocess.PIPE)
-    stdout, _ = process.communicate()
-    return Path(stdout.decode("ascii").strip())
-
-
 def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     "returns .elf path, previously asserting that it exists."
     from mtkcpu.utils.linker import write_linker_script
@@ -702,7 +692,8 @@ def assert_jtag_test(
         )
     )
 
-    sw_project_path = get_git_root() / "sw" / "just_loop"
+    from mtkcpu.global_config import Config
+    sw_project_path = Config.sw_dir / "just_loop"
     
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
 

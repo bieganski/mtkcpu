@@ -5,23 +5,14 @@ import pytest
 
 from mtkcpu.utils.tests.utils import assert_jtag_test
 from mtkcpu.units.debug.impl_config import TOOLCHAIN
-
-
-def get_git_root() -> Path:
-    """
-    WARNING: not to be used inside package!
-    """
-    import subprocess
-    process = subprocess.Popen("git rev-parse --show-toplevel", shell=True, stdout=subprocess.PIPE)
-    stdout, _ = process.communicate()
-    return Path(stdout.decode("ascii").strip())
+from mtkcpu.global_config import Config
 
 @pytest.mark.skip
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 
     # TODO: We really need setup&build support for setup stage, to install correct tools.
-    openocd_executable = get_git_root() / ".." / "riscv-openocd" / "src" / "openocd"
+    openocd_executable = Config.git_root / ".." / "riscv-openocd" / "src" / "openocd"
 
     if not openocd_executable.exists():
         raise ValueError(f"openocd executable ({openocd_executable}) does not exists!")
