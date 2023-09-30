@@ -29,20 +29,6 @@ RUN source $NVM_SH && npm install --global xpm@0.16.4
 RUN source $NVM_SH && xpm install --global @xpack-dev-tools/riscv-none-elf-gcc@13.2.0-1.2 --verbose
 ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-elf-gcc/13.2.0-1.2/.content/bin:$PATH"
 
-RUN pip3 install --upgrade pip
-RUN pip3 install poetry
-
-# Install Poetry dependencies
-ADD pyproject.toml .
-ADD poetry.lock .
-
-# Install mtkcpu.
-# RUN poetry install --no-interaction
-ADD mtkcpu ./mtkcpu
-RUN poetry install --no-interaction
-
-ENV PATH=$HOME/.poetry/bin/:$PATH
-
 # Install 'iceprog' dependencies.
 RUN apt-get install -y libftdi-dev
 
@@ -63,3 +49,22 @@ RUN git clone https://github.com/YosysHQ/nextpnr && cd nextpnr && cmake . -DARCH
 
 # Make sure all synthesis binaries are in PATH.
 RUN which iceprog yosys nextpnr-ice40 
+
+# Install RISC-V OpenOCD.
+RUN git clone https://github.com/riscv/riscv-openocd
+RUN cd riscv-openocd && ./bootstrap && ./configure && make -j15 && make install
+RUN which openocd
+
+# TODO 
+# RUN rm -rf icestorm yosys nextpnr riscv-openocd
+
+# Install Poetry
+RUN pip3 install --upgrade pip
+RUN pip3 install poetry
+ADD pyproject.toml .
+ADD poetry.lock .
+
+# Install mtkcpu.
+ADD mtkcpu ./mtkcpu
+RUN poetry install --no-interaction
+ENV PATH=$HOME/.poetry/bin/:$PATH

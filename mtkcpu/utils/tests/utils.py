@@ -659,16 +659,17 @@ def build_software(sw_project_path: Path, cpu: MtkCpu) -> Path:
     from mtkcpu.utils.linker import write_linker_script
     from tempfile import NamedTemporaryFile
 
-    linker_script = Path(NamedTemporaryFile(delete=False, suffix=".ld").name).absolute()
+    with NamedTemporaryFile(suffix=".ld") as f:
+        path = Path(f.name).absolute()
+        
+        write_linker_script(
+            out_path=path,
+            mem_addr=cpu.mem_config.mem_addr,
+            mem_size_kb=cpu.mem_config.arena_kb_ceiled,
+        )
 
-    write_linker_script(
-        out_path=linker_script,
-        mem_addr=cpu.mem_config.mem_addr,
-        mem_size_kb=cpu.mem_config.arena_kb_ceiled,
-    )
-
-    process = subprocess.Popen(f"make -B LINKER_SCRIPT={linker_script}", cwd=sw_project_path, shell=True)
-    process.communicate()
+        process = subprocess.Popen(f"make -B LINKER_SCRIPT={path}", cwd=sw_project_path, shell=True)
+        process.communicate()
     
     elf_path = sw_project_path / "build" / f"{sw_project_path.name}.elf"
     assert elf_path.exists()

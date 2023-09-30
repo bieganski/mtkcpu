@@ -197,7 +197,10 @@ def debug_inspect_applied_struct(struct: data.Struct, val: int) -> str:
     return res
 
 def monitor_abstractauto(dmi_monitor: DMI_Monitor):
-    from beepy import beep
+    try:
+        from beepy import beep
+    except Exception:
+        beep = lambda *_ : None
     def aux():
         yield Passive()
 
