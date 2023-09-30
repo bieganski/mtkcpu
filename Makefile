@@ -1,4 +1,5 @@
 DOCKER_IMAGE_NAME := docker.io/library/mtkcpu:1.0.0
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 lint:
 	poetry run black .
@@ -28,7 +29,7 @@ build-docker:
 	bash ./build_docker_image.sh
 
 test-docker:
-	docker run $(DOCKER_IMAGE_NAME) poetry run mtkcpu tests cpu
+	docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw $(DOCKER_IMAGE_NAME) poetry run mtkcpu tests cpu
 
 run-docker-it:
 	docker run -it $(DOCKER_IMAGE_NAME) bash

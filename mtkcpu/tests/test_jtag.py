@@ -5,26 +5,20 @@ import pytest
 
 from mtkcpu.utils.tests.utils import assert_jtag_test
 from mtkcpu.units.debug.impl_config import TOOLCHAIN
-from mtkcpu.global_config import Config
 
-@pytest.mark.skip
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 
-    # TODO: We really need setup&build support for setup stage, to install correct tools.
-    openocd_executable = Config.git_root / ".." / "riscv-openocd" / "src" / "openocd"
-
-    if not openocd_executable.exists():
-        raise ValueError(f"openocd executable ({openocd_executable}) does not exists!")
-
     gdb_executable = f"{TOOLCHAIN}-gdb"
+    openocd_executable = "openocd"
 
-    if which(gdb_executable) is None:
-        raise ValueError(f"gdb executable ({gdb_executable}) either not found or not eXecute permissions")
+    for x in [openocd_executable, gdb_executable]:
+        if which(x) is None:
+            raise ValueError(f"executable {x} either not found or lacks eXecute permissions")
     
     assert_jtag_test(
         with_checkpoints=True,
-        openocd_executable=openocd_executable,
+        openocd_executable=Path(which(openocd_executable)),
         gdb_executable=Path(which(gdb_executable)),
     )
 
