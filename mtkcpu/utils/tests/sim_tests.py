@@ -133,12 +133,16 @@ def get_sim_jtag_controller(cpu: MtkCpu):
         global FINISH_SIM_OK
         yield Active()
 
-        print("Waiting for OCD connection...")
+        from mtkcpu.utils.misc import get_color_logging_object
+        logging = get_color_logging_object()
+
+        logging.info("Waiting for OCD connection...")
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((HOST, PORT))
         s.listen()
+        logging.info("Waiting for openOCD connection..")
         conn, addr = s.accept()
-        print(f'OCD Connected! From addr: {addr}')
+        logging.info(f'OCD Connected! From addr: {addr}')
 
         jtag_loc = cpu.debug.jtag
         cpu_tdi = jtag_loc.tdi

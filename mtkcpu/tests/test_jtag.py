@@ -6,6 +6,7 @@ import pytest
 from mtkcpu.utils.tests.utils import assert_jtag_test
 from mtkcpu.units.debug.impl_config import TOOLCHAIN
 
+@pytest.mark.skip
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 

@@ -28,11 +28,17 @@ build:
 build-docker:
 	bash ./build_docker_image.sh
 
-test-docker:
-	docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw $(DOCKER_IMAGE_NAME) poetry run mtkcpu tests cpu
+DRUN := docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw $(DOCKER_IMAGE_NAME)
+DRUN_IT := docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw -it $(DOCKER_IMAGE_NAME)
+
+unit-test-docker:
+	$(DRUN)	poetry run mtkcpu tests cpu
+
+test-ocd-gdb-docker:
+	$(DRUN) sh -c 'poetry run python3 mtkcpu/tests/test_jtag.py && cat ckpt.log'
 
 run-docker-it:
-	docker run -it $(DOCKER_IMAGE_NAME) bash
+	$(DRUN_IT) bash
 
 fetch-gcc: export id := $(shell docker create $(DOCKER_IMAGE_NAME))
 fetch-gcc: export temp := $(shell mktemp -p .)

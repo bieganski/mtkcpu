@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 from tempfile import NamedTemporaryFile
 import inspect
+import time
+from shutil import which
 
 from amaranth.hdl.ast import Signal, Const
 from amaranth.hdl.ir import Elaboratable, Fragment
@@ -613,23 +615,18 @@ from typing import Generator
 
 def run_openocd(
     openocd_executable: Path, 
-    delay_execution_num_seconds: int,
     ) -> Generator[str, None, None]:
-    """
-    Runs subprocess with 'openocd_executable' invocation, after delay of 
-    'delay_execution_num_seconds' seconds.
-    
-    TODO The openocd config used is hardcoded.
-    """
 
     if not openocd_executable.exists():
         raise ValueError(f"Please make sure that path: {openocd_executable} is existing executable!")
     
+    sim_port = 9824
+    
 
-    ocd_commands = """
+    ocd_commands = f"""
 interface remote_bitbang
 remote_bitbang_host localhost
-remote_bitbang_port 9824
+remote_bitbang_port {sim_port}
 
 set _CHIPNAME riscv
 jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x10e31913
@@ -642,12 +639,22 @@ gdb_report_data_abort enable
 # init
 # halt
 """
+    
+    if which("lsof") is None:
+        raise ValueError("lsof is required, in order to know when the port is ready to use!")
+    while True:
+        lsof = subprocess.Popen(f"lsof -i :{sim_port}", shell=True)
+        lsof.communicate()
+        if lsof.returncode == 0:
+            break
+        logging.info(f"openOCD: Waiting for port {sim_port} to be ready..")
+        time.sleep(0.5)
 
     with NamedTemporaryFile(mode='w', delete=False) as f:
         ocd_cfg_fname = f.name
         f.write(ocd_commands)
 
-    ocd_invocation = f"sleep {delay_execution_num_seconds} && {openocd_executable} -f {ocd_cfg_fname}"
+    ocd_invocation = f"{openocd_executable} -f {ocd_cfg_fname}"
 
     popen = subprocess.Popen(ocd_invocation, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
@@ -698,10 +705,7 @@ def assert_jtag_test(
     
     elf_path = build_software(sw_project_path=sw_project_path, cpu=cpu)
 
-    lines = run_openocd(
-        delay_execution_num_seconds=1,
-        openocd_executable=openocd_executable
-    )
+    lines = run_openocd(openocd_executable=openocd_executable)
 
     def run_gdb_when_ocd_ready():
         for line in lines:
@@ -710,6 +714,7 @@ def assert_jtag_test(
             #  /* Some regression suites rely on seeing 'Examined RISC-V core' to know
             # * when they can connect with gdb/telnet.
             # * We will need to update those suites if we want to change that text. */
+            #
             # logging.warn(line)
             if "Examined RISC-V core" in line:
                 logging.info("Detected that openOCD successfully finished CPU examination! Running GDB..")
@@ -730,6 +735,11 @@ def assert_jtag_test(
     sim, vcd_traces = create_jtag_simulator(dmi_monitor, cpu)
 
     processes = [
+        # process below is the only Active process, as it
+        # communicates directly with openOCD via Unix Socket.
+        get_sim_jtag_controller(cpu=cpu),
+
+        # all processes below are Passive.
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
@@ -738,7 +748,6 @@ def assert_jtag_test(
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),
         get_sim_memory_test(cpu=cpu, mem_dict=MemoryContents.empty()),
-        get_sim_jtag_controller(cpu=cpu),
         monitor_writes_to_dcsr(dmi_monitor=dmi_monitor),
         monitor_abstractauto(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=dmi_monitor.cpu, output_dict=dict()),
