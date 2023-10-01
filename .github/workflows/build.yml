@@ -17,9 +17,12 @@ jobs:
       - name: Build the Docker image
         shell: bash
         run: make build-docker
-      - name: Run tests
+      - name: Run unit tests
         shell: bash
-        run: make test-docker
+        run: make unit-test-docker
+      - name: Run OCD tests
+        shell: bash
+        run: make test-ocd-gdb-docker
       - name: Synthesisze SoC
         shell: bash
         run: |
