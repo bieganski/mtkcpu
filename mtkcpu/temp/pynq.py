@@ -30,51 +30,43 @@ class PynqPlatform(ArtyZ720Platform):
         but I haven't managed to make it work.
         """
         import os, subprocess
+        from pathlib import Path
         vivado = os.environ.get("VIVADO", "vivado")
+        program_tcl = Path(__file__).parent / "program.tcl"
         with products.extract("{}.bit".format(name)) as bitstream_filename:
-            words = [vivado, "-mode", "batch", "-source", "program.tcl", "-tclargs", bitstream_filename]
+            words = [vivado, "-mode", "batch", "-source", str(program_tcl.absolute()), "-tclargs", bitstream_filename]
             subprocess.run(words, check=True)
 
 class Top(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
-        frst = Signal(4)
-        fclk = [Signal(name=f'fclk{i}') for i in range(4)]
-        rst = Signal()
+        # m.submodules.ps = Instance('PS7')
+        # platform.add_clock_constraint(ClockSignal("sync"), 125)
 
-        m.domains.sync = ClockDomain()
+        led0 = platform.request("led", 0)
+        led1 = platform.request("led", 1)
 
-        kwargs = {}
-        kwargs['o_FCLKCLK'] = Cat(*fclk)
-        kwargs['o_FCLKRESETN'] = frst
+        ctr = Signal(25)
+        m.d.sync += ctr.eq(ctr + 1)
 
-        m.submodules.ps = Instance('PS7', **kwargs)
-        m.submodules.rst_sync = ResetSynchronizer(~frst[0], domain="sync")
-        platform.add_clock_constraint(fclk[0], 50e6)
-
-        m.d.comb += [
-            ClockSignal('sync').eq(fclk[0]),
-        ]
-
-        led_g = platform.request("led")
-        led_r = platform.request("led", 1)
-
-        # FIXME some clock issue - LED does not lighten in 'sync' domain
-        TODO_not_working = m.d.sync
-        TODO_working = m.d.comb
-
-        domain = TODO_working
-
-        domain += [
-            led_r.eq(1),
-            led_g.eq(1),
-        ]
+        with m.If(ctr == 0):
+            for led in [led0, led1]:
+                m.d.sync += led.o.eq(~led.o)
 
         return m
-    
-plat = PynqPlatform()
-plat.build(Top(), do_program=True)
 
-# don't rebuild, only program
-# plat.toolchain_program(products=LocalBuildProducts(root="./build"), name="top")
+
+if __name__ == "__main__":
+    from amaranth.back import verilog
+    top = Top()
+    with open("top.v", "w") as f:
+        f.write(verilog.convert(top, platform=PynqPlatform(), ports=[]))
+
+    # build and load ...
+    plat = PynqPlatform()
+    plat.build(Top(), do_program=True)
+
+    # ... or only load.
+    # plat.toolchain_program(products=LocalBuildProducts(root="./build"), name="top")
+

@@ -42,6 +42,13 @@ def get_board_cpu(elf_path : Optional[Path], cpu_config: CPU_Config):
 
 
 def get_platform() -> Platform:
+
+    import sys
+    p = Path(__file__).parent.parent / "temp"
+    sys.path.append(str(p.absolute()))
+    from mtkcpu.temp.pynq import PynqPlatform
+    return PynqPlatform()
+
     from amaranth_boards.icebreaker import ICEBreakerPlatform
     from amaranth.build.dsl import Resource, Pins, Attrs, Subsignal
     
