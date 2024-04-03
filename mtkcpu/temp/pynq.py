@@ -2,7 +2,7 @@
 
 from amaranth import *
 from amaranth_boards.arty_z7 import ArtyZ720Platform
-from amaranth_boards.resources import LEDResources, RGBLEDResource, ButtonResources, SwitchResources
+from amaranth_boards.resources import LEDResources, RGBLEDResource, ButtonResources, SwitchResources, UARTResource
 from amaranth.build import *
 from amaranth.build.run import LocalBuildProducts
 from amaranth.lib.cdc import ResetSynchronizer
@@ -20,6 +20,11 @@ class PynqPlatform(ArtyZ720Platform):
         RGBLEDResource(1, r="M15", g="L14", b="G14", attrs=Attrs(IOSTANDARD="LVCMOS33")),
         *ButtonResources(pins="D19 D20 L20 L19", attrs=Attrs(IOSTANDARD="LVCMOS33")),
         *SwitchResources(pins="M20 M19", attrs=Attrs(IOSTANDARD="LVCMOS33")),
+        
+        UARTResource(0,
+            rx="W18", tx="W19", # https://discuss.pynq.io/t/pynq-z2-pinout/4256
+            attrs=Attrs(IOSTANDARD="LVCMOS33", PULLUP=1)
+        ),
     ]
     connectors = []
 

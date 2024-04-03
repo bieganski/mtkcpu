@@ -217,7 +217,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
 
         def gpio_gen(platform : Platform):
             if platform:
-                led_r, led_g = platform.request("led_r").o, platform.request("led_g").o
+                led_r, led_g = platform.request("led", 0).o, platform.request("led", 1).o
             else:
                 led_r, led_g = [Signal(name="LED_R"), Signal(name="LED_G")]
             self.led_r, self.led_g = led_r, led_g # XXX: for simulation testbench.
