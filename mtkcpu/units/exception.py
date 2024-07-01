@@ -7,8 +7,12 @@ from amaranth.lib.coding import PriorityEncoder
 from mtkcpu.cpu.priv_isa import *
 from mtkcpu.units.csr.csr import CsrUnit
 
+from mtkcpu.units.csr.csr_handlers import stmt_csr_write_trigger, to_bitmask
+from mtkcpu.cpu.priv_isa import CSRIndex
+
 class ExceptionUnit(Elaboratable):
     def __init__(self, current_priv_mode: Signal, csr_unit : CsrUnit):
+        self.csr_unit = csr_unit
         self.mtvec = csr_unit.mtvec
         self.mtval = csr_unit.mtval
         self.mepc = csr_unit.mepc
@@ -95,14 +99,22 @@ class ExceptionUnit(Elaboratable):
         m.d.comb += self.m_raise.eq(~trap_pe.n | (~interrupt_pe.n & mstatus.mie))
         with m.If(self.m_raise):
             m.d.sync += [
-                mstatus.mpp.eq(self.current_priv_mode),
+                # mstatus.mpp.eq(self.current_priv_mode), # TODO strange data flow
                 self.current_priv_mode.eq(PrivModeBits.MACHINE), # will be changed when impl. either supervisor or mdeleg register.
             ]
-            m.d.sync += [
-                mip.msip.eq(self.software_interrupt),
-                mip.mtip.eq(self.timer_interrupt),
-                mip.meip.eq(self.external_interrupt)
+            # TODO strange data flow
+            m.d.comb += [
+                *stmt_csr_write_trigger(self.csr_unit, CSRIndex.MSTATUS, self.current_priv_mode, to_bitmask(self.mstatus, "mpp")),
+
+                *stmt_csr_write_trigger(self.csr_unit, CSRIndex.MIP, self.software_interrupt, to_bitmask(self.mip, "msip")),
+                *stmt_csr_write_trigger(self.csr_unit, CSRIndex.MIP, self.timer_interrupt, to_bitmask(self.mip, "mtip")),
+                *stmt_csr_write_trigger(self.csr_unit, CSRIndex.MIP, self.external_interrupt, to_bitmask(self.mip, "meip")),
             ]
+            # m.d.sync += [
+            #     mip.msip.eq(self.software_interrupt),
+            #     mip.mtip.eq(self.timer_interrupt),
+            #     mip.meip.eq(self.external_interrupt)
+            # ]
             m.d.sync += [
                 # self.mstatus.r.mpie.eq(self.mstatus.r.mie),
                 # self.mstatus.r.mie.eq(0),
@@ -135,8 +147,8 @@ class ExceptionUnit(Elaboratable):
                 ]
         with m.Elif(self.m_mret):
             m.d.sync += [
-                self.mstatus.as_view().mie.eq(self.mstatus.as_view().mpie),
-                self.current_priv_mode.eq(self.mstatus.as_view().mpp) # pop privilege mode
+                mstatus.mie.eq(mstatus.mpie),
+                self.current_priv_mode.eq(mstatus.mpp) # pop privilege mode
             ]
 
         return m

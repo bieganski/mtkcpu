@@ -5,11 +5,9 @@ from operator import or_
 from typing import Union, Optional
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
-from amaranth.lib import data
-from amaranth.hdl import ValueCastable
 
 from mtkcpu.units.csr.csr import CsrUnit, match_csr
-from mtkcpu.units.csr.csr_handlers import CSR_Write_Handler
+from mtkcpu.units.csr.csr_handlers import stmt_csr_write_trigger, to_bitmask
 from mtkcpu.units.exception import ExceptionUnit
 from mtkcpu.utils.common import EBRMemConfig
 from mtkcpu.units.adder import AdderUnit, match_adder_unit
@@ -443,33 +441,6 @@ class MtkCpu(Elaboratable):
             m.next = "CHECK_SHOULD_HALT"
             m.d.sync += self.pc.eq(pc)
             m.d.sync += active_unit.eq(0)
-
-        def stmt_csr_write_trigger(csr_unit: CsrUnit, csr_idx: int, val: ValueCastable, bitmask: Optional[int] = None):
-            common = [
-                csr_unit.rd.eq(0),
-                csr_unit.en.eq(1),
-                csr_unit.csr_idx.eq(csr_idx),
-            ]
-            if bitmask is None:
-                return common + [
-                    csr_unit.func3.eq(Funct3.CSRRW),
-                    # TODO, current interface requires rs1 to be passed, though the only information needed is whether 'bool(rs1 == 0)',
-                    # and it shouldn't be used in CSRRW mode anyway. Needs refactor.
-                    csr_unit.rs1.eq(0),
-                    csr_unit.rs1val.eq(val),
-                ]
-            # TODO - yet another issue with our interface. We need to specify rs1 that is not zero,
-            # in order for CSRRS to have any action at all. That information should not be used though..
-            return common + [
-                csr_unit.func3.eq(Funct3.CSRRS),
-                csr_unit.rs1.eq(1),
-                csr_unit.rs1val.eq(bitmask),
-            ]
-        
-        def to_bitmask(reg: CSR_Write_Handler, field: str):
-            field=data.Layout.cast(reg.layout)._fields[field]
-            return (2**field.width - 1)  << field.offset
-
 
         with m.FSM() as self.main_fsm:
             with m.State("CHECK_SHOULD_HALT"):
