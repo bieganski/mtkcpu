@@ -72,62 +72,71 @@ class ExceptionUnit(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
+        from mtkcpu.units.csr.types import MIE_Layout, MIP_Layout, MSTATUS_Layout, MCAUSE_Layout
+        mie : MIE_Layout = self.mie.as_view()
+        mip : MIP_Layout = self.mip.as_view()
+        mstatus : MSTATUS_Layout = self.mstatus.as_view()
+        mcause : MCAUSE_Layout = self.mcause.as_view()
+        mepc = self.mepc.as_view()
+        mtval = self.mepc.as_view()
+
+
         trap_pe = m.submodules.trap_pe = PriorityEncoder(16)
         for k, v in self.trap_cause_map.items():
             m.d.comb += trap_pe.i[k].eq(v)
         
         interrupt_pe = m.submodules.interrupt_pe = PriorityEncoder(16)
         m.d.comb += [
-            interrupt_pe.i[IrqCause.M_SOFTWARE_INTERRUPT].eq(self.mie.msie), # self.mip.r.msip & self.mie.r.msie),
-            interrupt_pe.i[IrqCause.M_TIMER_INTERRUPT   ].eq(self.mie.mtie & self.timer_interrupt), # self.mip.r.mtip & self.mie.r.mtie),
-            interrupt_pe.i[IrqCause.M_EXTERNAL_INTERRUPT].eq(self.mie.meie), # self.mip.r.meip & self.mie.r.meie)
+            interrupt_pe.i[IrqCause.M_SOFTWARE_INTERRUPT].eq(mie.msie), # self.mip.r.msip & self.mie.r.msie),
+            interrupt_pe.i[IrqCause.M_TIMER_INTERRUPT   ].eq(mie.mtie & self.timer_interrupt), # self.mip.r.mtip & self.mie.r.mtie),
+            interrupt_pe.i[IrqCause.M_EXTERNAL_INTERRUPT].eq(mie.meie), # self.mip.r.meip & self.mie.r.meie)
         ]
 
-        m.d.comb += self.m_raise.eq(~trap_pe.n | (~interrupt_pe.n & self.mstatus.mie))
+        m.d.comb += self.m_raise.eq(~trap_pe.n | (~interrupt_pe.n & mstatus.mie))
         with m.If(self.m_raise):
             m.d.sync += [
-                self.mstatus.mpp.eq(self.current_priv_mode),
+                mstatus.mpp.eq(self.current_priv_mode),
                 self.current_priv_mode.eq(PrivModeBits.MACHINE), # will be changed when impl. either supervisor or mdeleg register.
             ]
             m.d.sync += [
-                self.mip.msip.eq(self.software_interrupt),
-                self.mip.mtip.eq(self.timer_interrupt),
-                self.mip.meip.eq(self.external_interrupt)
+                mip.msip.eq(self.software_interrupt),
+                mip.mtip.eq(self.timer_interrupt),
+                mip.meip.eq(self.external_interrupt)
             ]
             m.d.sync += [
                 # self.mstatus.r.mpie.eq(self.mstatus.r.mie),
                 # self.mstatus.r.mie.eq(0),
-                self.mepc.eq(self.m_pc)
+                mepc.eq(self.m_pc)
             ]
             with m.If(~trap_pe.n):
                 m.d.sync += [
-                    self.mcause.ecode.eq(trap_pe.o),
-                    self.mcause.interrupt.eq(0)
+                    mcause.ecode.eq(trap_pe.o),
+                    mcause.interrupt.eq(0)
                 ]
                 with m.Switch(trap_pe.o):
                     # with m.Case(Cause.FETCH_MISALIGNED):
                     #     m.d.sync += self.mtval.eq(self.m_branch_target)
                     with m.Case(TrapCause.FETCH_ACCESS_FAULT):
-                        m.d.sync += self.mtval.eq(self.badaddr)
+                        m.d.sync += mtval.eq(self.badaddr)
                     with m.Case(TrapCause.ILLEGAL_INSTRUCTION):
-                        m.d.sync += self.mtval.eq(self.m_instruction)
+                        m.d.sync += mtval.eq(self.m_instruction)
                     # with m.Case(Cause.BREAKPOINT):
                     #     m.d.sync += self.mtval.eq(self.m_pc)
                     # with m.Case(Cause.LOAD_MISALIGNED, Cause.STORE_MISALIGNED):
                     #     m.d.sync += self.mtval.eq(self.m_result)
                     with m.Case(TrapCause.LOAD_ACCESS_FAULT, TrapCause.STORE_ACCESS_FAULT):
-                        m.d.sync += self.mtval.eq(self.badaddr)
+                        m.d.sync += mtval.eq(self.badaddr)
                     # with m.Case():
                     #     m.d.sync += self.mtval.r.eq(0) # XXX
             with m.Else():
                 m.d.sync += [
-                    self.mcause.ecode.eq(interrupt_pe.o),
-                    self.mcause.interrupt.eq(1)
+                    mcause.ecode.eq(interrupt_pe.o),
+                    mcause.interrupt.eq(1)
                 ]
         with m.Elif(self.m_mret):
             m.d.sync += [
-                self.mstatus.mie.eq(self.mstatus.mpie),
-                self.current_priv_mode.eq(self.mstatus.mpp) # pop privilege mode
+                self.mstatus.as_view().mie.eq(self.mstatus.as_view().mpie),
+                self.current_priv_mode.eq(self.mstatus.as_view().mpp) # pop privilege mode
             ]
 
         return m

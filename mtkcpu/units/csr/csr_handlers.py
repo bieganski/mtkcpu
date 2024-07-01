@@ -31,6 +31,9 @@ class CSR_Write_Handler(ABC, Elaboratable):
             self.my_reg_latch = my_reg_latch
             assert my_reg_latch.width == 32
 
+    def as_view(self) -> data.View:
+        return data.View(self.layout, self.my_reg_latch)
+
     def latch_whole_value_with_no_side_effect(self):
         m = Module()
 
