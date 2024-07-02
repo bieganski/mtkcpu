@@ -78,7 +78,7 @@ class ExceptionUnit(Elaboratable):
         mstatus : MSTATUS_Layout = self.mstatus.as_view()
         mcause : MCAUSE_Layout = self.mcause.as_view()
         mepc = self.mepc.as_view()
-        mtval = self.mepc.as_view()
+        mtval = self.mtval.as_view()
 
 
         trap_pe = m.submodules.trap_pe = PriorityEncoder(16)

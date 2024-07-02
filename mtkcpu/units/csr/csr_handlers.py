@@ -45,7 +45,7 @@ class CSR_Write_Handler(ABC, Elaboratable):
 
     @classmethod
     def const(cls) -> int:
-        return cls.layout.const(cls.reset()).as_value()
+        return cls.layout.const(cls.reset()).as_value().value
     
     @staticmethod
     def reset() -> dict[str, int]:

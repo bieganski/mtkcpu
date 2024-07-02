@@ -130,18 +130,18 @@ class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
                     ]
                     m.next = "START"
                 with m.Else():
-                    m.d.sync += self.serial.tx.o.eq(1)
+                    m.d.sync += self.serial.tx.eq(1)
                     m.d.comb += busy_mmio.eq(0)
 
             with m.State("START"):
                 with m.If(self.tx_strobe):
-                    m.d.sync += self.serial.tx.o.eq(0)
+                    m.d.sync += self.serial.tx.eq(0)
                     m.next = "DATA"
 
             with m.State("DATA"):
                 with m.If(self.tx_strobe):
                     m.d.sync += [
-                        self.serial.tx.o.eq(tx_latch[0]),
+                        self.serial.tx.eq(tx_latch[0]),
                         tx_latch.eq(Cat(tx_latch[1:8], 0)),
                         tx_bitno.eq(tx_bitno + 1)
                     ]
@@ -150,7 +150,7 @@ class UartTX(Elaboratable, BusSlaveOwnerInterface, BspGeneratable):
 
             with m.State("STOP"):
                 with m.If(self.tx_strobe):
-                    m.d.sync += self.serial.tx.o.eq(1)
+                    m.d.sync += self.serial.tx.eq(1)
                     m.next = "IDLE"
 
         return m

@@ -443,33 +443,6 @@ class MtkCpu(Elaboratable):
             m.d.sync += self.pc.eq(pc)
             m.d.sync += active_unit.eq(0)
 
-        def stmt_csr_write_trigger(csr_unit: CsrUnit, csr_idx: int, val: ValueCastable, bitmask: Optional[int] = None):
-            common = [
-                csr_unit.rd.eq(0),
-                csr_unit.en.eq(1),
-                csr_unit.csr_idx.eq(csr_idx),
-            ]
-            if bitmask is None:
-                return common + [
-                    csr_unit.func3.eq(Funct3.CSRRW),
-                    # TODO, current interface requires rs1 to be passed, though the only information needed is whether 'bool(rs1 == 0)',
-                    # and it shouldn't be used in CSRRW mode anyway. Needs refactor.
-                    csr_unit.rs1.eq(0),
-                    csr_unit.rs1val.eq(val),
-                ]
-            # TODO - yet another issue with our interface. We need to specify rs1 that is not zero,
-            # in order for CSRRS to have any action at all. That information should not be used though..
-            return common + [
-                csr_unit.func3.eq(Funct3.CSRRS),
-                csr_unit.rs1.eq(1),
-                csr_unit.rs1val.eq(bitmask),
-            ]
-        
-        def to_bitmask(reg: CSR_Write_Handler, field: str):
-            field=data.Layout.cast(reg.layout)._fields[field]
-            return (2**field.width - 1)  << field.offset
-
-
         with m.FSM() as self.main_fsm:
             with m.State("CHECK_SHOULD_HALT"):
 
@@ -481,24 +454,12 @@ class MtkCpu(Elaboratable):
                 with m.If(cpu_state_if.haltreq):
                     # NOTE: dcsr.cause is ambiguous, if it comes to priorities. See a comment (and a whole discussion):
                     # https://lists.riscv.org/g/tech-debug/message/576
-                    comb += stmt_csr_write_trigger(csr_unit, CSRIndex.DCSR, DCSR_DM_Entry_Cause.HALTREQ)
-                    # comb += [
-                    #     dcsr.active.eq(1),
-                    #     dcsr.write_value.eq(DCSR_DM_Entry_Cause.HALTREQ)
-                    # ]
-                    # TODO TODO XXX XXX remove that comment
-                    # sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.HALTREQ)
+                    sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.HALTREQ)
                     m.next = "HALTED"
                 with m.Elif(single_step_is_active):
                     # NOTE: 'Elif' is not accidental here - HALTREQ has higher priority than STEP.
-                    # sync += dcsr.cause.eq(DCSR_DM_Entry_Cause.STEP)
-                    # comb += [
-                    #     dcsr.active.eq(1),
-                    #     dcsr.write_value.eq(DCSR_DM_Entry_Cause.STEP)
-                    # ]
-                    comb += stmt_csr_write_trigger(csr_unit, CSRIndex.DCSR, DCSR_DM_Entry_Cause.STEP)
+                    sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.STEP)
                     m.next = "HALTED"
-
                 with m.Else():
                     # maybe next time..
                     m.next = "FETCH"
@@ -510,20 +471,16 @@ class MtkCpu(Elaboratable):
                 # statement 'address *next* instruction' is vital here - since the HALTED is entered just before next instruction executed,
                 # the 'self.pc' is already updated, so we conform to the specs.
                 with m.If(~self.is_debug_mode & just_halted):
-                    comb += stmt_csr_write_trigger(csr_unit, CSRIndex.DPC, pc)
-                    # XXX XXX XXX
-                    # sync += dpc.as_view().eq(pc)
+                    sync += dpc.as_view().eq(pc)
                 # From specs:
                 # 'When resuming, the hart’s PC is updated to the virtual address stored in dpc.
                 # A debugger may write dpc to change where the hart resumes.'
                 
                 with m.If(cpu_state_if.resumereq):
-                    # sync += [
-                    #     self.pc.eq(dpc.as_view()),
-                    #     # dcsr.cause.eq(0), # TODO - is that ok to zero it, or should we leave it as is?
-                    # ]
-                    comb += stmt_csr_write_trigger(csr_unit, CSRIndex.DPC, pc)
-                    # XXX XXX XXX
+                    sync += [
+                        self.pc.eq(dpc.as_view()),
+                        # dcsr.cause.eq(0), # TODO - is that ok to zero it, or should we leave it as is?
+                    ]
                     m.next = "FETCH"
             
             with m.State("FETCH"):
@@ -621,8 +578,7 @@ class MtkCpu(Elaboratable):
                     with m.If(halt_on_ebreak):
                         # enter Debug Mode.
                         m.next = "HALTED"
-                        comb += stmt_csr_write_trigger(csr_unit, CSRIndex.DCSR, DCSR_DM_Entry_Cause.EBREAK, bitmask=to_bitmask(dcsr, "cause"))
-                        # sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
+                        sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
                     with m.Else():
                         # EBREAK description from Privileged specs:
                         # It generates a breakpoint exception and performs no other operation.
@@ -796,7 +752,6 @@ class MtkCpu(Elaboratable):
                 sync += self.debug_blink_red.eq(1)
 
             # with m.If(self.running_state.halted):
-            # TODO TODO TODO XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX should break
             with m.If(self.csr_unit.dcsr.ebreakm):
                 comb += self.debug_blink_green.eq(1)
 

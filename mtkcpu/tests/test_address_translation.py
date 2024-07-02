@@ -17,9 +17,9 @@ leaf_pt_addr = MEM_START_ADDR + leaf_pt_offset
 satp_value = SATP_Layout.const({
     "mode": 1, # enable address translation in user mode
     "ppn": root_pt_addr >> 12,
-}).value
+}).as_value().value
 
-pte_const = lambda fields: PTE_Layout.const(fields).value
+pte_const = lambda fields: PTE_Layout.const(fields).as_value().value
 
 # https://github.com/amaranth-lang/amaranth/issues/786
 mpp_offset_in_MSTATUS = MSTATUS_Layout(Signal(32))._View__layout._fields["mpp"].offset

@@ -307,7 +307,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
         bus_free_to_latch = self.bus_free_to_latch = Signal(reset=1)
 
         if self.with_addr_translation:
-            m.d.comb += addr_translation_en.eq(self.csr_unit.satp.mode & (self.exception_unit.current_priv_mode == PrivModeBits.USER))
+            m.d.comb += addr_translation_en.eq(self.csr_unit.satp.as_view().mode & (self.exception_unit.current_priv_mode == PrivModeBits.USER))
         else:
             m.d.comb += addr_translation_en.eq(False)
 
@@ -402,7 +402,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                 with m.If(start_translation):
                     sync += sv32_i.eq(1)
                     if self.with_addr_translation:
-                        sync += root_ppn.eq(self.csr_unit.satp.ppn)
+                        sync += root_ppn.eq(self.csr_unit.satp.as_view().ppn)
                     m.next = "TRANSLATE"
             with m.State("TRANSLATE"):
                 vpn = self.vpn = Signal(10)
