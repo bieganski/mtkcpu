@@ -244,10 +244,9 @@ class MtkCpu(Elaboratable):
         ) = m.submodules.reg_write_port = regs.write_port()
 
         # Timer management.
-        # XXX
-        # mtime = self.mtime = Signal(32)
-        # sync += mtime.eq(mtime + 1)
-        # comb += csr_unit.mtime.as_view().eq(mtime)
+        mtime = self.mtime = Signal(32)
+        sync += mtime.eq(mtime + 1)
+        comb += csr_unit.mtime.as_view().eq(mtime)
 
         # with m.If(csr_unit.mstatus.mie & csr_unit.mie.mtie):
         #     with m.If(mtime == csr_unit.mtimecmp):
