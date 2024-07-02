@@ -3,7 +3,7 @@ from typing import Optional
 
 from amaranth import Signal, Module, Elaboratable
 from amaranth.lib import data
-from amaranth.hdl import ValueCastable
+from amaranth.hdl.ast import ValueCastable
 
 from mtkcpu.units.csr.types import *
 from mtkcpu.utils.common import CODE_START_ADDR
