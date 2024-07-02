@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mtkcpu"
-version = "0.1.1"
+version = "0.1.2"
 description = "RiscV ISA implementation in Python"
 authors = [
     "Mateusz Biegański <bieganski.m@wp.pl>",
@@ -27,8 +27,8 @@ pyelftools = "^0.27"
 bitstring = "^3.1.7"
 typer = "^0.3.2"
 termcolor = "^1.1.0"
-amaranth = "^0.4"
-amaranth-boards = { git = "https://github.com/amaranth-lang/amaranth-boards", branch = "main" }
+amaranth = { git = "https://github.com/amaranth-lang/amaranth", rev = "a0750b89c6060d9f809159a012a26cff4e22e69d" }
+# amaranth-boards = { git = "https://github.com/amaranth-lang/amaranth-boards", branch = "main" }
 riscv-model = { git = "https://github.com/bieganski/riscv-python-model", branch = "master" }
 MarkupSafe = "2.0.1"
 colorlog = "^6.7.0"
