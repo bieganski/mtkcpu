@@ -6,7 +6,7 @@ from typing import Union, Optional
 from amaranth import Mux, Cat, Signal, Const, Record, Elaboratable, Module, Memory, signed
 from amaranth.hdl.rec import Layout
 from amaranth.lib import data
-from amaranth.hdl import ValueCastable
+from amaranth.hdl.ast import ValueCastable
 
 from mtkcpu.units.csr.csr import CsrUnit, match_csr
 from mtkcpu.units.csr.csr_handlers import CSR_Write_Handler

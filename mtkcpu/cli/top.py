@@ -118,11 +118,11 @@ def dummy_elaborate(e : Elaboratable, platform : Platform):
 
     if hasattr (root, "_named_submodules"):
         for name in root._named_submodules:
-            e, _ = root._named_submodules[name]
+            e = root._named_submodules[name]
             assert isinstance(e, Elaboratable)
             dummy_elaborate(e, platform)
     if hasattr (root, "_anon_submodules"):
-        for e, _ in root._anon_submodules:
+        for e in root._anon_submodules:
             assert isinstance(e, Elaboratable)
             dummy_elaborate(e, platform)
 
