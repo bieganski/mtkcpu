@@ -1,4 +1,4 @@
-from bieganski/riscv-fpga:tagname
+from bieganski/riscv-fpga:16-07-2024
 
 # Install Poetry
 RUN pip3 install --upgrade pip

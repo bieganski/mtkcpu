@@ -48,8 +48,6 @@ def main(cmd : Optional[str]):
     if not cmd:
         cmd = ""
     else:
-        if ';' in cmd:
-            warn("\n\nYour command contain ';' - probably it won't work as you might expect. Use && instead.\n\n")
         if (not cmd.startswith("sh")) and (not cmd.startswith("bash")):
             cmd = f"sh -c '{cmd}'"
 
