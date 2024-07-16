@@ -18,7 +18,7 @@ RUN apt-get -y install curl git pip file cmake
 ENV NVM_SH=/root/.nvm/nvm.sh
 # Install nvm, node and xpm.
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh > install.sh
-RUN echo "69da4f89f430cd5d6e591c2ccfa2e9e3ad55564ba60f651f00da85e04010c640  install.sh" > checksum.txt
+RUN echo "8e45fa547f428e9196a5613efad3bfa4d4608b74ca870f930090598f5af5f643  install.sh" > checksum.txt
 RUN sha256sum -c checksum.txt
 RUN bash ./install.sh
 RUN source $NVM_SH
@@ -44,7 +44,7 @@ RUN apt-get install -y libboost-all-dev libeigen3-dev
 # By default yosys and iceprog are installed in /usr/local/bin/, and for nextpnr we specify it explicitly.
 
 RUN git clone https://github.com/YosysHQ/icestorm && cd icestorm && make -j15 && make install
-RUN git clone https://github.com/YosysHQ/yosys && cd yosys && make -j15 && make install
+RUN git clone https://github.com/YosysHQ/yosys && cd yosys && git submodule update --init --recursive && make -j15 && make install
 RUN git clone https://github.com/YosysHQ/nextpnr && cd nextpnr && cmake . -DARCH=ice40 -DICESTORM_INSTALL_PREFIX=/usr/local/ && make -j15 && make install
 
 # Make sure all synthesis binaries are in PATH.

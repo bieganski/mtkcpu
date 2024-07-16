@@ -1,7 +1,11 @@
 
 name: Build and test the Docker image
 
-on: [pull_request, push]
+on:
+  push:
+    branches:
+    - main
+  pull_request:
 
 jobs:
   build:
@@ -28,4 +32,11 @@ jobs:
         run: |
           ./docker_run.py --cmd 'poetry run mtkcpu/cli/top.py gen_linker_script'
           ./docker_run.py --cmd 'make -B -C sw/uart_tx'
-          ./docker_run.py --cmd 'PROJ_NAME=uart_tx ; poetry run ./mtkcpu/cli/top.py build -e sw/$PROJ_NAME/build/$PROJ_NAME.elf'
+          : # TODO - the confusing reason why we copy bitstream to /toolchain/sw is that we need to somehow pass it from docker guest to host (github action artifact), and 'docker_run.py' only mounts 'sw' directory.
+          ./docker_run.py --cmd 'PROJ_NAME=uart_tx ; poetry run ./mtkcpu/cli/top.py build -e sw/$PROJ_NAME/build/$PROJ_NAME.elf ; cp build/top.bin /toolchain/sw'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: iceBreaker bitstream
+          path: sw/top.bin
