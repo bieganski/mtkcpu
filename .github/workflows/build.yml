@@ -1,7 +1,11 @@
 
 name: Build and test the Docker image
 
-on: [pull_request, push]
+on:
+  push:
+    branches:
+    - main
+  pull_request:
 
 jobs:
   build:
