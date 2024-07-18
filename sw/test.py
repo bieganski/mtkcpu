@@ -1,28 +1,11 @@
 #!/usr/bin/env python3
 
-import subprocess
-from pathlib import Path
 import logging
 
 logging.basicConfig(level=logging.INFO)
-from amaranth.back import verilog
 from amaranth import *
 
 from amaranth.lib.wiring import Signature, SignatureMembers, Flow, PureInterface, connect
-
-# sig = Signature({
-#     "b": Out(2)
-# })
-# members = SignatureMembers({
-#     "a": In(1),
-#     "s": Out(sig)
-# })
-# attrs = members.create()
-# self.assertEqual(list(attrs.keys()), ["a", "s"])
-# self.assertIsInstance(attrs["a"], Signal)
-
-from amaranth.sim import Simulator
-from amaranth.back import rtlil, verilog
 
 class PriorityEncoder(Elaboratable):
     def __init__(self, width):
@@ -51,8 +34,8 @@ class SimpleBusArbiter(Elaboratable):
         * Set 'ts_done' bit, meaning that transaction completed. In the very next cycle the bus can be granted to someone else.
     """
 
-    def __init__(self, num_masters: int, bus_shape: Signature, bus_slave: PureInterface) -> None:
-        self.num_masters = num_masters
+    def __init__(self, max_num_masters: int, bus_shape: Signature, bus_slave: PureInterface) -> None:
+        self.num_masters = max_num_masters
 
         self.bus_slave = bus_slave
         self.bus_shape = bus_shape
@@ -81,18 +64,24 @@ class SimpleBusArbiter(Elaboratable):
 
     def elaborate(self, _):
         m = Module()
-        m.submodules += (pe := PriorityEncoder(width=self.num_masters))
+        m.submodules.pe = self.pe = pe = PriorityEncoder(width=self.num_masters)
 
-        cur_owner = Signal(range(self.num_masters + 1))
+        assert len(self.ports) <= self.num_masters
+
+        # reprio. new priorities are guaranteed to be consecutive, starting from 0 (highest)
+        tmp = dict()
+        for new_prio, (old_prio, v) in enumerate(iter(sorted(self.ports.items()))):
+            tmp[new_prio] = v
+        self.ports = tmp; del tmp
 
         # Forward bus ownership requests.
-        for k, v in enumerate(self.ports.values()):
+        for k, v in self.ports.items():
             m.d.comb += pe.i[k].eq(v["rq"])
 
         # Arbitration logic.
-        with m.FSM():
+        cur_owner = Signal(range(self.num_masters + 1))
+        with m.FSM() as self.fsm:
             with m.State("IDLE"):
-                
                 with m.If(~pe.none):
                     m.next = "TS_IN_PROGRESS"
                     for k, v in self.ports.items():
@@ -106,7 +95,7 @@ class SimpleBusArbiter(Elaboratable):
                         m.next = "IDLE"
         return m
 
-class Top(Elaboratable):
+class ArbiterTestbench(Elaboratable):
     def __init__(self) -> None:
         pass
     
@@ -118,33 +107,66 @@ class Top(Elaboratable):
         })
         bus_slave = bus_shape.flip().create()
 
-        m.submodules.arbiter = arbiter = SimpleBusArbiter(
+        m.submodules.arbiter = self.arbiter = SimpleBusArbiter(
             bus_shape=bus_shape,
             bus_slave=bus_slave,
-            num_masters=2,
+            max_num_masters=2,
         )
 
-        self.master0_port = arbiter.register_master(priority=0)
-        self.master1_port = arbiter.register_master(priority=1)
+        self.master_low_prio_port = self.arbiter.register_master(priority=123)
+        self.master_high_prio_port = self.arbiter.register_master(priority=10)
 
         return m
 
-top = Top()
-
-# from amaranth_boards.icebreaker import ICEBreakerPlatform
-# ICEBreakerPlatform().build(top)
-# with open("top.v", "w") as f:
-#     f.write(verilog.convert(top, ports=[top.sig]))
-
+dut = ArbiterTestbench()
 
 async def testbench(ctx):
-    for _ in range(10):
-        await ctx.tick()
-        print(f"count: {ctx}")
+    # Make sure that no false requests are induced by arbiter.
+    assert ctx.get(dut.arbiter.pe.none) == 1
+    await ctx.tick()
+    assert ctx.get(dut.arbiter.pe.none) == 1
+    await ctx.tick().repeat(3)
+    assert ctx.get(dut.arbiter.pe.none) == 1
+    
+    # Make sure that higher (the lower number) priority request wins.
+    ctx.set(dut.master_low_prio_port["rq"], 1)
+    ctx.set(dut.master_high_prio_port["rq"], 1)
+    assert ctx.get(dut.arbiter.pe.none) == 0
+    assert ctx.get(dut.arbiter.pe.o) == 0
+    assert ctx.get(dut.master_high_prio_port["bus_owned"]) == 1
 
-sim = Simulator(top)
-sim.add_clock(1e-6)
-sim.add_testbench(testbench)
+    # Make sure that winner takes bus ownership (in same cycle as 'rq' was set high).
+    assert ctx.get(dut.arbiter.bus_slave.valid) == 0
+    ctx.set(dut.master_high_prio_port["bus"].valid, 1)
+    assert ctx.get(dut.master_high_prio_port["bus"].valid) == 1
+
+    await ctx.tick()
+
+    # Make sure that bus non-owner's signals don't affect arbiter state
+    ctx.set(dut.master_low_prio_port["ts_done"], 1)
+    await ctx.tick()
+    assert ctx.get(dut.arbiter.fsm.state) == 1
+
+    # Make sure that after high prio lets the bus free, the low prio can take it
+    assert ctx.get(dut.master_low_prio_port["rq"] ) == 1
+    ctx.set(dut.master_high_prio_port["rq"], 0)
+    ctx.set(dut.master_high_prio_port["ts_done"], 1)
+    await ctx.tick()
+    assert ctx.get(dut.master_low_prio_port["bus_owned"]) == 1
+
+if __name__ == "__main__":
+
+    # from amaranth.back import rtlil, verilog
+    # from amaranth_boards.icebreaker import ICEBreakerPlatform
+    # ICEBreakerPlatform().build(top)
+    # with open("top.v", "w") as f:
+    #     f.write(verilog.convert(top, ports=[top.sig]))
+
+    from amaranth.sim import Simulator
+    sim = Simulator(dut)
+    sim.add_clock(1e-6)
+    sim.add_testbench(testbench)
 # with amaranth_playground.show_waveforms(sim):
 # with sim.write_vcd(f"vm.vcd", "vm.gtkw", traces=traces):
-sim.run()
+    sim.run()
+    logging.info("sim ok")
