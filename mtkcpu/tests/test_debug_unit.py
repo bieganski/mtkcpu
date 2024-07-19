@@ -17,7 +17,6 @@ from mtkcpu.units.debug.dmi_handlers import DMI_HANDLERS_MAP
 from mtkcpu.units.debug.impl_config import PROGBUFSIZE, PROGBUF_MMIO_ADDR
 from mtkcpu.units.debug.impl_config import DATASIZE
 from mtkcpu.units.csr.csr_handlers import DCSR
-
 logging = get_color_logging_object()
 
 
@@ -527,7 +526,7 @@ def test_halt_resume_with_new_dpc(
         new_pc = pc // 2 + 0x1000
         assert new_pc != pc
 
-        yield dmi_monitor.cpu.csr_unit.dpc.eq(new_pc)
+        yield dmi_monitor.cpu.csr_unit.dpc.as_view().eq(new_pc)
 
         yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
         yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
@@ -657,7 +656,7 @@ def test_progbuf_cmderr_on_runtime_error(
         yield Passive()
         while True:
             pc = yield cpu.pc
-            mepc = yield cpu.csr_unit.mepc.as_value()
+            mepc = yield cpu.csr_unit.mepc.as_view().as_value()
             instr = yield cpu.instr
             print("mepc", hex(mepc), "pc", hex(pc), "instr", hex(instr))
             yield
@@ -900,7 +899,7 @@ def test_ebreakm_halt(
 
         assert (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
 
-        yield dmi_monitor.cpu.csr_unit.dcsr.ebreakm.eq(1)
+        yield dmi_monitor.cpu.csr_unit.dcsr.as_view().ebreakm.eq(1)
         
         # Starting from now, every EBREAK should cause core halt.
 
@@ -956,8 +955,8 @@ def test_single_step(
         assert not (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
 
         # halt core by decoding EBREAK when 'ebreakm' bit asserted
-        yield dmi_monitor.cpu.csr_unit.dcsr.ebreakm.eq(1)
-        mtvec = yield dmi_monitor.cpu.csr_unit.mtvec.as_value()
+        yield dmi_monitor.cpu.csr_unit.dcsr.as_view().ebreakm.eq(1)
+        mtvec = yield dmi_monitor.cpu.csr_unit.mtvec.as_view().as_value()
         mem_cfg = cpu.mem_config
         assert mtvec >= mem_cfg.mem_addr
         assert mtvec < mem_cfg.mem_addr + mem_cfg.mem_size_words * mem_cfg.word_size
@@ -978,7 +977,7 @@ def test_single_step(
 
         assert (yield from cpu_core_is_halted(dmi_monitor=dmi_monitor))
 
-        yield dmi_monitor.cpu.csr_unit.dcsr.step.eq(1)
+        yield dmi_monitor.cpu.csr_unit.dcsr.as_view().step.eq(1)
         yield
         yield from resume_core_via_dmi()
 

@@ -66,10 +66,10 @@ class JTAGTap(Elaboratable):
         if platform is not None:
             debug = platform.request("debug")
             comb += [
-                self.port.tms.eq(debug.tms),
-                self.port.tdi.eq(debug.tdi),
-                debug.tdo.eq(self.port.tdo),
-                self.port.tck.eq(debug.tck),
+                self.port.tms.eq(debug.tms.i),
+                self.port.tdi.eq(debug.tdi.i),
+                debug.tdo.o.eq(self.port.tdo),
+                self.port.tck.eq(debug.tck.i),
             ]
 
         # XXX it does nothing but draws a horizontal bar on waveform..

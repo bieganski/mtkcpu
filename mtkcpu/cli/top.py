@@ -5,7 +5,7 @@ from typing import Optional
 import os
 
 from amaranth.build.plat import Platform
-from amaranth.hdl.dsl import Module
+from amaranth.hdl import Module
 
 from mtkcpu.cpu.cpu import MtkCpu
 from mtkcpu.global_config import Config
@@ -112,15 +112,18 @@ def dummy_elaborate(e : Elaboratable, platform : Platform):
     e._MustUse__used = True
     root : Module = e.elaborate(platform)
     root._MustUse__used = True
+
     if isinstance(root, Instance):
         return
 
     if hasattr (root, "_named_submodules"):
         for name in root._named_submodules:
             e = root._named_submodules[name]
+            assert isinstance(e, Elaboratable)
             dummy_elaborate(e, platform)
     if hasattr (root, "_anon_submodules"):
         for e in root._anon_submodules:
+            assert isinstance(e, Elaboratable)
             dummy_elaborate(e, platform)
 
 def generate_bsp():

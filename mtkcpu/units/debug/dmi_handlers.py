@@ -223,7 +223,7 @@ class HandlerCOMMAND(HandlerDMI):
                             from mtkcpu.cpu.priv_isa import CSRIndex
                             cpu : MtkCpu = self.debug_unit.cpu
                             real_dpc = Signal(32)
-                            dpc = cpu.csr_unit.dpc
+                            dpc = cpu.csr_unit.dpc.as_view()
                             with m.FSM():
                                 with m.State("SANITY_CHECK"):
                                     with m.If(~self.debug_unit.cpu.running_state.halted):

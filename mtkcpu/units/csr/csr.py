@@ -44,14 +44,14 @@ class CsrUnit(Elaboratable):
         return matches[0]
 
     # simplify direct access, e.g. csr_unit.mtvec
-    def __getattr__(self, name: str) -> data.View:
+    def __getattr__(self, name: str) -> CSR_Write_Handler:
         def get_name(handler: CSR_Write_Handler) -> str:
             return handler.__class__.__name__
         matches = [x for x in self.csr_regs if get_name(x).lower() == name.lower()]
         if len(matches) != 1:
             raise ValueError(f"Expected to find a single CSR named {name}, got {matches} instead!")
-        match = matches[0]
-        return data.View(match.layout, match.my_reg_latch)
+        return matches[0]
+        # return data.View(match.layout, match.my_reg_latch)
 
     def __init__(self,
                  in_machine_mode : Signal,
