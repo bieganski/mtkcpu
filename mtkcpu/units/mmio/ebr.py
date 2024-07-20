@@ -45,6 +45,7 @@ class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
         ws_bytes = self.mem_config.word_size
         assert log2(ws_bytes).is_integer()
         ws_bit_shift = Const(int(log2(ws_bytes)))
+        # raise ValueError(ws_bit_shift)
 
         real_addr = Signal(32)
         wb_comb += real_addr.eq(addr >> ws_bit_shift)

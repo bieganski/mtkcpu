@@ -12,5 +12,5 @@ VERSION="1.0.0"
 IMAGE="mtkcpu:${VERSION}"
 
 echo "Building docker image" && \
-docker build --no-cache -t ${IMAGE} . && \
+docker build -t ${IMAGE} . && \
 echo "Image was built"

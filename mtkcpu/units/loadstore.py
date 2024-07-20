@@ -338,7 +338,21 @@ class MemoryArbiter(Elaboratable, AddressManager):
                 m.d.comb += self.exception_unit.m_fetch_error.eq(1)
             with m.Else():
                 m.d.comb += self.exception_unit.m_load_error.eq(1)
-
+        
+        with m.FSM():
+            with m.State("xd"):
+                with m.If((gb.addr == 0x800000d6) & gb.store & gb.en):
+                    # verified. proceed to value test
+                    with m.If((gb.mask == 0b001) & (gb.write_data == 0x0)):
+                        m.next = "dx"
+            with m.State("dx"):
+                ctr = Signal(20)
+                if platform:
+                    led_b = platform.request("led_r", 1).o
+                    m.d.sync += ctr.eq(ctr + 1)
+                    with m.If(ctr == 0):
+                        m.d.sync += led_b.eq(~led_b)
+            
         with m.If(~pe.none):
             # transaction request occured
             for i, priority in enumerate(sorted_ports):
@@ -397,60 +411,61 @@ class MemoryArbiter(Elaboratable, AddressManager):
         sv32_i = Signal(reset=1)
         root_ppn = self.root_ppn = Signal(22)
 
-        with m.FSM():
-            with m.State("IDLE"):
-                with m.If(start_translation):
-                    sync += sv32_i.eq(1)
-                    if self.with_addr_translation:
+        if self.with_addr_translation:
+            with m.FSM():
+                with m.State("IDLE"):
+                    with m.If(start_translation):
+                        sync += sv32_i.eq(1)
                         sync += root_ppn.eq(self.csr_unit.satp.as_view().ppn)
-                    m.next = "TRANSLATE"
-            with m.State("TRANSLATE"):
-                vpn = self.vpn = Signal(10)
-                comb += vpn.eq(Mux(
-                    sv32_i,
-                    vaddr.vpn1,
-                    vaddr.vpn0,
-                ))
-                comb += [
-                    gb.en.eq(1),
-                    gb.addr.eq(Cat(Const(0, 2), vpn, root_ppn)),
-                    gb.store.eq(0),
-                    gb.mask.eq(0b1111), # TODO use -1
-                ]
-                with m.If(gb.ack):
-                    sync += pte.eq(gb.read_data)
-                    m.next = "PROCESS_PTE"
-            with m.State("PROCESS_PTE"):
-                with m.If(~pte.v):
-                    error(Issue.PAGE_INVALID)
-                with m.If(pte.w & ~pte.r):
-                    error(Issue.WRITABLE_NOT_READABLE)
+                        m.next = "TRANSLATE"
+                with m.State("TRANSLATE"):
+                    vpn = self.vpn = Signal(10)
+                    comb += vpn.eq(Mux(
+                        sv32_i,
+                        vaddr.vpn1,
+                        vaddr.vpn0,
+                    ))
+                    comb += [
+                        gb.en.eq(1),
+                        gb.addr.eq(Cat(Const(0, 2), vpn, root_ppn)),
+                        gb.store.eq(0),
+                        gb.mask.eq(0b1111), # TODO use -1
+                    ]
+                    with m.If(gb.ack):
+                        sync += pte.eq(gb.read_data)
+                        m.next = "PROCESS_PTE"
+                with m.State("PROCESS_PTE"):
+                    with m.If(~pte.v):
+                        error(Issue.PAGE_INVALID)
+                    with m.If(pte.w & ~pte.r):
+                        error(Issue.WRITABLE_NOT_READABLE)
 
-                is_leaf = lambda pte: pte.r | pte.x
-                with m.If(is_leaf(pte)):
-                    with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
-                        error(Issue.LACK_PERMISSIONS)
-                    with m.If(~pte.a | (req_is_write & ~pte.d)):
-                        error(Issue.FIRST_ACCESS)
-                    with m.If(sv32_i.bool() & pte.ppn0.bool()):
-                        error(Issue.MISALIGNED_SUPERPAGE)
-                    # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
-                    # below statement cuts lowest two bits of r-value.
-                    sync += phys_addr.eq(Cat(vaddr.page_offset, pte.ppn0, pte.ppn1))
-                with m.Else(): # not a leaf
-                    with m.If(sv32_i == 0):
-                        error(Issue.LEAF_IS_NO_LEAF)
-                    sync += root_ppn.eq(Cat(pte.ppn0, pte.ppn1)) # pte a is pointer to the next level
-                m.next = "NEXT"
-            with m.State("NEXT"):
-                # Note that we cannot check 'sv32_i == 0', becuase superpages can be present.
-                with m.If(is_leaf(pte)):
-                    sync += sv32_i.eq(1)
-                    comb += translation_ack.eq(1) # notify that 'phys_addr' signal is set
-                    m.next = "IDLE"
-                with m.Else():
-                    sync += sv32_i.eq(0)
-                    m.next = "TRANSLATE"
+                    is_leaf = lambda pte: pte.r | pte.x
+                    with m.If(is_leaf(pte)):
+                        with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
+                            error(Issue.LACK_PERMISSIONS)
+                        with m.If(~pte.a | (req_is_write & ~pte.d)):
+                            error(Issue.FIRST_ACCESS)
+                        with m.If(sv32_i.bool() & pte.ppn0.bool()):
+                            error(Issue.MISALIGNED_SUPERPAGE)
+                        # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
+                        # below statement cuts lowest two bits of r-value.
+                        sync += phys_addr.eq(Cat(vaddr.page_offset, pte.ppn0, pte.ppn1))
+                    with m.Else(): # not a leaf
+                        with m.If(sv32_i == 0):
+                            error(Issue.LEAF_IS_NO_LEAF)
+                        sync += root_ppn.eq(Cat(pte.ppn0, pte.ppn1)) # pte a is pointer to the next level
+                    m.next = "NEXT"
+                with m.State("NEXT"):
+                    # Note that we cannot check 'sv32_i == 0', becuase superpages can be present.
+                    with m.If(is_leaf(pte)):
+                        sync += sv32_i.eq(1)
+                        comb += translation_ack.eq(1) # notify that 'phys_addr' signal is set
+                        m.next = "IDLE"
+                    with m.Else():
+                        sync += sv32_i.eq(0)
+                        m.next = "TRANSLATE"
+            
         return m
 
     def port(self, priority):
@@ -488,39 +503,6 @@ def match_loadstore_unit(op, f3, f7):
     return match_load(op, f3, f7) | match_store(
         op, f3, f7
     )
-
-
-class Selector(Elaboratable):
-    def __init__(self):
-        self.mask = Signal(4, name="SEL_mask")
-        self.funct3 = Signal(Funct3)
-        self.store = Signal()
-
-    def elaborate(self, platform):
-        m = Module()
-        comb = m.d.comb
-
-        with m.Switch(self.funct3):
-            with m.Case(Funct3.W):
-                comb += self.mask.eq(0b1111)
-            with m.Case(Funct3.H):
-                comb += self.mask.eq(0b0011)
-            with m.Case(Funct3.B):
-                comb += self.mask.eq(0b0001)
-            with m.Case(Funct3.HU):
-                comb += self.mask.eq(0b0011)
-            with m.Case(Funct3.BU):
-                comb += self.mask.eq(0b0001)
-
-        return m
-
-
-def prefix_all_signals(obj, prefix):
-    for attr_name in dir(obj):
-        sig = getattr(obj, attr_name)
-        if type(sig) == Signal:
-            sig.name = prefix + sig.name
-
 
 class GenericInterfaceToWishboneMasterBridge(Elaboratable):
     def __init__(self, wb_bus : WishboneBusRecord, generic_bus : LoadStoreInterface):
@@ -575,54 +557,34 @@ class MemoryUnit(Elaboratable):
 
     def elaborate(self, platform):
         m = Module()
+        
         comb = m.d.comb
-        sync = m.d.sync
         loadstore = self.loadstore
-
         store = self.store
+        
         addr = Signal(32)
-
-        comb += [
-            addr.eq(self.offset + self.src1),
-        ]
-
-        sel = m.submodules.sel = Selector()
-
-        # sel.mask will be calculated.
-        comb += [
-            sel.funct3.eq(self.funct3),
-            sel.store.eq(store),
-        ]
-
         word = Signal(signed(32))
         half_word = Signal(signed(16))
         byte = Signal(8)
-
         write_data = Signal(32)
-        signed_write_data = Signal(signed(32))
-
         load_res = Signal(signed(32))
-
         addr_lsb = Signal(2)
-        m.d.comb += addr_lsb.eq(addr[:2]) # XXX
+        
+        comb += [
+            addr.eq(self.offset + self.src1),
+            addr_lsb.eq(addr[:2]),
+        ]
 
         # allow naturally aligned addresses
         # TODO trap on wrong address
-        with m.If(store):
-            data = self.src2
-            comb += [
-                word.eq(data),
-                half_word.eq(data.word_select(addr_lsb[1], 16)),
-                byte.eq(data.word_select(addr_lsb, 8)),
-            ]
-        with m.Else():
-            data = loadstore.read_data
-            comb += [
-                word.eq(data),
-                half_word.eq(data.word_select(addr_lsb[1], 16)),
-                byte.eq(data.word_select(addr_lsb, 8))
-            ]
+        data = Mux(store, self.src2, loadstore.read_data)
+        comb += [
+            word.eq(data),
+            half_word.eq(data.word_select(addr_lsb[1], 16)),
+            byte.eq(data.word_select(addr_lsb, 8)),
+        ]
 
+        # TODO choice expression (amaranth-0.6)
         with m.If(~store):
             with m.Switch(self.funct3):
                 with m.Case(Funct3.W):
@@ -638,30 +600,29 @@ class MemoryUnit(Elaboratable):
 
         with m.If(store):
             with m.Switch(self.funct3):
+                mask = Signal(4)
                 with m.Case(Funct3.W):
-                    comb += (write_data.eq(word),)
-                with m.Case(Funct3.H):
                     comb += [
-                        signed_write_data.eq(half_word),
-                        write_data.eq(signed_write_data),
+                        write_data.eq(word),
+                        mask.eq(0b1111),
                     ]
-                with m.Case(Funct3.B):
+                with m.Case(Funct3.H, Funct3.HU):
                     comb += [
-                        signed_write_data.eq(byte),
-                        write_data.eq(signed_write_data),
+                        write_data.eq(half_word),
+                        mask.eq(0b11 >> addr_lsb[1]),
                     ]
-                with m.Case(Funct3.HU):
-                    comb += (write_data.eq(half_word),)
-                with m.Case(Funct3.BU):
-                    comb += (write_data.eq(byte),)
-
+                with m.Case(Funct3.B, Funct3.BU):
+                    comb += [
+                        write_data.eq(byte),
+                        mask.eq(0b1 >> addr_lsb),
+                    ]
         
         with m.If(self.en):
             comb += [
                 loadstore.en.eq(1),
                 loadstore.store.eq(store),
-                loadstore.addr.eq(addr),
-                loadstore.mask.eq(sel.mask),
+                loadstore.addr.eq(addr & ~Const(0b11, 32)),
+                loadstore.mask.eq(mask),
                 loadstore.write_data.eq(write_data),
             ]
         with m.If(loadstore.ack):
