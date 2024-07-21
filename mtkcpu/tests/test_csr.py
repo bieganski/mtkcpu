@@ -283,8 +283,67 @@ CSR_TESTS = [
     ),
 ]
 
+EXDI = [
+    # MemTestCase(
+    #     name="TEST test TEST",
+    #     source_type=MemTestSourceType.RAW,
+    #     source=f"""
+    #         start:
+    #             la x5, trap
+    #             csrw mtvec, x5
+    #             li x1, 0b1000  # mstatus.mie
+    #             csrw mstatus, x1
+    #             li x1, 0b10000000 # mie.mtie
+    #             csrw mie, x1
+    #         loop:
+    #             j loop
+    #         trap:
+    #             csrr x1, mepc
+    #             addi x1, x1, 4
+    #             csrw mepc, x1
+    #             mret
+    #             addi x2, x0, 10
+    #     """,
+    #     out_reg=2,
+    #     out_val=20,
+    #     timeout=100,
+    #     mem_init=MemoryContents.empty(),
+    #     reg_init=RegistryContents.fill(),
+    # ),
+
+    MemTestCase(
+        name="timer interrupt",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrr x2, {int(CSRNonStandardIndex.MTIME)}
+                addi x2, x2, 128 # interupt in ~100 cycles
+                csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
+                
+                // li x1, 0b10000000 # mie.mtie
+                li x1, 0xffffffff
+                csrw mie, x5
+                
+                // li x5, 0b1000  # mstatus.mie
+                li x1, 0xffffffff
+                csrw mstatus, x5
+            loop:
+                j loop
+            trap:
+                addi x15, x0, 123
+        """,
+        out_reg=15,
+        out_val=123,
+        timeout=2000,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+]
 
 
-@mem_test(CSR_TESTS)
+# @mem_test(CSR_TESTS)
+@mem_test(EXDI)
 def test_registers(_):
     pass

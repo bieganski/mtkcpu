@@ -104,8 +104,8 @@ class ExceptionUnit(Elaboratable):
                 mip.meip.eq(self.external_interrupt)
             ]
             m.d.sync += [
-                # self.mstatus.r.mpie.eq(self.mstatus.r.mie),
-                # self.mstatus.r.mie.eq(0),
+                self.mstatus.r.mpie.eq(self.mstatus.r.mie),
+                self.mstatus.r.mie.eq(0),
                 mepc.eq(self.m_pc)
             ]
             with m.If(~trap_pe.n):
