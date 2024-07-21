@@ -41,14 +41,17 @@ class EBR_Wishbone(Elaboratable, BusSlaveOwnerInterface):
         data  = wb_slave.wb_bus.dat_w
         mask  = wb_slave.wb_bus.sel
 
-        from math import log2
-        ws_bytes = self.mem_config.word_size
-        assert log2(ws_bytes).is_integer()
-        ws_bit_shift = Const(int(log2(ws_bytes)))
-        # raise ValueError(ws_bit_shift)
+        # from math import log2
+        # ws_bytes = self.mem_config.word_size
+        # assert log2(ws_bytes).is_integer()
+        # ws_bit_shift = Const(int(log2(ws_bytes)))
+        # # raise ValueError(ws_bit_shift)
+
+        # real_addr = Signal(32)
+        # wb_comb += real_addr.eq(addr >> ws_bit_shift)
 
         real_addr = Signal(32)
-        wb_comb += real_addr.eq(addr >> ws_bit_shift)
+        wb_comb += real_addr.eq(addr >> 2) 
 
         # WARNING:
         # that FSM in nested in another one - we have to use Module instance

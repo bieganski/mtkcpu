@@ -27,7 +27,7 @@ generic_bus_layout = [
     ("en", 1, DIR_FANIN),
     ("store", 1, DIR_FANIN),
     ("is_fetch", 1, DIR_FANIN),
-    ("addr", 32, DIR_FANIN),
+    ("addr", 30, DIR_FANIN),
     ("mask", 4, DIR_FANIN),
     ("write_data", 32, DIR_FANIN),
 
@@ -331,27 +331,14 @@ class MemoryArbiter(Elaboratable, AddressManager):
         gb = self.generic_bus
 
         with m.If(self.decoder.no_match & self.wb_bus.cyc):
-            m.d.comb += self.exception_unit.badaddr.eq(gb.addr)
+            m.d.comb += self.exception_unit.badaddr.eq(gb.addr << 2)
             with m.If(gb.store):
                 m.d.comb += self.exception_unit.m_store_error.eq(1)
             with m.Elif(gb.is_fetch):
                 m.d.comb += self.exception_unit.m_fetch_error.eq(1)
             with m.Else():
                 m.d.comb += self.exception_unit.m_load_error.eq(1)
-        
-        with m.FSM():
-            with m.State("xd"):
-                with m.If((gb.addr == 0x800000d6) & gb.store & gb.en):
-                    # verified. proceed to value test
-                    with m.If((gb.mask == 0b001) & (gb.write_data == 0x0)):
-                        m.next = "dx"
-            with m.State("dx"):
-                ctr = Signal(20)
-                if platform:
-                    led_b = platform.request("led_r", 1).o
-                    m.d.sync += ctr.eq(ctr + 1)
-                    with m.If(ctr == 0):
-                        m.d.sync += led_b.eq(~led_b)
+
             
         with m.If(~pe.none):
             # transaction request occured
@@ -376,7 +363,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                                 sync += first.eq(1)
                             with m.State("REQ"):
                                 comb += gb.connect(bus_owner_port, exclude=["addr"])
-                                comb += gb.addr.eq(phys_addr) # found by page-walk
+                                comb += gb.addr.eq(phys_addr >> 2) # found by page-walk
                                 with m.If(first):
                                     sync += first.eq(0)
                                 with m.Else():
@@ -427,7 +414,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     ))
                     comb += [
                         gb.en.eq(1),
-                        gb.addr.eq(Cat(Const(0, 2), vpn, root_ppn)),
+                        gb.addr.eq(Cat(vpn, root_ppn)),
                         gb.store.eq(0),
                         gb.mask.eq(0b1111), # TODO use -1
                     ]
@@ -518,7 +505,7 @@ class GenericInterfaceToWishboneMasterBridge(Elaboratable):
 
         # XXX for now we don't use strobe signal (cyc only)
         comb += [
-            wb.adr.eq(gb.addr),
+            wb.adr.eq(gb.addr << 2),
             wb.dat_w.eq(gb.write_data),
             wb.sel.eq(gb.mask),
             wb.we.eq(gb.store),
@@ -578,11 +565,22 @@ class MemoryUnit(Elaboratable):
         # allow naturally aligned addresses
         # TODO trap on wrong address
         data = Mux(store, self.src2, loadstore.read_data)
-        comb += [
-            word.eq(data),
-            half_word.eq(data.word_select(addr_lsb[1], 16)),
-            byte.eq(data.word_select(addr_lsb, 8)),
-        ]
+        
+        with m.If(store):
+            comb += [
+                word.eq(data),
+                half_word.eq(data[:16]),
+                byte.eq(data[:8]),
+            ]
+        with m.Else():
+            # XXX XXX XXX
+            # TODO i'm not sure about this
+            comb += [
+                word.eq(data),
+                half_word.eq(data.word_select(addr_lsb[1], 16)),
+                byte.eq(data.word_select(addr_lsb, 8)),
+            ]
+
 
         # TODO choice expression (amaranth-0.6)
         with m.If(~store):
@@ -608,20 +606,20 @@ class MemoryUnit(Elaboratable):
                     ]
                 with m.Case(Funct3.H, Funct3.HU):
                     comb += [
-                        write_data.eq(half_word),
-                        mask.eq(0b11 >> addr_lsb[1]),
+                        write_data.eq(half_word << (8 * addr_lsb[1])),
+                        mask.eq(0b11 << addr_lsb[1]),
                     ]
                 with m.Case(Funct3.B, Funct3.BU):
                     comb += [
-                        write_data.eq(byte),
-                        mask.eq(0b1 >> addr_lsb),
+                        write_data.eq(byte << 8*addr_lsb),
+                        mask.eq(0b1 << addr_lsb),
                     ]
         
         with m.If(self.en):
             comb += [
                 loadstore.en.eq(1),
                 loadstore.store.eq(store),
-                loadstore.addr.eq(addr & ~Const(0b11, 32)),
+                loadstore.addr.eq(addr >> 2),
                 loadstore.mask.eq(mask),
                 loadstore.write_data.eq(write_data),
             ]
