@@ -363,7 +363,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
                                 sync += first.eq(1)
                             with m.State("REQ"):
                                 comb += gb.connect(bus_owner_port, exclude=["addr"])
-                                comb += gb.addr.eq(phys_addr >> 2) # found by page-walk
+                                comb += gb.addr.eq(phys_addr[2:]) # found by page-walk
                                 with m.If(first):
                                     sync += first.eq(0)
                                 with m.Else():
@@ -398,61 +398,62 @@ class MemoryArbiter(Elaboratable, AddressManager):
         sv32_i = Signal(reset=1)
         root_ppn = self.root_ppn = Signal(22)
 
-        if self.with_addr_translation:
-            with m.FSM():
-                with m.State("IDLE"):
-                    with m.If(start_translation):
-                        sync += sv32_i.eq(1)
+        
+        with m.FSM():
+            with m.State("IDLE"):
+                with m.If(start_translation):
+                    sync += sv32_i.eq(1)
+                    if self.with_addr_translation:
                         sync += root_ppn.eq(self.csr_unit.satp.as_view().ppn)
-                        m.next = "TRANSLATE"
-                with m.State("TRANSLATE"):
-                    vpn = self.vpn = Signal(10)
-                    comb += vpn.eq(Mux(
-                        sv32_i,
-                        vaddr.vpn1,
-                        vaddr.vpn0,
-                    ))
-                    comb += [
-                        gb.en.eq(1),
-                        gb.addr.eq(Cat(vpn, root_ppn)),
-                        gb.store.eq(0),
-                        gb.mask.eq(0b1111), # TODO use -1
-                    ]
-                    with m.If(gb.ack):
-                        sync += pte.eq(gb.read_data)
-                        m.next = "PROCESS_PTE"
-                with m.State("PROCESS_PTE"):
-                    with m.If(~pte.v):
-                        error(Issue.PAGE_INVALID)
-                    with m.If(pte.w & ~pte.r):
-                        error(Issue.WRITABLE_NOT_READABLE)
+                    m.next = "TRANSLATE"
+            with m.State("TRANSLATE"):
+                vpn = self.vpn = Signal(10)
+                comb += vpn.eq(Mux(
+                    sv32_i,
+                    vaddr.vpn1,
+                    vaddr.vpn0,
+                ))
+                comb += [
+                    gb.en.eq(1),
+                    gb.addr.eq(Cat(vpn, root_ppn)),
+                    gb.store.eq(0),
+                    gb.mask.eq(0b1111), # TODO use -1
+                ]
+                with m.If(gb.ack):
+                    sync += pte.eq(gb.read_data)
+                    m.next = "PROCESS_PTE"
+            with m.State("PROCESS_PTE"):
+                with m.If(~pte.v):
+                    error(Issue.PAGE_INVALID)
+                with m.If(pte.w & ~pte.r):
+                    error(Issue.WRITABLE_NOT_READABLE)
 
-                    is_leaf = lambda pte: pte.r | pte.x
-                    with m.If(is_leaf(pte)):
-                        with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
-                            error(Issue.LACK_PERMISSIONS)
-                        with m.If(~pte.a | (req_is_write & ~pte.d)):
-                            error(Issue.FIRST_ACCESS)
-                        with m.If(sv32_i.bool() & pte.ppn0.bool()):
-                            error(Issue.MISALIGNED_SUPERPAGE)
-                        # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
-                        # below statement cuts lowest two bits of r-value.
-                        sync += phys_addr.eq(Cat(vaddr.page_offset, pte.ppn0, pte.ppn1))
-                    with m.Else(): # not a leaf
-                        with m.If(sv32_i == 0):
-                            error(Issue.LEAF_IS_NO_LEAF)
-                        sync += root_ppn.eq(Cat(pte.ppn0, pte.ppn1)) # pte a is pointer to the next level
-                    m.next = "NEXT"
-                with m.State("NEXT"):
-                    # Note that we cannot check 'sv32_i == 0', becuase superpages can be present.
-                    with m.If(is_leaf(pte)):
-                        sync += sv32_i.eq(1)
-                        comb += translation_ack.eq(1) # notify that 'phys_addr' signal is set
-                        m.next = "IDLE"
-                    with m.Else():
-                        sync += sv32_i.eq(0)
-                        m.next = "TRANSLATE"
-            
+                is_leaf = lambda pte: pte.r | pte.x
+                with m.If(is_leaf(pte)):
+                    with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
+                        error(Issue.LACK_PERMISSIONS)
+                    with m.If(~pte.a | (req_is_write & ~pte.d)):
+                        error(Issue.FIRST_ACCESS)
+                    with m.If(sv32_i.bool() & pte.ppn0.bool()):
+                        error(Issue.MISALIGNED_SUPERPAGE)
+                    # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
+                    # below statement cuts lowest two bits of r-value.
+                    sync += phys_addr.eq(Cat(vaddr.page_offset, pte.ppn0, pte.ppn1))
+                with m.Else(): # not a leaf
+                    with m.If(sv32_i == 0):
+                        error(Issue.LEAF_IS_NO_LEAF)
+                    sync += root_ppn.eq(Cat(pte.ppn0, pte.ppn1)) # pte a is pointer to the next level
+                m.next = "NEXT"
+            with m.State("NEXT"):
+                # Note that we cannot check 'sv32_i == 0', becuase superpages can be present.
+                with m.If(is_leaf(pte)):
+                    sync += sv32_i.eq(1)
+                    comb += translation_ack.eq(1) # notify that 'phys_addr' signal is set
+                    m.next = "IDLE"
+                with m.Else():
+                    sync += sv32_i.eq(0)
+                    m.next = "TRANSLATE"
+        
         return m
 
     def port(self, priority):
@@ -505,7 +506,7 @@ class GenericInterfaceToWishboneMasterBridge(Elaboratable):
 
         # XXX for now we don't use strobe signal (cyc only)
         comb += [
-            wb.adr.eq(gb.addr << 2),
+            wb.adr[2:].eq(gb.addr),
             wb.dat_w.eq(gb.write_data),
             wb.sel.eq(gb.mask),
             wb.we.eq(gb.store),
@@ -606,12 +607,12 @@ class MemoryUnit(Elaboratable):
                     ]
                 with m.Case(Funct3.H, Funct3.HU):
                     comb += [
-                        write_data.eq(half_word << (8 * addr_lsb[1])),
+                        write_data.eq(half_word << (addr_lsb[1] << 3)),
                         mask.eq(0b11 << addr_lsb[1]),
                     ]
                 with m.Case(Funct3.B, Funct3.BU):
                     comb += [
-                        write_data.eq(byte << 8*addr_lsb),
+                        write_data.eq(byte << (addr_lsb << 3)),
                         mask.eq(0b1 << addr_lsb),
                     ]
         
@@ -619,7 +620,7 @@ class MemoryUnit(Elaboratable):
             comb += [
                 loadstore.en.eq(1),
                 loadstore.store.eq(store),
-                loadstore.addr.eq(addr >> 2),
+                loadstore.addr.eq(addr[2:]),
                 loadstore.mask.eq(mask),
                 loadstore.write_data.eq(write_data),
             ]
