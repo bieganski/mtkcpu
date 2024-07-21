@@ -1089,7 +1089,7 @@ def test_single_step(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    test_xd()
+    # test_xd()
     # test_not_supported_command_type_finishes()
     # test_dmi_try_read_not_implemented_register()
     # test_dmi_abstract_command_read_write_gpr()
@@ -1103,6 +1103,7 @@ if __name__ == "__main__":
     # test_abstracauto_autoexecdata()
     # test_ebreakm_halt()
     # test_single_step()
+    test_progbuf_writes_to_bus()
     logging.critical("ALL TESTS PASSED!")
 
 

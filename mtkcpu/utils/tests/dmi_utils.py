@@ -659,6 +659,7 @@ def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
                 data = yield gb.write_data
                 msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}"
                 logging.critical(msg)
-                output_dict[addr] = data
+                addr_adjusted_from_30bit_to_32_bit = addr << 2
+                output_dict[addr_adjusted_from_30bit_to_32_bit] = data
             yield
     return f
