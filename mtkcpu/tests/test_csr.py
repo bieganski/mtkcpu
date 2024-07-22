@@ -322,13 +322,11 @@ EXDI = [
                 addi x2, x2, 128 # interupt in ~100 cycles
                 csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
                 
-                // li x1, 0b10000000 # mie.mtie
-                li x1, 0xffffffff
-                csrw mie, x5
+                li x1, 0b10000000 # mie.mtie
+                csrw mie, x1
                 
-                // li x5, 0b1000  # mstatus.mie
-                li x1, 0xffffffff
-                csrw mstatus, x5
+                li x1, 0b1000  # mstatus.mie
+                csrw mstatus, x1
             loop:
                 j loop
             trap:

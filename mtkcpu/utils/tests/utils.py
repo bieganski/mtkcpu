@@ -171,7 +171,7 @@ def reg_test(
     # instead only collect write transactions directly on a bus.
     result_mem = {}
     sim.add_sync_process(capture_write_transactions(cpu=cpu, dict_reference=result_mem))
-    
+
     sim.add_sync_process(
         get_sim_register_test(
             name=name,
@@ -195,7 +195,7 @@ def reg_test(
         # *csr_unit.mepc.fields.values(),
         # *csr_unit.mcause.members.values(),
         # *csr_unit.satp.fields.values(),
-        *csr_unit.mie.fields.values(),
+        # csr_unit.mie.as_view().mtie,
         # *csr_unit.mstatus.fields.values(),
         # *csr_unit.mtime.fields.values(),
         # *csr_unit.mtimecmp.fields.values(),
