@@ -18,15 +18,27 @@ jobs:
     steps:
       - name: Checkout the project
         uses: actions/checkout@v2
+
       - name: Build the Docker image
         shell: bash
         run: make build-docker
+
       - name: Run unit tests
         shell: bash
         run: make unit-test-docker
+
+      - name: Run simulation with UART on stdout
+        shell: bash
+        run: |
+          ./docker_run.py --cmd 'poetry run mtkcpu/cli/top.py gen_linker_script'
+          ./docker_run.py --cmd 'make -B -C sw/uart_tx'
+          bash -c 'timeout 30 ./docker_run.py --cmd "poetry run ./mtkcpu/cli/top.py sim -e sw/uart_tx/build/uart_tx.elf" || true' | tee log.txt
+          grep -q "Hello from mtkCPU" log.txt
+
       - name: Run OCD tests
         shell: bash
         run: make test-ocd-gdb-docker
+
       - name: Synthesisze SoC
         shell: bash
         run: |
