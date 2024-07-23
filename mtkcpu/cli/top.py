@@ -94,8 +94,12 @@ def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optio
             bus_cyc = yield bus.cyc
             if bus_cyc and not prev_bus_cyc:
                 # transaction initiated
-                tx_byte = (yield bus.dat_w) & 0xff
-                print(chr(tx_byte), end="")
+                adr = yield bus.adr
+                mask = yield bus.we
+                # origin of those magic constants is 'handle_transaction' method of UartTX block.
+                if (adr == 0x8) and (mask & 1):
+                    tx_byte = (yield bus.dat_w) & 0xff
+                    print(chr(tx_byte), end="")
             prev_bus_cyc = bus_cyc
             yield
 

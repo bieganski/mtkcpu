@@ -33,7 +33,6 @@ jobs:
           ./docker_run.py --cmd 'poetry run mtkcpu/cli/top.py gen_linker_script'
           ./docker_run.py --cmd 'make -B -C sw/uart_tx'
           bash -c 'timeout 30 ./docker_run.py --cmd "poetry run ./mtkcpu/cli/top.py sim -e sw/uart_tx/build/uart_tx.elf" || true' | tee log.txt
-          cat log.txt
           grep -q "Hello from mtkCPU" log.txt
 
       - name: Run OCD tests
