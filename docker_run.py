@@ -53,6 +53,7 @@ def main(cmd : Optional[str]):
 
     command = f"""
 docker run \
+--init --tty \
 --net host \
 {construct_groups_params()} \
 -v {Path(__file__).parent}/sw:/toolchain/sw \
