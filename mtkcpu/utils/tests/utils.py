@@ -85,15 +85,52 @@ def capture_write_transactions(cpu : MtkCpu, dict_reference : OrderedDict) -> Or
     def f():
         yield Passive()
         content = dict_reference
-        wp = cpu.arbiter.ebr.wp
-        mem = cpu.arbiter.ebr.mem._array
+        from mtkcpu.units.loadstore import EBR_Wishbone
+        ebr: EBR_Wishbone = cpu.arbiter.ebr
+        wp = ebr.wp
+        mem = ebr.mem._array
+
+        def apply_bitmask(A, B):
+            assert B == (B & 0b1111)
+            result = 0
+            for i in range(4):
+                if B & (1 << i):
+                    result |= (A & (0xFF << (i * 8)))
+            return result
+
         while(True):
-            en = yield wp.en
-            addr = yield wp.addr
-            if en:
+            mask = yield wp.en
+            if mask:
+                wp_addr = yield wp.addr
+                bus_addr = yield ebr._wb_slave_bus.wb_bus.adr
+                
+                # coherence check beween bus and wp
+                assert bus_addr % 4 == 0
+                assert (bus_addr >> 2) == wp_addr
+                
+                # find first non-zero bit
+                if mask & 0b1:
+                    offset = 0
+                elif mask & 0b10:
+                    offset = 1
+                elif mask & 0b100:
+                    offset = 2
+                elif mask & 0b1000:
+                    offset = 3
+                else:
+                    assert False
+                
+                data_before_write = yield mem[wp_addr]
                 yield
-                data = yield mem[addr]
-                content[addr << 2] = data
+                data_after_write = yield mem[wp_addr]
+
+                # all_ones_u32_mask = apply_bitmask(0xffff_ffff, mask)
+                # new_data = apply_bitmask(data, mask)
+
+                # real_addr = bus_addr + offset
+                # assert real_addr not in content
+                # content[real_addr] = apply_bitmask(data, mask)
+                content[bus_addr] = data_after_write
             yield
     return f
 

@@ -295,7 +295,7 @@ class HandlerPROGBUF(HandlerDMI):
                 bus.en.eq(1),
                 bus.store.eq(1),
                 bus.write_data.eq(self.write_value),
-                bus.addr.eq(my_mmio_addr),
+                bus.addr.eq(my_mmio_addr >> 2),
                 bus.mask.eq(0b1111),
             ]
 

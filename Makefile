@@ -29,7 +29,7 @@ build-docker:
 	bash ./build_docker_image.sh
 
 DRUN := docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw $(DOCKER_IMAGE_NAME)
-DRUN_IT := docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw -it $(DOCKER_IMAGE_NAME)
+DRUN_IT := docker run -v $(MAKEFILE_DIR)/sw:/toolchain/sw -v /dev:/dev -it $(DOCKER_IMAGE_NAME)
 
 unit-test-docker:
 	$(DRUN)	poetry run mtkcpu tests cpu
