@@ -9,12 +9,8 @@ on:
 
 jobs:
   build:
-    name: Build and test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # Specify here the list of images to use for the machine
-        os: [ubuntu-22.04]
+    name: Build/simulate/synthesisze mtkcpu
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout the project
         uses: actions/checkout@v2
