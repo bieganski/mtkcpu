@@ -61,7 +61,8 @@ docker run \
     """
     print(command)
 
-    subprocess.run(command, shell=True)
+    completed_process = subprocess.run(command, shell=True)
+    exit(completed_process.returncode)
 
 
 if __name__ == "__main__":
