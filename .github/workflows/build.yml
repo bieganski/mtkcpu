@@ -21,7 +21,7 @@ jobs:
 
       - name: Run unit tests
         shell: bash
-        run: make unit-test-docker
+        run: ./docker_run.py --cmd 'poetry run pytest -n15 ./mtkcpu/'
 
       - name: Run simulation with UART on stdout
         shell: bash
@@ -33,7 +33,7 @@ jobs:
 
       - name: Run OCD tests
         shell: bash
-        run: make test-ocd-gdb-docker
+        run:  ./docker_run.py --cmd 'poetry run python3 mtkcpu/tests/test_jtag.py && cat ckpt.log'
 
       - name: Synthesisze SoC
         shell: bash

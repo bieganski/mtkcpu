@@ -8,15 +8,6 @@ authors = [
 ]
 license = "MIT"
 
-[tool.poetry.scripts]
-mtkcpu = 'mtkcpu.cli.main:run_cli'
-
-# pyproject.toml
-[tool.pytest.ini_options]
-testpaths = [
-    "mtkcpu/tests",
-]
-
 [tool.poetry.dependencies]
 python = "^3.8"
 ppci = "^0.5.8"
