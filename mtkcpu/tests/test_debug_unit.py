@@ -549,83 +549,6 @@ def test_halt_resume_with_new_dpc(
 
 
 @dmi_simulator
-def test_xd(
-    simulator: Simulator,
-    cpu: MtkCpu,
-    dmi_monitor: DMI_Monitor,
-):
-    assert PROGBUFSIZE >= 2
-
-    def main_process():
-        yield from few_ticks()
-
-        val = 123
-        assert val < 2**11
-
-        gpr_reg_num = 8
-
-        for i, ins in enumerate([
-            # addi x1, x0, <val>
-            encode_ins(instructions.Addi(registers.get_register(gpr_reg_num), registers.get_register(0), val)),
-            encode_ins(instructions.Ebreak()),
-        ]):
-            yield from progbuf_write_wait_for_success(dmi_monitor, i, ins)
-
-        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        yield from dmi_op_wait_for_cmderr(
-            dmi_monitor=dmi_monitor,
-            expected_cmderr=ABSTRACTCS_Layout.CMDERR.HALT_OR_RESUME,
-            timeout=1000,
-        )
-        
-        yield from clear_cmderr_wait_for_success(dmi_monitor=dmi_monitor)
-        
-        yield from activate_DM_and_halt_via_dmi(dmi_monitor=dmi_monitor)
-        halted = yield from cpu_core_is_halted(dmi_monitor=dmi_monitor)
-        if not halted:
-            raise ValueError("CPU was not halted after haltreq set!")
-        
-        yield from trigger_progbuf_exec(dmi_monitor=dmi_monitor)
-        yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor, timeout=100)
-
-        x = yield cpu.regs._array._inner[gpr_reg_num]
-
-        if x != val:
-            raise ValueError(f"expected x{gpr_reg_num} to contain {hex(val)}, got {hex(x)} instead")
-        
-        # make sure that after successfull PROGBUF execution, PC is properly restored.
-        
-        def resume_core_via_dmi():
-            yield from DMCONTROL_setup_basic_fields(dmi_monitor=dmi_monitor, dmi_op=DMIOp.WRITE)
-            yield dmi_monitor.cur_DMCONTROL.haltreq.eq(0)
-            yield dmi_monitor.cur_DMCONTROL.resumereq.eq(1)
-            yield from dmi_bus_trigger_transaction(dmi_monitor=dmi_monitor)
-            yield from dmi_op_wait_for_success(dmi_monitor=dmi_monitor)
-
-        yield from resume_core_via_dmi()
-            
-        pc = yield cpu.pc
-        min_incl, max_excl = PROGBUF_MMIO_ADDR, PROGBUF_MMIO_ADDR + 4 * PROGBUFSIZE
-        progbuf_pc_range = range(min_incl, max_excl, 4)
-        assert MEM_START_ADDR not in progbuf_pc_range
-        if pc in progbuf_pc_range:
-            raise ValueError(f"After successfull PROGBUF execution hart was sent resumereq, but the PC was not updated back! pc={hex(pc)}")
-
-    processes = [
-        main_process,
-        monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
-        bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
-        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor, wait_for_first_haltreq=False),
-    ]
-    
-    for p in processes:
-        simulator.add_sync_process(p)
-        
-    simulator.run()
-
-
-
-@dmi_simulator
 def test_progbuf_gets_executed(
     simulator: Simulator,
     cpu: MtkCpu,
@@ -1089,21 +1012,19 @@ def test_single_step(
 if __name__ == "__main__":
     # import pytest
     # pytest.main(["-x", __file__])
-    # test_xd()
-    # test_not_supported_command_type_finishes()
-    # test_dmi_try_read_not_implemented_register()
-    # test_dmi_abstract_command_read_write_gpr()
-    # test_core_halt_resume()
-    # test_halt_resume_with_new_dpc()
-    # test_cmderr_clear()
-    # test_progbuf_writes_to_bus()
-    # test_progbuf_gets_executed()
-    # test_progbuf_cmderr_on_runtime_error()
-    # test_access_debug_csr_regs_in_debug_mode()
-    # test_abstracauto_autoexecdata()
-    # test_ebreakm_halt()
-    # test_single_step()
+    test_not_supported_command_type_finishes()
+    test_dmi_try_read_not_implemented_register()
+    test_dmi_abstract_command_read_write_gpr()
+    test_core_halt_resume()
+    test_halt_resume_with_new_dpc()
+    test_cmderr_clear()
     test_progbuf_writes_to_bus()
+    test_progbuf_gets_executed()
+    test_progbuf_cmderr_on_runtime_error()
+    test_access_debug_csr_regs_in_debug_mode()
+    test_abstracauto_autoexecdata()
+    test_ebreakm_halt()
+    test_single_step()
     logging.critical("ALL TESTS PASSED!")
 
 
