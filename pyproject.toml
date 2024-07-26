@@ -6,7 +6,7 @@ authors = [
     "Mateusz Biegański <bieganski.m@wp.pl>",
     "Piotr Styczyński <piotrsty1@gmail.com>"
 ]
-license = "MIT"
+license = "GPLv2"
 
 [tool.poetry.dependencies]
 python = "^3.8"

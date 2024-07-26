@@ -74,6 +74,7 @@ For more information about how tests work, please refer to [that file](./doc/tes
 * [Robert Baruch's refreshed RiscV playlist](https://www.youtube.com/playlist?list=PLEeZWGE3PwbZTypHq00G-yEX8TEI95lw4)
 
 
-### Acknowledgements
+### License, acknowledgements
 
-Some parts of `mtkCPU` were inspired by [minerva CPU](https://github.com/lambdaconcept/minerva) parts (LambdaConcept's property).
+`mtkCPU` is licensed under GPLv2 terms. Some parts of `mtkCPU` come from [minerva CPU](https://github.com/lambdaconcept/minerva) (LambdaConcept's property, released under [license](doc/MINERVA_LICENSE.txt)).
+
