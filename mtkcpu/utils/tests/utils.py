@@ -81,7 +81,7 @@ class ComponentTestbenchCase:
     name: str
     component_type : Elaboratable
 
-def check_addr_translation_errors(cpu : MtkCpu, dict_reference : OrderedDict) -> OrderedDict:
+def check_addr_translation_errors(cpu : MtkCpu) -> OrderedDict:
     def f():
         yield Passive()
         while(True):
@@ -92,7 +92,7 @@ def check_addr_translation_errors(cpu : MtkCpu, dict_reference : OrderedDict) ->
     return f
 
 
-def print_mem_transactions(cpu : MtkCpu, dict_reference : OrderedDict) -> OrderedDict:
+def print_mem_transactions(cpu : MtkCpu) -> OrderedDict:
     def f():
         yield Passive()
         gb = cpu.arbiter.generic_bus
@@ -102,7 +102,8 @@ def print_mem_transactions(cpu : MtkCpu, dict_reference : OrderedDict) -> Ordere
                 store = yield gb.store
                 addr = yield gb.addr
                 mask = yield gb.mask
-                assert mask
+                if store:
+                    assert mask # TODO: LOAD is always 4 byte, so maybe rename to 'write_mask'?
                 write_data = yield gb.write_data
 
                 prefix = "STORE" if store else "LOAD"
@@ -207,8 +208,8 @@ def reg_test(
     # instead only collect write transactions directly on a bus.
     result_mem = {}
     sim.add_sync_process(capture_write_transactions(cpu=cpu, dict_reference=result_mem))
-    # sim.add_sync_process(print_mem_transactions(cpu=cpu, dict_reference=result_mem))
-    # sim.add_sync_process(check_addr_translation_errors(cpu=cpu, dict_reference=result_mem))
+    # sim.add_sync_process(print_mem_transactions(cpu=cpu))
+    sim.add_sync_process(check_addr_translation_errors(cpu=cpu))
     
     sim.add_sync_process(
         get_sim_register_test(
