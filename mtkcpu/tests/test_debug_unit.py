@@ -312,7 +312,7 @@ def test_core_halt_resume(
         main_process,
         *error_monitors(dmi_monitor),
         *informative_monitors(dmi_monitor),
-        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(cpu=cpu),
     ]
 
     for p in processes:
@@ -918,7 +918,7 @@ def test_ebreakm_halt(
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
-        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(cpu=cpu),
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
@@ -999,7 +999,7 @@ def test_single_step(
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
-        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(cpu=cpu),
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),

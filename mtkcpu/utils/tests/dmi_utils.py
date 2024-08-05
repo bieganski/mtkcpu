@@ -1,3 +1,4 @@
+from typing import Optional, Callable
 
 from amaranth import Signal, Elaboratable
 from amaranth.hdl import rec
@@ -608,13 +609,15 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
-def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor, wait_for_first_haltreq: bool = True):
+def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]] = None, wait_for_first_haltreq: bool = True):
     from mtkcpu.utils.tests.sim_tests import get_state_name
+    from mtkcpu.cpu.priv_isa import IrqCause, TrapCause
+    from riscvmodel.code import decode
+    log_fn = log_fn or (lambda x: logging.critical(f"\t\t\t\t {x}"))
+    
     def aux():
         yield Passive()
 
-        cpu = dmi_monitor.cpu
-        
         if wait_for_first_haltreq:
             # To avoid spam, wait till first haltreq debugger event.
             while True:
@@ -623,20 +626,32 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor, wait_for_first_haltreq: bo
                     break
                 yield
         
-        log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
+        def disas(instr: int) -> str:
+            try:
+                disas = decode(instr)
+            except:
+                disas = "<unknown>"
+            return disas
+
         prev_state = None
         prev_pc = 0x0
         while True:
+            instr = yield cpu.instr
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
-            pc = hex((yield cpu.pc))
+            pc = (yield cpu.pc)
+
             if state == "FETCH" and state != prev_state:
-                log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
+                # log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
                 prev_pc = pc
             if state == "DECODE" and state != prev_state:
-                log_fn(f"instr: {hex((yield cpu.instr))}")
+                
+                log_fn(f"{hex(pc):10}: {hex(instr):40}: {disas(instr)}")
             if state == "TRAP" and state != prev_state:
-                instr = yield cpu.instr
-                log_fn(f"TRAP at pc {pc} at state {prev_state}, instr {hex(instr)}")
+                
+                is_irq = yield cpu.csr_unit.mcause.as_view().interrupt
+                cause = yield cpu.csr_unit.mcause.as_view().ecode
+                cause_str = IrqCause(cause) if is_irq else TrapCause(cause)
+                log_fn(f"TRAP at pc {hex(pc)} at state {prev_state}, instr {hex(instr)}. Cause: {str(cause_str)}")
             prev_state = state
             yield
     return aux

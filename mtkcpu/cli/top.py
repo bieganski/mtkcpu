@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 import os
 import itertools
-
+import sys
 from amaranth.sim import Simulator
 from amaranth.build.plat import Platform
 from amaranth.hdl import Module
@@ -17,6 +17,7 @@ from mtkcpu.units.mmio.bspgen import MemMapCodeGen
 from mtkcpu.units.memory_interface import AddressManager
 from mtkcpu.utils.linker import write_linker_script
 from mtkcpu.cpu.cpu import CPU_Config
+from mtkcpu.utils.tests.dmi_utils import monitor_pc_and_main_fsm
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -82,7 +83,7 @@ def get_platform() -> Platform:
 
     return platform
 
-def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optional[int] = None):
+def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optional[int] = None, verbose: bool = False):
     cpu = get_board_cpu(elf_path=elf_path, cpu_config=cpu_config, num_bytes=None)
     
     sim = Simulator(cpu)
@@ -113,6 +114,9 @@ def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optio
             yield
 
     sim.add_sync_process(uart_process)
+
+    if verbose:
+        sim.add_sync_process(monitor_pc_and_main_fsm(cpu=cpu, wait_for_first_haltreq=False, log_fn=print))
     
     with sim.write_vcd("uart.vcd"):
         sim.run()
@@ -207,6 +211,8 @@ def main():
         p.add_argument("--dev_mode", action="store_true")
         p.add_argument("--with_virtual_memory", action="store_true")
         p.add_argument("-e", "--elf", type=Path, required=(parser is sim_parser), help="Path to an .elf file to initialize Block RAM with.")
+
+    sim_parser.add_argument("-v", "--verbose", action="store_true")
     
     build_parser.add_argument("-p", "--program", action="store_true")
     
@@ -230,6 +236,7 @@ def main():
         sim(
             elf_path=args.elf,
             cpu_config=cpu_config,
+            verbose=args.verbose,
         )
     elif args.command == "gen_bsp":
         generate_bsp()
