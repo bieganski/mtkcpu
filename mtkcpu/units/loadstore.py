@@ -377,7 +377,7 @@ class MemoryArbiter(Elaboratable, AddressManager):
         vaddr = Record(virt_addr_layout)
         comb += [
             req_is_write.eq(virtual_req_bus_latch.store),
-            vaddr.eq(virtual_req_bus_latch.addr),
+            vaddr.eq(virtual_req_bus_latch.addr << 2),
         ]
 
         @unique
@@ -431,9 +431,9 @@ class MemoryArbiter(Elaboratable, AddressManager):
                     with m.If(is_leaf(pte)):
                         with m.If(~pte.u & (self.exception_unit.current_priv_mode == PrivModeBits.USER)):
                             error(Issue.LACK_PERMISSIONS)
-                        with m.If(~pte.a | (req_is_write & ~pte.d)):
+                        with m.Elif(~pte.a | (req_is_write & ~pte.d)):
                             error(Issue.FIRST_ACCESS)
-                        with m.If(sv32_i.bool() & pte.ppn0.bool()):
+                        with m.Elif(sv32_i.bool() & pte.ppn0.bool()):
                             error(Issue.MISALIGNED_SUPERPAGE)
                         # phys_addr could be 34 bits long, but our interconnect is 32-bit long.
                         # below statement cuts lowest two bits of r-value.
