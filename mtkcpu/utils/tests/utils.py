@@ -81,19 +81,93 @@ class ComponentTestbenchCase:
     name: str
     component_type : Elaboratable
 
+def check_addr_translation_errors(cpu : MtkCpu) -> OrderedDict:
+    def f():
+        yield Passive()
+        while(True):
+            err = yield cpu.arbiter.error_code
+            if err:
+                raise ValueError(f"addr translation error code: {err}")
+            yield
+    return f
+
+
+def print_mem_transactions(cpu : MtkCpu) -> OrderedDict:
+    def f():
+        yield Passive()
+        gb = cpu.arbiter.generic_bus
+
+        while(True):
+            if (yield gb.en):
+                store = yield gb.store
+                addr = yield gb.addr
+                mask = yield gb.mask
+                if store:
+                    assert mask # TODO: LOAD is always 4 byte, so maybe rename to 'write_mask'?
+                write_data = yield gb.write_data
+
+                prefix = "STORE" if store else "LOAD"
+                gb_mode_30_bit = gb.addr.shape() == unsigned(30)
+
+                addr = addr << 2 if gb_mode_30_bit else addr
+
+                print(f"{prefix} addr {hex(addr)}, mask {mask} write_data: {hex(write_data) if store else ''}")
+                while (yield gb.en):
+                    yield
+            yield
+    return f
+
+
 def capture_write_transactions(cpu : MtkCpu, dict_reference : OrderedDict) -> OrderedDict:
     def f():
         yield Passive()
         content = dict_reference
-        wp = cpu.arbiter.ebr.wp
-        mem = cpu.arbiter.ebr.mem._array
+        from mtkcpu.units.loadstore import EBR_Wishbone
+        ebr: EBR_Wishbone = cpu.arbiter.ebr
+        wp = ebr.wp
+        mem = ebr.mem._array
+
+        def apply_bitmask(A, B):
+            assert B == (B & 0b1111)
+            result = 0
+            for i in range(4):
+                if B & (1 << i):
+                    result |= (A & (0xFF << (i * 8)))
+            return result
+
         while(True):
-            en = yield wp.en
-            addr = yield wp.addr
-            if en:
+            mask = yield wp.en
+            if mask:
+                wp_addr = yield wp.addr
+                bus_addr = yield ebr._wb_slave_bus.wb_bus.adr
+                
+                # coherence check beween bus and wp
+                assert bus_addr % 4 == 0
+                assert (bus_addr >> 2) == wp_addr
+                
+                # find first non-zero bit
+                if mask & 0b1:
+                    offset = 0
+                elif mask & 0b10:
+                    offset = 1
+                elif mask & 0b100:
+                    offset = 2
+                elif mask & 0b1000:
+                    offset = 3
+                else:
+                    assert False
+                
+                data_before_write = yield mem[wp_addr]
                 yield
-                data = yield mem[addr]
-                content[addr << 2] = data
+                data_after_write = yield mem[wp_addr]
+
+                # all_ones_u32_mask = apply_bitmask(0xffff_ffff, mask)
+                # new_data = apply_bitmask(data, mask)
+
+                # real_addr = bus_addr + offset
+                # assert real_addr not in content
+                # content[real_addr] = apply_bitmask(data, mask)
+                content[bus_addr] = data_after_write
             yield
     return f
 
@@ -134,6 +208,8 @@ def reg_test(
     # instead only collect write transactions directly on a bus.
     result_mem = {}
     sim.add_sync_process(capture_write_transactions(cpu=cpu, dict_reference=result_mem))
+    # sim.add_sync_process(print_mem_transactions(cpu=cpu))
+    sim.add_sync_process(check_addr_translation_errors(cpu=cpu))
     
     sim.add_sync_process(
         get_sim_register_test(

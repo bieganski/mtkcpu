@@ -659,6 +659,10 @@ def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
                 data = yield gb.write_data
                 msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}"
                 logging.critical(msg)
+                if gb.addr.shape() == unsigned(30):
+                    addr = addr << 2
+                else:
+                    assert gb.addr.shape() == unsigned(32)
                 output_dict[addr] = data
             yield
     return f

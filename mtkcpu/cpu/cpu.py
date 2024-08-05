@@ -496,7 +496,7 @@ class MtkCpu(Elaboratable):
                     comb += [
                         ibus.en.eq(1),
                         ibus.store.eq(0),
-                        ibus.addr.eq(pc),
+                        ibus.addr.eq(pc >> 2),
                         ibus.mask.eq(0b1111),
                         ibus.is_fetch.eq(1),
                     ]
