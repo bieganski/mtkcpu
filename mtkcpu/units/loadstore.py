@@ -573,8 +573,6 @@ class MemoryUnit(Elaboratable):
                 byte.eq(data[:8]),
             ]
         with m.Else():
-            # XXX XXX XXX
-            # TODO i'm not sure about this
             comb += [
                 word.eq(data),
                 half_word.eq(data.word_select(addr_lsb[1], 16)),
