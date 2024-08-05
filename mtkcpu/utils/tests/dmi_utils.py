@@ -628,10 +628,10 @@ def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]
         
         def disas(instr: int) -> str:
             try:
-                disas = decode(instr)
-            except:
-                disas = "<unknown>"
-            return disas
+                res = str(decode(instr))
+            except ValueError:
+                res = "<unknown>"
+            return res
 
         prev_state = None
         prev_pc = 0x0
@@ -644,14 +644,15 @@ def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]
                 # log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
                 prev_pc = pc
             if state == "DECODE" and state != prev_state:
-                
-                log_fn(f"{hex(pc):10}: {hex(instr):40}: {disas(instr)}")
+                dis = disas(instr)
+                log_fn(f"{hex(pc):10}: {hex(instr):40}: {dis}")
             if state == "TRAP" and state != prev_state:
-                
+
                 is_irq = yield cpu.csr_unit.mcause.as_view().interrupt
                 cause = yield cpu.csr_unit.mcause.as_view().ecode
                 cause_str = IrqCause(cause) if is_irq else TrapCause(cause)
-                log_fn(f"TRAP at pc {hex(pc)} at state {prev_state}, instr {hex(instr)}. Cause: {str(cause_str)}")
+
+                log_fn(f"TRAP at pc {hex(pc)} at state {prev_state}, instr {hex(instr)}. cause: {str(cause_str)}")
             prev_state = state
             yield
     return aux
