@@ -22,20 +22,29 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
 
-def get_board_cpu(elf_path : Optional[Path], cpu_config: CPU_Config):
+def get_board_cpu(elf_path : Optional[Path], cpu_config: CPU_Config, num_bytes: Optional[int] = 1024):
+    """
+    If 'num_bytes' is None, it will automatically adjust memory size so that the ELF fits. Useful for simulation.
+    """
     if elf_path:
         mem = read_elf(elf_path, verbose=False)
-        # logger.info(f"ELF {elf_path} memory content: {mem}")
-        logger.info(f"== read elf: {len(mem)}*4 ()= {len(mem) * 4}) bytes")
+        max_offset = max(mem.keys()) - CODE_START_ADDR
+        logger.info(f"== read elf: {len(mem)}*4 ()= {len(mem) * 4}) non-bss bytes, max_offset: {hex(max_offset)}")
+        num_bytes = num_bytes or (max_offset + 4)
+
+    if num_bytes > 1_000_000:
+        logging.warning(f"Huge CPU memory size: {num_bytes}")
+
+    if elf_path:
         mem_config = EBRMemConfig.from_mem_dict(
             simulate=True,
             start_addr=CODE_START_ADDR,
-            num_bytes=1024,
+            num_bytes=num_bytes,
             mem_dict=MemoryContents(mem)
         )
     else:
         mem_config = EBRMemConfig(
-            mem_size_words=10, # TODO should we allow empty memory?
+            mem_size_words=num_bytes // 4,
             mem_content_words=None,
             mem_addr=CODE_START_ADDR,
             simulate=True,
@@ -74,7 +83,7 @@ def get_platform() -> Platform:
     return platform
 
 def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optional[int] = None):
-    cpu = get_board_cpu(elf_path=elf_path, cpu_config=cpu_config)
+    cpu = get_board_cpu(elf_path=elf_path, cpu_config=cpu_config, num_bytes=None)
     
     sim = Simulator(cpu)
     sim.add_clock(1e-6)
