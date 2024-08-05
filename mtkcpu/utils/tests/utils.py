@@ -819,7 +819,7 @@ def assert_jtag_test(
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
-        monitor_pc_and_main_fsm(dmi_monitor),
+        monitor_pc_and_main_fsm(cpu=cpu),
         print_dmi_transactions(dmi_monitor),
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),

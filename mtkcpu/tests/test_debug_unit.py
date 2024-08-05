@@ -615,7 +615,7 @@ def test_progbuf_gets_executed(
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
         bus_capture_write_transactions(cpu=cpu, output_dict=dict()),
-        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor, wait_for_first_haltreq=False),
+        monitor_pc_and_main_fsm(cpu=cpu, wait_for_first_haltreq=False),
     ]
     
     for p in processes:
@@ -855,7 +855,7 @@ def test_abstracauto_autoexecdata(
     processes = [
         main_process,
         monitor_cpu_and_dm_state(dmi_monitor=dmi_monitor),
-        monitor_pc_and_main_fsm(dmi_monitor=dmi_monitor),
+        monitor_pc_and_main_fsm(cpu=cpu),
     ]
     for p in processes:
         simulator.add_sync_process(p)
