@@ -10,7 +10,11 @@ from mtkcpu.units.debug.impl_config import TOOLCHAIN
 def test_openocd_gdb():
     logging.info("JTAG test (with openocd and gdb)")
 
-    gdb_executable = f"{TOOLCHAIN}-gdb"
+
+    # TODO: currently automated tests don't use 'gdb', just 'openocd'.
+    #
+    # gdb_executable = f"{TOOLCHAIN}-gdb"
+    gdb_executable = "openocd"
     openocd_executable = "openocd"
 
     for x in [openocd_executable, gdb_executable]:
