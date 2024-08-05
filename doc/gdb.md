@@ -100,8 +100,10 @@ Info : Listening on port 3333 for gdb connections
 
 ## GDB
 
+BUG: To find suitable GDB version, see https://github.com/bieganski/mtkcpu/issues/69
+
 ```bash
-riscv-none-elf-gdb -x board/breakpoint_example.gdb sw/blink_led/build/blink_led.elf
+gdb-multiarch -x board/breakpoint_example.gdb sw/blink_led/build/blink_led.elf
 ```
 
 Expected output contains following:
