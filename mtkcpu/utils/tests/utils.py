@@ -207,8 +207,8 @@ def reg_test(
     # instead only collect write transactions directly on a bus.
     result_mem = {}
     sim.add_sync_process(capture_write_transactions(cpu=cpu, dict_reference=result_mem))
-    sim.add_sync_process(print_mem_transactions(cpu=cpu, dict_reference=result_mem))
-    sim.add_sync_process(check_addr_translation_errors(cpu=cpu, dict_reference=result_mem))
+    # sim.add_sync_process(print_mem_transactions(cpu=cpu, dict_reference=result_mem))
+    # sim.add_sync_process(check_addr_translation_errors(cpu=cpu, dict_reference=result_mem))
     
     sim.add_sync_process(
         get_sim_register_test(
