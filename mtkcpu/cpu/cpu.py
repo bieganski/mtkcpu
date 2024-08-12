@@ -574,15 +574,22 @@ class MtkCpu(Elaboratable):
                 with m.Elif(opcode == 0b0001111):
                     pass # fence - do nothing, as we are a simple implementation.
                 with m.Elif(opcode == 0b1110011):
-                    # ebreak
-                    with m.If(halt_on_ebreak):
-                        # enter Debug Mode.
-                        m.next = "HALTED"
-                        sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
+                    with m.If(imm & 0b1):
+                        # ebreak
+                        with m.If(halt_on_ebreak):
+                            # enter Debug Mode.
+                            m.next = "HALTED"
+                            sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
+                        with m.Else():
+                            # EBREAK description from Privileged specs:
+                            # It generates a breakpoint exception and performs no other operation.
+                            trap(TrapCause.BREAKPOINT)
                     with m.Else():
-                        # EBREAK description from Privileged specs:
-                        # It generates a breakpoint exception and performs no other operation.
-                        trap(TrapCause.BREAKPOINT)
+                        # ecall
+                        with m.If(exception_unit.current_priv_mode == PrivModeBits.MACHINE):
+                            trap(TrapCause.ECALL_FROM_M)
+                        with m.Else():
+                            trap(TrapCause.ECALL_FROM_U)
                 with m.Else():
                     trap(TrapCause.ILLEGAL_INSTRUCTION)
             with m.State("EXECUTE"):
