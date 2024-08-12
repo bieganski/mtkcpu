@@ -629,7 +629,7 @@ def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]
         def disas(instr: int) -> str:
             try:
                 res = str(decode(instr))
-            except ValueError:
+            except:
                 res = "<unknown>"
             return res
 

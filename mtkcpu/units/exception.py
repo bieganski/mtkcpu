@@ -55,6 +55,7 @@ class ExceptionUnit(Elaboratable):
             TrapCause.STORE_MISALIGNED : self.m_store_misaligned,
             TrapCause.STORE_ACCESS_FAULT : self.m_store_error,
             TrapCause.ECALL_FROM_M : self.m_ecall,
+            TrapCause.ECALL_FROM_U : self.m_ecall,
         }
 
         self.irq_cause_map = {
