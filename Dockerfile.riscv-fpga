@@ -43,16 +43,16 @@ RUN apt-get install -y libboost-all-dev libeigen3-dev
 
 # By default yosys and iceprog are installed in /usr/local/bin/, and for nextpnr we specify it explicitly.
 
-RUN git clone https://github.com/YosysHQ/icestorm && cd icestorm && make -j15 && make install
-RUN git clone https://github.com/YosysHQ/yosys && cd yosys && git submodule update --init --recursive && make -j15 && make install
-RUN git clone https://github.com/YosysHQ/nextpnr && cd nextpnr && cmake . -DARCH=ice40 -DICESTORM_INSTALL_PREFIX=/usr/local/ && make -j15 && make install
+RUN git clone https://github.com/YosysHQ/icestorm && cd icestorm && make -j$(nproc) && make install
+RUN git clone https://github.com/YosysHQ/yosys && cd yosys && git submodule update --init --recursive && make -j$(nproc) && make install
+RUN git clone https://github.com/YosysHQ/nextpnr && cd nextpnr && cmake . -DARCH=ice40 -DICESTORM_INSTALL_PREFIX=/usr/local/ && make -j$(nproc) && make install
 
 # Make sure all synthesis binaries are in PATH.
 RUN which iceprog yosys nextpnr-ice40 
 
 # Install RISC-V OpenOCD.
 RUN git clone https://github.com/riscv/riscv-openocd
-RUN cd riscv-openocd && ./bootstrap && ./configure && make -j15 && make install
+RUN cd riscv-openocd && ./bootstrap && ./configure && make -j$(nproc) && make install
 RUN which openocd
 
 # Cleanup the container.
