@@ -1,6 +1,6 @@
 [[package]]
 name = "amaranth"
-version = "0.4.0"
+version = "0.5.0"
 description = "Amaranth hardware definition language"
 category = "main"
 optional = false
@@ -10,17 +10,18 @@ develop = false
 [package.dependencies]
 importlib_resources = {version = "*", markers = "python_version < \"3.9\""}
 Jinja2 = ">=3.0,<4.0"
+jschon = ">=0.11.1,<0.12.0"
 pyvcd = ">=0.2.2,<0.5"
 
 [package.extras]
-builtin-yosys = ["amaranth-yosys (>=0.35)"]
+builtin-yosys = ["amaranth-yosys (>=0.40)"]
 remote-build = ["paramiko (>=2.7,<3.0)"]
 
 [package.source]
 type = "git"
 url = "https://github.com/amaranth-lang/amaranth"
-reference = "a2f3c544eef8d55f29f115663eb33a467cc01178"
-resolved_reference = "a2f3c544eef8d55f29f115663eb33a467cc01178"
+reference = "a0750b89c6060d9f809159a012a26cff4e22e69d"
+resolved_reference = "a0750b89c6060d9f809159a012a26cff4e22e69d"
 
 [[package]]
 name = "amaranth-boards"
@@ -233,6 +234,23 @@ MarkupSafe = ">=2.0"
 i18n = ["Babel (>=2.7)"]
 
 [[package]]
+name = "jschon"
+version = "0.11.1"
+description = "A JSON toolkit for Python developers."
+category = "main"
+optional = false
+python-versions = "~=3.8"
+
+[package.dependencies]
+rfc3986 = "*"
+
+[package.extras]
+dev = ["pytest", "coverage", "hypothesis (<6.0.4)", "pytest-benchmark", "pytest-httpserver", "requests"]
+doc = ["sphinx", "sphinx-rtd-theme"]
+requests = ["requests"]
+test = ["tox"]
+
+[[package]]
 name = "markupsafe"
 version = "2.0.1"
 description = "Safely add untrusted strings to HTML/XML markup."
@@ -411,6 +429,17 @@ optional = false
 python-versions = ">=3.8"
 
 [[package]]
+name = "rfc3986"
+version = "2.0.0"
+description = "Validating URI References per RFC 3986"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.extras]
+idna2008 = ["idna"]
+
+[[package]]
 name = "riscv-model"
 version = "0.6.7.dev2+g4441f5c"
 description = "RISC-V Model"
@@ -517,7 +546,7 @@ test = ["pytest (>=6,<8.1.0 || >=8.2.0)", "pytest-checkdocs (>=2.4)", "pytest-co
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "e4327a9abc076fb8c349be2393c151bd8e9e41062d334b3cda1d6590f55081d7"
+content-hash = "fd1bf19c1cdff7d455805336bdbaff2d37c6c817223c0ef164323e22d4cba6e3"
 
 [metadata.files]
 amaranth = []
@@ -538,6 +567,7 @@ importlib-resources = []
 iniconfig = []
 isort = []
 jinja2 = []
+jschon = []
 markupsafe = []
 mccabe = []
 mypy-extensions = []
@@ -556,6 +586,7 @@ pytest-forked = []
 pytest-xdist = []
 pyvcd = []
 regex = []
+rfc3986 = []
 riscv-model = []
 rope = []
 termcolor = []
