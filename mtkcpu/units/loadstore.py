@@ -536,7 +536,7 @@ class MemoryUnit(Elaboratable):
         self.src2 = Signal(32, name="LD_ST_src2")
         self.offset = Signal(signed(12), name="LD_ST_offset")
 
-        self.res = Signal(signed(32), name="LD_ST_res")
+        self.res = Signal(32, name="LD_ST_res")
         self.en = Signal(name="LD_ST_en")  # TODO implement 'ready/valid' interface
 
         # Output signals.
@@ -550,11 +550,13 @@ class MemoryUnit(Elaboratable):
         store = self.store
         
         addr = Signal(32)
-        word = Signal(signed(32))
-        half_word = Signal(signed(16))
+        
+        word = Signal(32)
+        half_word = Signal(16)
         byte = Signal(8)
+        
         write_data = Signal(32)
-        load_res = Signal(signed(32))
+        load_res = Signal(32)
         addr_lsb = Signal(2)
         
         comb += [
@@ -575,10 +577,12 @@ class MemoryUnit(Elaboratable):
         with m.Else():
             comb += [
                 word.eq(data),
-                half_word.eq(data.word_select(addr_lsb[1], 16)),
+                half_word.eq(data.bit_select(8 * addr_lsb, 16)),
                 byte.eq(data.word_select(addr_lsb, 8)),
             ]
-
+        
+        do_sign_extend = Signal()
+        m.d.comb += do_sign_extend.eq((self.funct3 == Funct3.H) | (self.funct3 == Funct3.B))
 
         # TODO choice expression (amaranth-0.6)
         with m.If(~store):
@@ -586,17 +590,17 @@ class MemoryUnit(Elaboratable):
                 with m.Case(Funct3.W):
                     comb += load_res.eq(word)
                 with m.Case(Funct3.H):
-                    comb += load_res.eq(half_word)
+                    comb += load_res.eq(half_word.as_signed())
                 with m.Case(Funct3.B):
-                    comb += load_res.eq(byte)
+                    comb += load_res.eq(byte.as_signed())
                 with m.Case(Funct3.HU):
-                    comb += load_res.eq(Cat(half_word, 0))
+                    comb += load_res.eq(half_word)
                 with m.Case(Funct3.BU):
-                    comb += load_res.eq(Cat(byte, 0))
+                    comb += load_res.eq(byte)
 
-        with m.If(store):
+        with m.Else():
             with m.Switch(self.funct3):
-                mask = Signal(4)
+                mask = Signal(5) # 5 bits on purpose, to catch overflow
                 with m.Case(Funct3.W):
                     comb += [
                         write_data.eq(word),
@@ -604,14 +608,19 @@ class MemoryUnit(Elaboratable):
                     ]
                 with m.Case(Funct3.H, Funct3.HU):
                     comb += [
-                        write_data.eq(half_word << (8 * addr_lsb[1])),
-                        mask.eq(0b11 << addr_lsb[1]),
+                        write_data.eq(half_word << (8 * addr_lsb)),
+                        mask.eq(0b11 << addr_lsb),
                     ]
                 with m.Case(Funct3.B, Funct3.BU):
                     comb += [
-                        write_data.eq(byte << 8*addr_lsb),
+                        write_data.eq(byte << (8 * addr_lsb)),
                         mask.eq(0b1 << addr_lsb),
                     ]
+
+                    # TODO - we don't raise on some misaligned memory accesses. it's dangerous, as we return
+                    # invalid values instead. see https://github.com/bieganski/mtkcpu/issues/74
+                    invalid_access = Signal()
+                    comb += invalid_access.eq(mask[-1])
         
         with m.If(self.en):
             comb += [
@@ -624,6 +633,6 @@ class MemoryUnit(Elaboratable):
         with m.If(loadstore.ack):
             comb += [
                 self.ack.eq(1),
-                self.res.eq(load_res),
+                self.res.eq(Mux(do_sign_extend, load_res.as_signed(), load_res)),
             ]
         return m

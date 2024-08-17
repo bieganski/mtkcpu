@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 import os
-import itertools
-import sys
 from amaranth.sim import Simulator
 from amaranth.build.plat import Platform
 from amaranth.hdl import Module
@@ -83,13 +81,8 @@ def get_platform() -> Platform:
 
     return platform
 
-def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optional[int] = None, verbose: bool = False):
-    cpu = get_board_cpu(elf_path=elf_path, cpu_config=cpu_config, num_bytes=None)
-    
-    sim = Simulator(cpu)
-    sim.add_clock(1e-6)
-
-    def uart_process():
+def uart_process(cpu: MtkCpu):
+    def aux():
         from mtkcpu.units.mmio.uart import UartTX
         uart_block_matches = [block for (block, _) in cpu.arbiter.mmio_cfg if isinstance(block, UartTX)]
         if len(uart_block_matches) != 1:
@@ -97,10 +90,9 @@ def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optio
         uart = uart_block_matches[0]
         bus = uart._wb_slave_bus.wb_bus
         prev_bus_cyc = 0
+
         print ("starting UART tx..")
-        
-        iter = range(timeout_cycles) if timeout_cycles else itertools.count()
-        for _ in iter:
+        while True:
             bus_cyc = yield bus.cyc
             if bus_cyc and not prev_bus_cyc:
                 # transaction initiated
@@ -112,12 +104,22 @@ def sim(elf_path : Optional[Path], cpu_config: CPU_Config, timeout_cycles: Optio
                     print(chr(tx_byte), end="")
             prev_bus_cyc = bus_cyc
             yield
+    return aux
 
-    sim.add_sync_process(uart_process)
+def sim(cpu: MtkCpu, verbose: bool, with_uart: bool, user_processes: list[Callable] = [], regs_verbose: list[int] = []):
+    sim = Simulator(cpu)
+    sim.add_clock(1e-6)
+
+    if with_uart:
+        sim.add_sync_process(uart_process(cpu=cpu))
 
     if verbose:
-        sim.add_sync_process(monitor_pc_and_main_fsm(cpu=cpu, wait_for_first_haltreq=False, log_fn=print))
+        sim.add_sync_process(monitor_pc_and_main_fsm(cpu=cpu, wait_for_first_haltreq=False, log_fn=print, regs_verbose=regs_verbose))
     
+    for p in user_processes:
+        # user-defined processes. could be both passive or active.
+        sim.add_sync_process(p)
+
     with sim.write_vcd("uart.vcd"):
         sim.run()
 
@@ -233,9 +235,10 @@ def main():
             cpu_config=cpu_config,
         )
     elif args.command == "sim":
+        cpu = get_board_cpu(elf_path=args.elf, cpu_config=cpu_config, num_bytes=None)
         sim(
-            elf_path=args.elf,
-            cpu_config=cpu_config,
+            cpu=cpu,
+            with_uart=True,
             verbose=args.verbose,
         )
     elif args.command == "gen_bsp":

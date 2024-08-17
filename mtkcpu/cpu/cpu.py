@@ -115,6 +115,10 @@ class MtkCpu(Elaboratable):
             reg_init=[0 for _ in range(32)],
         ):
 
+        # FIXME: Disable all Amaranth warnings, that are due to Fragment flattening.
+        # Needs to be done anyway for Amaranth 0.5 migration.
+        import warnings; warnings.filterwarnings("ignore")
+
         if len(reg_init) > 32:
             raise ValueError(
                 f"Register init length (={len(reg_init)}) exceedes 32!"

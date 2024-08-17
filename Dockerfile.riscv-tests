@@ -1,0 +1,21 @@
+from bieganski/riscv-fpga:16-07-2024
+
+# ARG DEBIAN_FRONTEND=noninteractive
+
+# RUN apt-get update
+# RUN apt-get install -y build-essential git automake gcc-riscv64-unknown-elf
+
+WORKDIR /
+
+RUN git clone https://github.com/riscv-software-src/riscv-tests
+
+ENV PATH="/root/.local/xPacks/@xpack-dev-tools/riscv-none-elf-gcc/13.2.0-1.2/.content/bin:$PATH"
+
+WORKDIR riscv-tests
+# RUN which riscv64-none-elf-gcc
+
+RUN git submodule update --init --recursive
+RUN autoconf
+RUN ./configure --with-xlen=32
+
+RUN cd isa && make -j12 RISCV_PREFIX=riscv-none-elf- XLEN=32

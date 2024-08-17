@@ -609,7 +609,7 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
-def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]] = None, wait_for_first_haltreq: bool = True):
+def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]] = None, wait_for_first_haltreq: bool = True, regs_verbose: list[str] = []):
     from mtkcpu.utils.tests.sim_tests import get_state_name
     from mtkcpu.cpu.priv_isa import IrqCause, TrapCause
     from riscvmodel.code import decode
@@ -634,7 +634,6 @@ def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]
             return res
 
         prev_state = None
-        prev_pc = 0x0
         while True:
             instr = yield cpu.instr
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
@@ -642,10 +641,17 @@ def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]
 
             if state == "FETCH" and state != prev_state:
                 # log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
-                prev_pc = pc
+                regs_str = ""
+                if regs_verbose:
+                    from mtkcpu.tests.instr_trace_compare import reg_abi_name_to_phys
+                    for abi_name in regs_verbose:
+                        phys_nr = reg_abi_name_to_phys(abi_name)
+                        value = yield cpu.regs._array[phys_nr]
+                        regs_str += f"{abi_name}={hex(value)},"
+                    log_fn(f"{'':70} {regs_str}")
             if state == "DECODE" and state != prev_state:
                 dis = disas(instr)
-                log_fn(f"{hex(pc):10}: {hex(instr):40}: {dis}")
+                log_fn(f"{hex(pc):10}: {hex(instr):30}: {dis:30}")
             if state == "TRAP" and state != prev_state:
 
                 is_irq = yield cpu.csr_unit.mcause.as_view().interrupt
@@ -671,14 +677,24 @@ def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
             store = yield gb.store
             addr = yield gb.addr
             ack = yield gb.ack
-            if en and store and ack:
+            mask = yield gb.mask
+
+            # NOTE: interconnect is work in progress, that's the reason for the 'if'.
+            if gb.addr.shape() == unsigned(30):
+                addr = addr << 2
+            else:
+                assert gb.addr.shape() == unsigned(32)
+
+            if en and ack and (store or addr >= 0x8000_2000):
                 data = yield gb.write_data
-                msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}"
+
+                if not store:
+                    data = (yield gb.read_data)
+
+                msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}, bitmask: {mask:04b}"
                 logging.critical(msg)
-                if gb.addr.shape() == unsigned(30):
-                    addr = addr << 2
-                else:
-                    assert gb.addr.shape() == unsigned(32)
+
+                # TODO - it doesn't support mask at all..
                 output_dict[addr] = data
             yield
     return f
