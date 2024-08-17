@@ -138,21 +138,18 @@ MEMORY_TESTS = [
         reg_init=fill_but_one(),
         mem_init=MemoryContents(memory={0x20: 0xdeadbeef}),
     ),
-    # TODO tu jestem
-    # MemTestCase(
-    #     name="simple 'sh'",
-    #     source_type=MemTestSourceType.TEXT,
-    #     source=f"""
-    #     .section code
-    #         lui x5, 0xaabbf
-    #         addi x5, x5, 0x01cd
-    #         sh x5, 0x10(x{fill_but_one.addr_reg_idx})
-    #     """,
-    #     timeout=10,
-    #     reg_init=fill_but_one(),
-    #     mem_init=MemoryContents(memory={0x10: 0}),
-    #     mem_out=MemoryContents(memory={0x10: 0}),
-    # ),
+    MemTestCase(
+        name="simple 'sh'",
+        source_type=MemTestSourceType.TEXT,
+        source=f"""
+        .section code
+            sh x5, 0x10(x{fill_but_one.addr_reg_idx})
+        """,
+        timeout=10,
+        reg_init=fill_but_one(),
+        mem_init=MemoryContents(memory={0x10: 5}),
+        mem_out=MemoryContents(memory={0x10: 5}),
+    ),
     MemTestCase(
         name="negative 'sh'",
         source_type=MemTestSourceType.TEXT,
@@ -164,7 +161,17 @@ MEMORY_TESTS = [
         reg_init=fill_but_one(-5),
         mem_out=MemoryContents(memory={0x10: Bits(int=-5, length=16).uint}),
     ),
-
+    MemTestCase(
+        name="simple 'sb'",
+        source_type=MemTestSourceType.TEXT,
+        source=f"""
+        .section code
+            sb x5, 0x10(x{fill_but_one.addr_reg_idx})
+        """,
+        timeout=10,
+        reg_init=fill_but_one(0xAA),
+        mem_out=MemoryContents(memory={0x10: 0xAA}),
+    ),
     MemTestCase(
         name="overwrite 'sb'",
         source_type=MemTestSourceType.TEXT,
