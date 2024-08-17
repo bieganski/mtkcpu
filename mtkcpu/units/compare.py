@@ -21,11 +21,12 @@ class CompareUnit(Elaboratable):
         m = Module()
         with m.Switch(self.funct3):
             with m.Case(Funct3.SLT):
+                # NOTE: consider two cases: when overflow happens and when underflow happens.
                 m.d.comb += self.condition_met.eq(
-                    self.negative | self.overflow
+                    ~self.zero & (self.negative != self.overflow)
                 )
             with m.Case(Funct3.SLTU):
-                m.d.comb += self.condition_met.eq(self.carry)
+                m.d.comb += self.condition_met.eq(~self.zero & self.carry)
 
             with m.Case(Funct3.BEQ):
                 m.d.comb += self.condition_met.eq(self.zero)

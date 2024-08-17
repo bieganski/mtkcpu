@@ -34,6 +34,13 @@ jobs:
       - name: Run OCD tests
         shell: bash
         run:  ./docker_run.py --cmd 'poetry run python3 mtkcpu/tests/test_jtag.py && cat ckpt.log'
+      
+      - name: Run (external) riscv-tests tests
+        shell: bash
+        run: |
+          make fetch-riscv-tests-isa  # 'isa' directory will be created locally.
+          mv ./isa sw/
+          ./docker_run.py --cmd 'poetry run python3 mtkcpu/tests/test_external_riscv_tests.py /toolchain/sw/isa'  # NOTE issues with paths, on host-docker boundary.
 
       - name: Synthesisze SoC
         shell: bash

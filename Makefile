@@ -28,6 +28,16 @@ build:
 build-docker:
 	bash ./build_docker_image.sh
 
+build-docker-riscv-tests:
+	docker build -f Dockerfile.riscv-tests -t riscv-tests .
+
+fetch-riscv-tests-isa: build-docker-riscv-tests
+	@rm -rf isa
+	@docker rm -f dummy
+	docker create --name dummy riscv-tests
+	docker cp dummy:/riscv-tests/isa .
+	docker rm -f dummy
+
 fetch-gcc: export id := $(shell docker create $(DOCKER_IMAGE_NAME))
 fetch-gcc: export temp := $(shell mktemp -p .)
 fetch-gcc:

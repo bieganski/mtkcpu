@@ -67,7 +67,7 @@ def compare_trace_csv(csv1, csv2, name1, name2, log):
 
             def parse_gpr(gpr_str : str):
                 rd, val = gpr_str.split(":")
-                return (reg_abi_name_to_phys(rd), int(val, 16))
+                return (f"x{reg_abi_name_to_phys(rd)}", int(val, 16))
 
             regs1 = sorted([parse_gpr(x) for x in entry1.gpr])
             regs2 = sorted([parse_gpr(x) for x in entry2.gpr])
@@ -83,40 +83,40 @@ def compare_trace_csv(csv1, csv2, name1, name2, log):
             
         print(f"OK, got {min(len(instr_trace_1), len(instr_trace_2))} matches!")
 
-def reg_abi_name_to_phys(abi_name: str):
+def reg_abi_name_to_phys(abi_name: str) -> int:
     matches = re.findall(r'\d+', abi_name)
     if len(matches) > 1:
         raise ValueError(f"reg_abi_name_to_phys: abi_name: {abi_name}, matches: {matches}")
     
     num = int(matches[0]) if len(matches) == 1 else None
-    
+
     if abi_name.startswith("x"):
-        return abi_name
+        return num
     if abi_name.startswith("a"):
-        return f"x{num + 10}"
+        return 10 + num
     if abi_name == "zero":
-        return "x0"
+        return 0
     if abi_name == "ra":
-        return "x1"
+        return 1
     if abi_name == "sp":
-        return "x2"
+        return 2
     if abi_name == "gp":
-        return "x3"
+        return 3
     if abi_name == "tp":
-        return "x4"
+        return 4
     if abi_name == "fp" or abi_name == "s0":
-        return "x8"
+        return 8
     if abi_name == "s1":
-        return "x9"
+        return 9
     if abi_name.startswith("t"):
         assert num is not None, (abi_name, matches)
         if num <= 2:
-            return f"x{num + 5}"
+            return num + 5
         elif 3 <= num <= 6:
-            return f"x{num + 25}"  
+            return num + 25
     if abi_name.startswith("s"):
         assert num is not None, (abi_name, matches)
-        return f"x{num + 16}"
+        return num + 16
     assert False, abi_name
 
 def check_update_gpr(gpr_update, gpr_global_state):
@@ -128,7 +128,7 @@ def check_update_gpr(gpr_update, gpr_global_state):
         item = update.split(":")
         if len(item) != 2:
             sys.exit("Illegal GPR update format:" + update)
-        rd = reg_abi_name_to_phys(item[0])
+        rd = f"x{reg_abi_name_to_phys(item[0])}"
         rd_val = item[1]
         if rd in gpr:
             if rd_val != gpr[rd]:

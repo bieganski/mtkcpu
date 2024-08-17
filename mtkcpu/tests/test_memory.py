@@ -96,8 +96,21 @@ MEMORY_TESTS = [
         timeout=10,
         out_reg=5,
         reg_init=fill_but_one(),
-        out_val=0b11111101,  # TODO fix that unsigned bus.
+        out_val=-3,
         mem_init=MemoryContents(memory={0x20: -3}),
+    ),
+    MemTestCase(
+        name="sign-extend 'lb'",
+        source_type=MemTestSourceType.TEXT,
+        source=f"""
+        .section code
+            lb x5, 0x20(x{fill_but_one.addr_reg_idx})
+        """,
+        timeout=10,
+        out_reg=5,
+        reg_init=fill_but_one(),
+        out_val=-1,
+        mem_init=MemoryContents(memory={0x20: 0xffff_ffff}),
     ),
     MemTestCase(
         name="simple 'lbu'",
@@ -196,7 +209,6 @@ MEMORY_TESTS = [
         mem_out=MemoryContents(memory={0xcc: 0xAAAA}),
     ),
 ]
-
 
 @mem_test(MEMORY_TESTS)
 def test_memory(_):

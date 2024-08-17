@@ -285,7 +285,7 @@ def get_sim_register_test(
 ):
     check_reg_content = reg_num is not None
 
-    def reg_test(timeout=default_timeout_extra + timeout_cycles):
+    def reg_test(timeout=default_timeout_extra + timeout_cycles, expected_val=expected_val):
         yield Active()
         yield Tick()
         yield Settle()
@@ -300,7 +300,14 @@ def get_sim_register_test(
                         cond = not expected_val(val)
                     else:
                         # anything that implements '=='
+
+                        # trim to 32 bits
+                        from ctypes import c_int32
+                        expected_val = c_int32(expected_val).value
+                        val = c_int32(val).value
+
                         cond = val != expected_val
+
                     if check_reg_content and cond:
                         # TODO that mechanism for now allows for only one write to observed register per test,
                         # extend it if neccessary.
