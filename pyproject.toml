@@ -6,16 +6,7 @@ authors = [
     "Mateusz Biegański <bieganski.m@wp.pl>",
     "Piotr Styczyński <piotrsty1@gmail.com>"
 ]
-license = "MIT"
-
-[tool.poetry.scripts]
-mtkcpu = 'mtkcpu.cli.main:run_cli'
-
-# pyproject.toml
-[tool.pytest.ini_options]
-testpaths = [
-    "mtkcpu/tests",
-]
+license = "GPLv2"
 
 [tool.poetry.dependencies]
 python = "^3.8"

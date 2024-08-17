@@ -9,24 +9,39 @@ on:
 
 jobs:
   build:
-    name: Build and test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # Specify here the list of images to use for the machine
-        os: [ubuntu-22.04]
+    name: Build/simulate/synthesisze mtkcpu
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout the project
         uses: actions/checkout@v2
+
       - name: Build the Docker image
         shell: bash
         run: make build-docker
+
       - name: Run unit tests
         shell: bash
-        run: make unit-test-docker
+        run: ./docker_run.py --cmd 'poetry run pytest -n15 ./mtkcpu/'
+
+      - name: Run simulation with UART on stdout
+        shell: bash
+        run: |
+          ./docker_run.py --cmd 'poetry run mtkcpu/cli/top.py gen_linker_script'
+          ./docker_run.py --cmd 'make -B -C sw/uart_tx'
+          bash -c 'timeout 30 ./docker_run.py --cmd "poetry run ./mtkcpu/cli/top.py sim -e sw/uart_tx/build/uart_tx.elf" || true' | tee log.txt
+          grep -q "Hello from mtkCPU" log.txt
+
       - name: Run OCD tests
         shell: bash
-        run: make test-ocd-gdb-docker
+        run:  ./docker_run.py --cmd 'poetry run python3 mtkcpu/tests/test_jtag.py && cat ckpt.log'
+      
+      - name: Run (external) riscv-tests tests
+        shell: bash
+        run: |
+          make fetch-riscv-tests-isa  # 'isa' directory will be created locally.
+          mv ./isa sw/
+          ./docker_run.py --cmd 'poetry run python3 mtkcpu/tests/test_external_riscv_tests.py /toolchain/sw/isa'  # NOTE issues with paths, on host-docker boundary.
+
       - name: Synthesisze SoC
         shell: bash
         run: |

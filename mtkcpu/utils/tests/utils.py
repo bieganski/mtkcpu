@@ -81,6 +81,43 @@ class ComponentTestbenchCase:
     name: str
     component_type : Elaboratable
 
+def check_addr_translation_errors(cpu : MtkCpu) -> OrderedDict:
+    def f():
+        yield Passive()
+        while(True):
+            err = yield cpu.arbiter.error_code
+            if err:
+                raise ValueError(f"addr translation error code: {err}")
+            yield
+    return f
+
+
+def print_mem_transactions(cpu : MtkCpu) -> OrderedDict:
+    def f():
+        yield Passive()
+        gb = cpu.arbiter.generic_bus
+
+        while(True):
+            if (yield gb.en):
+                store = yield gb.store
+                addr = yield gb.addr
+                mask = yield gb.mask
+                if store:
+                    assert mask # TODO: LOAD is always 4 byte, so maybe rename to 'write_mask'?
+                write_data = yield gb.write_data
+
+                prefix = "STORE" if store else "LOAD"
+                gb_mode_30_bit = gb.addr.shape() == unsigned(30)
+
+                addr = addr << 2 if gb_mode_30_bit else addr
+
+                print(f"{prefix} addr {hex(addr)}, mask {mask} write_data: {hex(write_data) if store else ''}")
+                while (yield gb.en):
+                    yield
+            yield
+    return f
+
+
 def capture_write_transactions(cpu : MtkCpu, dict_reference : OrderedDict) -> OrderedDict:
     def f():
         yield Passive()
@@ -171,7 +208,9 @@ def reg_test(
     # instead only collect write transactions directly on a bus.
     result_mem = {}
     sim.add_sync_process(capture_write_transactions(cpu=cpu, dict_reference=result_mem))
-
+    # sim.add_sync_process(print_mem_transactions(cpu=cpu))
+    sim.add_sync_process(check_addr_translation_errors(cpu=cpu))
+    
     sim.add_sync_process(
         get_sim_register_test(
             name=name,
@@ -780,7 +819,7 @@ def assert_jtag_test(
         monitor_cmderr(dmi_monitor),
         monitor_cpu_dm_if_error(dmi_monitor),
         monitor_cpu_and_dm_state(dmi_monitor),
-        monitor_pc_and_main_fsm(dmi_monitor),
+        monitor_pc_and_main_fsm(cpu=cpu),
         print_dmi_transactions(dmi_monitor),
         monitor_writes_to_gpr(dmi_monitor, gpr_num=8),
         monitor_halt_or_resume_req_get_ack(dmi_monitor),

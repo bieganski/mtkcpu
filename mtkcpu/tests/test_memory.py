@@ -96,8 +96,21 @@ MEMORY_TESTS = [
         timeout=10,
         out_reg=5,
         reg_init=fill_but_one(),
-        out_val=0b11111101,  # TODO fix that unsigned bus.
+        out_val=-3,
         mem_init=MemoryContents(memory={0x20: -3}),
+    ),
+    MemTestCase(
+        name="sign-extend 'lb'",
+        source_type=MemTestSourceType.TEXT,
+        source=f"""
+        .section code
+            lb x5, 0x20(x{fill_but_one.addr_reg_idx})
+        """,
+        timeout=10,
+        out_reg=5,
+        reg_init=fill_but_one(),
+        out_val=-1,
+        mem_init=MemoryContents(memory={0x20: 0xffff_ffff}),
     ),
     MemTestCase(
         name="simple 'lbu'",
@@ -190,51 +203,6 @@ MEMORY_TESTS = [
     ),
 ]
 
-
-EXDI = [
-        # TODO tu jestem
-    # MemTestCase(
-    #     name="simple 'sb'",
-    #     source_type=MemTestSourceType.TEXT,
-    #     source=f"""
-    #     .section code
-    #         sb x5, 0x11(x1)
-    #     """,
-    #     timeout=10,
-    #     reg_init=fill_but_one(0xAA),
-    #     mem_out=MemoryContents(memory={0x11: 0xAA}),
-    # ),
-
-    #     MemTestCase(
-    #     name="overwrite 'sw'",
-    #     source_type=MemTestSourceType.TEXT,
-    #     source=f"""
-    #     .section code
-    #         sw x5, 0xcc(x{fill_but_one.addr_reg_idx})
-    #     """,
-    #     timeout=10,
-    #     reg_init=fill_but_one(0xAAAA),
-    #     mem_init=MemoryContents(memory={0xcc: 0xDEADBEEF}),
-    #     mem_out=MemoryContents(memory={0xcc: 0xAAAA}),
-    # ),
-
-        MemTestCase(
-        name="overwrite 'sh'",
-        source_type=MemTestSourceType.TEXT,
-        source=f"""
-        .section code
-            sh x5, 0x10(x{fill_but_one.addr_reg_idx})
-        """,
-        timeout=10,
-        reg_init=fill_but_one(0xAAAA),
-        mem_init=MemoryContents(memory={0x10: 0xDEADBEEF}),
-        mem_out=MemoryContents(memory={0x10: 0xDEADAAAA}),
-    ),
-
-
-]
-
 @mem_test(MEMORY_TESTS)
-# @mem_test(EXDI)
 def test_memory(_):
     pass

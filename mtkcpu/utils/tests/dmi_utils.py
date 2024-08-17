@@ -1,3 +1,4 @@
+from typing import Optional, Callable
 
 from amaranth import Signal, Elaboratable
 from amaranth.hdl import rec
@@ -608,13 +609,15 @@ def monitor_writes_to_dcsr(dmi_monitor: DMI_Monitor):
             yield
     return aux
 
-def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor, wait_for_first_haltreq: bool = True):
+def monitor_pc_and_main_fsm(cpu: MtkCpu, log_fn : Optional[Callable[[str], None]] = None, wait_for_first_haltreq: bool = True, regs_verbose: list[str] = []):
     from mtkcpu.utils.tests.sim_tests import get_state_name
+    from mtkcpu.cpu.priv_isa import IrqCause, TrapCause
+    from riscvmodel.code import decode
+    log_fn = log_fn or (lambda x: logging.critical(f"\t\t\t\t {x}"))
+    
     def aux():
         yield Passive()
 
-        cpu = dmi_monitor.cpu
-        
         if wait_for_first_haltreq:
             # To avoid spam, wait till first haltreq debugger event.
             while True:
@@ -623,20 +626,39 @@ def monitor_pc_and_main_fsm(dmi_monitor: DMI_Monitor, wait_for_first_haltreq: bo
                     break
                 yield
         
-        log_fn = lambda x: logging.critical(f"\t\t\t\t {x}")
+        def disas(instr: int) -> str:
+            try:
+                res = str(decode(instr))
+            except:
+                res = "<unknown>"
+            return res
+
         prev_state = None
-        prev_pc = 0x0
         while True:
+            instr = yield cpu.instr
             state = get_state_name(cpu.main_fsm, (yield cpu.main_fsm.state))
-            pc = hex((yield cpu.pc))
+            pc = (yield cpu.pc)
+
             if state == "FETCH" and state != prev_state:
-                log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
-                prev_pc = pc
+                # log_fn(f"detected state change: {prev_state} -> FETCH. pc changed from {prev_pc} to {pc}.")
+                regs_str = ""
+                if regs_verbose:
+                    from mtkcpu.tests.instr_trace_compare import reg_abi_name_to_phys
+                    for abi_name in regs_verbose:
+                        phys_nr = reg_abi_name_to_phys(abi_name)
+                        value = yield cpu.regs._array[phys_nr]
+                        regs_str += f"{abi_name}={hex(value)},"
+                    log_fn(f"{'':70} {regs_str}")
             if state == "DECODE" and state != prev_state:
-                log_fn(f"instr: {hex((yield cpu.instr))}")
+                dis = disas(instr)
+                log_fn(f"{hex(pc):10}: {hex(instr):30}: {dis:30}")
             if state == "TRAP" and state != prev_state:
-                instr = yield cpu.instr
-                log_fn(f"TRAP at pc {pc} at state {prev_state}, instr {hex(instr)}")
+
+                is_irq = yield cpu.csr_unit.mcause.as_view().interrupt
+                cause = yield cpu.csr_unit.mcause.as_view().ecode
+                cause_str = IrqCause(cause) if is_irq else TrapCause(cause)
+
+                log_fn(f"TRAP at pc {hex(pc)} at state {prev_state}, instr {hex(instr)}. cause: {str(cause_str)}")
             prev_state = state
             yield
     return aux
@@ -655,11 +677,24 @@ def bus_capture_write_transactions(cpu : MtkCpu, output_dict: dict):
             store = yield gb.store
             addr = yield gb.addr
             ack = yield gb.ack
-            if en and store and ack:
+            mask = yield gb.mask
+
+            # NOTE: interconnect is work in progress, that's the reason for the 'if'.
+            if gb.addr.shape() == unsigned(30):
+                addr = addr << 2
+            else:
+                assert gb.addr.shape() == unsigned(32)
+
+            if en and ack and (store or addr >= 0x8000_2000):
                 data = yield gb.write_data
-                msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}"
+
+                if not store:
+                    data = (yield gb.read_data)
+
+                msg = f"MEMORY BUS ACTIVE: addr={hex(addr)}, is_store={store}, data={hex(data)}, bitmask: {mask:04b}"
                 logging.critical(msg)
-                addr_adjusted_from_30bit_to_32_bit = addr << 2
-                output_dict[addr_adjusted_from_30bit_to_32_bit] = data
+
+                # TODO - it doesn't support mask at all..
+                output_dict[addr] = data
             yield
     return f

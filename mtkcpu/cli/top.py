@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 import os
-
+from amaranth.sim import Simulator
 from amaranth.build.plat import Platform
 from amaranth.hdl import Module
 
@@ -15,28 +15,38 @@ from mtkcpu.units.mmio.bspgen import MemMapCodeGen
 from mtkcpu.units.memory_interface import AddressManager
 from mtkcpu.utils.linker import write_linker_script
 from mtkcpu.cpu.cpu import CPU_Config
+from mtkcpu.utils.tests.dmi_utils import monitor_pc_and_main_fsm
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
 
-def get_board_cpu(elf_path : Optional[Path], cpu_config: CPU_Config):
+def get_board_cpu(elf_path : Optional[Path], cpu_config: CPU_Config, num_bytes: Optional[int] = 1024):
+    """
+    If 'num_bytes' is None, it will automatically adjust memory size so that the ELF fits. Useful for simulation.
+    """
     if elf_path:
         mem = read_elf(elf_path, verbose=False)
-        # logger.info(f"ELF {elf_path} memory content: {mem}")
-        logger.info(f"== read elf: {len(mem)}*4 ()= {len(mem) * 4}) bytes")
+        max_offset = max(mem.keys()) - CODE_START_ADDR
+        logger.info(f"== read elf: {len(mem)}*4 ()= {len(mem) * 4}) non-bss bytes, max_offset: {hex(max_offset)}")
+        num_bytes = num_bytes or (max_offset + 4)
+
+    if num_bytes > 1_000_000:
+        logging.warning(f"Huge CPU memory size: {num_bytes}")
+
+    if elf_path:
         mem_config = EBRMemConfig.from_mem_dict(
-            simulate=False,
+            simulate=True,
             start_addr=CODE_START_ADDR,
-            num_bytes=1024,
+            num_bytes=num_bytes,
             mem_dict=MemoryContents(mem)
         )
     else:
         mem_config = EBRMemConfig(
-            mem_size_words=10, # TODO should we allow empty memory?
+            mem_size_words=num_bytes // 4,
             mem_content_words=None,
             mem_addr=CODE_START_ADDR,
-            simulate=False
+            simulate=True,
         )
     return MtkCpu(mem_config=mem_config, cpu_config=cpu_config)
 
@@ -71,6 +81,47 @@ def get_platform() -> Platform:
 
     return platform
 
+def uart_process(cpu: MtkCpu):
+    def aux():
+        from mtkcpu.units.mmio.uart import UartTX
+        uart_block_matches = [block for (block, _) in cpu.arbiter.mmio_cfg if isinstance(block, UartTX)]
+        if len(uart_block_matches) != 1:
+            raise ValueError(f"Could not determine UART block! Was expecting one match, got {len(uart_block_matches)} instead! {uart_block_matches}")
+        uart = uart_block_matches[0]
+        bus = uart._wb_slave_bus.wb_bus
+        prev_bus_cyc = 0
+
+        print ("starting UART tx..")
+        while True:
+            bus_cyc = yield bus.cyc
+            if bus_cyc and not prev_bus_cyc:
+                # transaction initiated
+                adr = yield bus.adr
+                mask = yield bus.we
+                # origin of those magic constants is 'handle_transaction' method of UartTX block.
+                if (adr == 0x8) and (mask & 1):
+                    tx_byte = (yield bus.dat_w) & 0xff
+                    print(chr(tx_byte), end="")
+            prev_bus_cyc = bus_cyc
+            yield
+    return aux
+
+def sim(cpu: MtkCpu, verbose: bool, with_uart: bool, user_processes: list[Callable] = [], regs_verbose: list[int] = []):
+    sim = Simulator(cpu)
+    sim.add_clock(1e-6)
+
+    if with_uart:
+        sim.add_sync_process(uart_process(cpu=cpu))
+
+    if verbose:
+        sim.add_sync_process(monitor_pc_and_main_fsm(cpu=cpu, wait_for_first_haltreq=False, log_fn=print, regs_verbose=regs_verbose))
+    
+    for p in user_processes:
+        # user-defined processes. could be both passive or active.
+        sim.add_sync_process(p)
+
+    with sim.write_vcd("uart.vcd"):
+        sim.run()
 
 def build(
         elf_path : Optional[Path],
@@ -78,7 +129,7 @@ def build(
         cpu_config: CPU_Config):
     platform = get_platform()
     m = get_board_cpu(elf_path=elf_path, cpu_config=cpu_config)
-    platform.build(m, do_program=do_program)
+    platform.build(m, do_program=do_program, nextpnr_opts="--timing-allow-fail")
     logger.info(f"OK, Design was built successfully, printing out some stats..")
     timing_report = Path("build/top.tim")
     if not timing_report.exists():
@@ -149,32 +200,46 @@ def generate_bsp():
 def main():
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    sp = parser.add_subparsers(required=True, dest="command")
     
-    build_p = sp.add_parser("build", help="Build the IceBreaker bitstream containing full SoC.")
-    build_p.add_argument("--no_dm", action="store_true")
-    build_p.add_argument("--dev_mode", action="store_true")
-    build_p.add_argument("--with_virtual_memory", action="store_true")
-    build_p.add_argument("-e", "--elf", type=Path, help="Path to an .elf file to initialize Block RAM with.")
-    build_p.add_argument("-p", "--program", action="store_true")
+    subparsers = parser.add_subparsers(required=True, dest="command")
     
-    sp.add_parser("gen_bsp", help="Generate bsp .c and .h sources, based on SoC address space.")
-    sp.add_parser("gen_linker_script", help="Generate linker script, based on SoC address space.")
+    build_parser = subparsers.add_parser("build", help="Build the IceBreaker bitstream containing full SoC.")
+    sim_parser   = subparsers.add_parser("sim", help="Simulate mtkcpu with given ELF. The UART is printed to stdout.")
+    _            = subparsers.add_parser("gen_bsp", help="Generate bsp .c and .h sources, based on SoC address space.")
+    _            = subparsers.add_parser("gen_linker_script", help="Generate linker script, based on SoC address space.")
+
+    for p in [build_parser, sim_parser]:
+        p.add_argument("--no_dm", action="store_true")
+        p.add_argument("--dev_mode", action="store_true")
+        p.add_argument("--with_virtual_memory", action="store_true")
+        p.add_argument("-e", "--elf", type=Path, required=(parser is sim_parser), help="Path to an .elf file to initialize Block RAM with.")
+
+    sim_parser.add_argument("-v", "--verbose", action="store_true")
+    
+    build_parser.add_argument("-p", "--program", action="store_true")
     
     args = parser.parse_args()
 
-
-    if args.command == "build":
+    if args.command in ["build", "sim"]:
         cpu_config = CPU_Config(
             with_debug=(not args.no_dm),
             dev_mode=args.dev_mode,
             pc_reset_value=CODE_START_ADDR,
             with_virtual_memory=args.with_virtual_memory,
         )
+
+    if args.command == "build":
         build(
             elf_path=args.elf,
             do_program=args.program,
             cpu_config=cpu_config,
+        )
+    elif args.command == "sim":
+        cpu = get_board_cpu(elf_path=args.elf, cpu_config=cpu_config, num_bytes=None)
+        sim(
+            cpu=cpu,
+            with_uart=True,
+            verbose=args.verbose,
         )
     elif args.command == "gen_bsp":
         generate_bsp()

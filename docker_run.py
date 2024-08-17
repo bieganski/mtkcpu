@@ -53,6 +53,7 @@ def main(cmd : Optional[str]):
 
     command = f"""
 docker run \
+--init --tty \
 --net host \
 {construct_groups_params()} \
 -v {Path(__file__).parent}/sw:/toolchain/sw \
@@ -60,7 +61,8 @@ docker run \
     """
     print(command)
 
-    subprocess.run(command, shell=True)
+    completed_process = subprocess.run(command, shell=True)
+    exit(completed_process.returncode)
 
 
 if __name__ == "__main__":

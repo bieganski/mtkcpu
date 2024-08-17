@@ -55,17 +55,19 @@ class EBRMemConfig():
         ws = __class__.word_size
         num_words = num_bytes // ws
         
-        d = dict([(k - start_addr, v) for k, v in mem_dict.memory.items()])
-        if any([x < 0 for x in d.keys()]) or any([x >= num_bytes for x in d.keys()]):
+        bad_matches = [x for x in mem_dict.memory.keys() if x < start_addr] + [x for x in mem_dict.memory.keys() if x >= start_addr + num_bytes]
+        if bad_matches:
             valid_range_fmt = f"[{hex(start_addr), hex(start_addr + num_bytes)}]"
-            non_matching = [x for x in d.keys() if x < start_addr or x >= start_addr + num_bytes][0]
+            bad_match = bad_matches[0]
             raise ValueError(f"Passed MemoryContents contains initialized memory on addresses "
                 f"that doesn't fit into range {valid_range_fmt}!"
                 f"(tried {mem_dict if len(mem_dict.memory) < 100 else f'<too big to print> (of length {len(mem_dict.memory)}'}."
-                f"E.g. {hex(non_matching)}={hex(d[non_matching])} not matches.)"
+                f"E.g. {hex(bad_match)}={hex(mem_dict.memory[bad_match])} not matches.). Consider increasing memory size."
             )
+        
+        d = dict([(k - start_addr, v) for k, v in mem_dict.memory.items()])
         mem_map = [0] * num_words
-        # raise ValueError(num_words, int(log2(ws)), [k - start_addr for k in d.keys()])
+        
         for k, v in d.items():
             mem_map[(k >> int(log2(ws)))] = v
 
@@ -94,6 +96,8 @@ def read_elf(elf_path, verbose=False):
     # retrieve it's data and put in 'mem' dict (both code and program data). 
     mem = {}
     for s in elf.iter_segments():
+        if s['p_type'] != 'PT_LOAD':
+            continue
         file_offset, data_len = s.header.p_offset, s.header.p_memsz
         load_addr = s.header.p_vaddr
         handle.seek(file_offset)
