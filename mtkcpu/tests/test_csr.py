@@ -388,7 +388,7 @@ ok:
         out_val=100,
         timeout=2000,
         mem_init=MemoryContents.empty(),
-        reg_init=RegistryContents.fill(),
+        reg_init=RegistryContents.empty(),
     ),
 ]
 

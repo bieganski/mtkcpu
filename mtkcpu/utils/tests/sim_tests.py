@@ -290,7 +290,7 @@ def get_sim_register_test(
         yield Tick()
         yield Settle()
 
-        for _ in range(timeout):
+        for i in range(timeout):
             en = yield cpu.reg_write_port.en
             if en == 1:
                 addr = yield cpu.reg_write_port.addr
@@ -311,9 +311,10 @@ def get_sim_register_test(
                     if check_reg_content and cond:
                         # TODO that mechanism for now allows for only one write to observed register per test,
                         # extend it if neccessary.
+                        pc = yield cpu.pc
                         print(
                             f"== ERROR: Expected data write to reg x{addr} of value {hex(expected_val)},"
-                            f" got value {hex(val)}.. \n== fail test: {name}\n"
+                            f" got value {hex(val)} in cycle={i}, PC={hex(pc)}.. \n== fail test: {name}\n"
                         )
                         print(
                             f"{format(expected_val, '32b')} vs {format(val, '32b')}"

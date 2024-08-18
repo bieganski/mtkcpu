@@ -210,6 +210,8 @@ def reg_test(
     sim.add_sync_process(capture_write_transactions(cpu=cpu, dict_reference=result_mem))
     # sim.add_sync_process(print_mem_transactions(cpu=cpu))
     sim.add_sync_process(check_addr_translation_errors(cpu=cpu))
+
+    sim.add_sync_process(monitor_pc_and_main_fsm(cpu=cpu, wait_for_first_haltreq=False, log_fn=print))
     
     sim.add_sync_process(
         get_sim_register_test(
@@ -292,7 +294,8 @@ def get_code_mem(case: MemTestCase, mem_size_kb: int) -> MemoryContents:
         import tempfile
         with tempfile.NamedTemporaryFile(
             suffix=".elf",
-            dir=Path(__file__).parent
+            dir=Path(__file__).parent,
+            delete=False
         ) as tmp_elf:
             source = f"""
             .global start
