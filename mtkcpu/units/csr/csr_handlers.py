@@ -171,7 +171,7 @@ class MIE(CSR_Write_Handler):
         return self.latch_whole_value_with_no_side_effect()
 
 class MIP(CSR_Write_Handler):
-    addr = CSRIndex.MIE
+    addr = CSRIndex.MIP
     layout = MIP_Layout
 
     # TODO

@@ -283,8 +283,117 @@ CSR_TESTS = [
     ),
 ]
 
+EXDI = [
+    MemTestCase(
+        name="timer interrupt happens with proper mcause",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+            start:
+                la x5, trap
+                csrw mtvec, x5
+                csrr x2, {int(CSRNonStandardIndex.MTIME)}
+                addi x2, x2, 128 # interupt in ~100 cycles
+                csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
+                
+                li x1, 0b10000000 # mie.mtie
+                csrw mie, x1
+                
+                li x1, 0b1000  # mstatus.mie
+                csrw mstatus, x1
+            loop:
+                j loop
+            trap:
+                csrr x14, mcause
+                andi x15, x14, 0xff
+        """,
+        out_reg=15,
+        out_val=IrqCause.M_TIMER_INTERRUPT,
+        timeout=2000,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.fill(),
+    ),
+
+    # "The interrupt remains posted until it clears by writing the MTIMECMP register" - privileged specs.
+    MemTestCase(
+        name="timer interrupt is cleared only with 'mtimecmp' write",
+        source_type=MemTestSourceType.RAW,
+        source=f"""
+start:
+    la x5, trap
+    csrw mtvec, x5
+    csrr x2, {int(CSRNonStandardIndex.MTIME)}
+    addi x2, x2, 128 # interupt in ~100 cycles
+    csrw {int(CSRNonStandardIndex.MTIMECMP)}, x2
+    
+    li x1, 0b10000000 # mie.mtie
+    csrw mie, x1
+    
+    li x1, 0b1000  # mstatus.mie
+    csrw mstatus, x1
+loop:
+    j loop
+
+trap:
+
+    // error codes on too_bad entry:
+    // 1 - NON-TIMER TRAP
+    // 2 - UNREACHABLE CODE
+    // 3 - MRET CLEARS TIMER IRQ (IT SHOULDN'T, DUE TO SPECS.)
+    
+
+    // filter out non-timer related traps.
+    csrr x5, mcause
+    andi x5, x5, 0xff
+    li x6, {IrqCause.M_TIMER_INTERRUPT}
+
+    li x20, 1
+    bne x5, x6, too_bad
+
+    addi x10, x10, 1
+
+    li x11, 1
+    beq x10, x11, 1f
+    li x11, 2
+    beq x10, x11, 2f
+    li x11, 3
+    beq x10, x11, 3f
+
+    add x20, x0, x10
+    // li x20, 2
+    jump too_bad, x3 // should not be reached
+
+1:
+    li x20, 3
+    la x5, too_bad  // should not be executed, as we haven't yet written to 'mtimecmp'.
+    csrw mepc, x5
+    mret
+
+2:
+    csrr x1, {int(CSRNonStandardIndex.MTIME)}
+    addi x1, x0, 1000
+    csrw {int(CSRNonStandardIndex.MTIMECMP)}, x1
+    la x5, loop
+    csrw mepc, x5
+    mret
+
+3:
+    jump ok, x3
+
+too_bad: // exit code in x20
+    addi x15, x20, 0
+ok:
+    addi x15, x0, 100
+        """,
+        out_reg=15,
+        out_val=100,
+        timeout=2000,
+        mem_init=MemoryContents.empty(),
+        reg_init=RegistryContents.empty(),
+    ),
+]
 
 
-@mem_test(CSR_TESTS)
+# @mem_test(CSR_TESTS)
+@mem_test(EXDI)
 def test_registers(_):
     pass

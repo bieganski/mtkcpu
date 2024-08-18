@@ -251,13 +251,12 @@ class MtkCpu(Elaboratable):
         mtime = self.mtime = Signal(32)
         sync += mtime.eq(mtime + 1)
         comb += csr_unit.mtime.as_view().eq(mtime)
+        timer_irq_happened = Signal()
 
-        # with m.If(csr_unit.mstatus.mie & csr_unit.mie.mtie):
-        #     with m.If(mtime == csr_unit.mtimecmp):
-        #         # 'halt' signal needs to be cleared when CPU jumps to trap handler.
-        #         sync += [
-        #             self.halt.eq(1),
-        #         ]
+        # Timer IRQ delivery.
+        with m.If(csr_unit.mstatus.as_view().mie & csr_unit.mie.as_view().mtie):
+            with m.If(mtime == csr_unit.mtimecmp.as_view().as_value()):
+                sync += timer_irq_happened.eq(1)
 
         def prev(sig: Signal) -> Signal:
             res = Signal()
@@ -464,6 +463,13 @@ class MtkCpu(Elaboratable):
                     # NOTE: 'Elif' is not accidental here - HALTREQ has higher priority than STEP.
                     sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.STEP)
                     m.next = "HALTED"
+                with m.Elif(timer_irq_happened):
+                    # TODO from specs:
+                    # "The interrupt remains posted until it clears by writing the MTIMECMP register"
+                    #
+                    # For now we don't implement that part of specs, just clear the bit by default.
+                    sync += timer_irq_happened.eq(0) # clear the bit
+                    trap(IrqCause.M_TIMER_INTERRUPT, interrupt=True)
                 with m.Else():
                     # maybe next time..
                     m.next = "FETCH"
