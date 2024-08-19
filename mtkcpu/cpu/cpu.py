@@ -239,6 +239,9 @@ class MtkCpu(Elaboratable):
         # at most one active_unit at any time
         active_unit = ActiveUnit()
 
+        # In order to improve synth timing.
+        load_addr_precalculated = Signal(32)
+
         # Register file. Contains two read ports (for rs1, rs2) and one write port.
         regs = self.regs
         reg_read_port1 = self.reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
@@ -330,7 +333,9 @@ class MtkCpu(Elaboratable):
                 
                 reg_write_port.addr.eq(rd),
                 reg_write_port.data.eq(rdval),
+            ]
 
+            sync += [
                 rs1val.eq(reg_read_port1.data),
                 rs2val.eq(reg_read_port2.data),
             ]
@@ -369,12 +374,9 @@ class MtkCpu(Elaboratable):
             comb += [
                 mem_unit.en.eq(1),
                 mem_unit.funct3.eq(funct3),
-                mem_unit.src1.eq(rs1val),
+                mem_unit.src1.eq(load_addr_precalculated),
                 mem_unit.src2.eq(rs2val),
                 mem_unit.store.eq(opcode == InstrType.STORE),
-                mem_unit.offset.eq(
-                    Mux(opcode == InstrType.LOAD, imm, Cat(rd, imm[5:12]))
-                ),
             ]
         with m.Elif(active_unit.compare):
             comb += [
@@ -511,6 +513,10 @@ class MtkCpu(Elaboratable):
                         instr.eq(ibus.read_data),
                     ]
                     m.next = "DECODE"
+
+                    # WTF: only to pre-calculcate
+                    comb += reg_read_port1.addr.eq(ibus.read_data[15:20])
+            
             with m.State("DECODE"):
                 m.next = "EXECUTE"
                 # here, we have registers already fetched into rs1val, rs2val.
@@ -535,6 +541,14 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.mem_unit.eq(1),
                     ]
+
+
+                    # address precalculation, to avoid consecutive 'add' and interconnect comb. logic in same cycle.
+                    offset = Signal(signed(12), name="LD_ST_offset")
+                    comb += offset.eq(Mux(opcode == InstrType.LOAD, imm, Cat(rd, imm[5:12])))
+                    sync += load_addr_precalculated.eq(offset + reg_read_port1.data),
+                
+
                 with m.Elif(match_compare_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.compare.eq(1),
