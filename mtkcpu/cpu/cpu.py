@@ -354,12 +354,12 @@ class MtkCpu(Elaboratable):
                 logic.src1.eq(rs1val),
                 logic.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
             ]
-        with m.Elif(active_unit.adder):
+        with m.If(active_unit.adder):
             comb += [
                 adder.src1.eq(rs1val),
                 adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
             ]
-        with m.Elif(active_unit.shifter):
+        with m.If(active_unit.shifter):
             comb += [
                 shifter.funct3.eq(funct3),
                 shifter.funct7.eq(funct7),
@@ -370,7 +370,7 @@ class MtkCpu(Elaboratable):
                     )
                 ),
             ]
-        with m.Elif(active_unit.mem_unit):
+        with m.If(active_unit.mem_unit):
             comb += [
                 mem_unit.en.eq(1),
                 mem_unit.funct3.eq(funct3),
@@ -378,7 +378,7 @@ class MtkCpu(Elaboratable):
                 mem_unit.src2.eq(rs2val),
                 mem_unit.store.eq(opcode == InstrType.STORE),
             ]
-        with m.Elif(active_unit.compare):
+        with m.If(active_unit.compare):
             comb += [
                 compare.funct3.eq(funct3),
                 # Compare Unit uses Adder for carry and overflow flags.
@@ -386,7 +386,7 @@ class MtkCpu(Elaboratable):
                 adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
                 # adder.sub set somewhere below
             ]
-        with m.Elif(active_unit.branch):
+        with m.If(active_unit.branch):
             comb += [
                 compare.funct3.eq(funct3),
                 # Compare Unit uses Adder for carry and overflow flags.
@@ -394,7 +394,7 @@ class MtkCpu(Elaboratable):
                 adder.src2.eq(rs2val),
                 # adder.sub set somewhere below
             ]
-        with m.Elif(active_unit.csr):
+        with m.If(active_unit.csr):
             comb += [
                 csr_unit.func3.eq(funct3),
                 csr_unit.csr_idx.eq(csr_idx),
@@ -526,18 +526,18 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.logic.eq(1),
                     ]
-                with m.Elif(match_adder_unit(opcode, funct3, funct7)):
+                with m.If(match_adder_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.adder.eq(1),
                         adder.sub.eq(
                             (opcode == InstrType.ALU) & (funct7 == Funct7.SUB)
                         ),
                     ]
-                with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
+                with m.If(match_shifter_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.shifter.eq(1),
-                    ]
-                with m.Elif(match_loadstore_unit(opcode, funct3, funct7)):
+                   ]
+                with m.If(match_loadstore_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.mem_unit.eq(1),
                     ]
@@ -549,12 +549,12 @@ class MtkCpu(Elaboratable):
                     sync += load_addr_precalculated.eq(offset + reg_read_port1.data),
                 
 
-                with m.Elif(match_compare_unit(opcode, funct3, funct7)):
+                with m.If(match_compare_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.compare.eq(1),
                         adder.sub.eq(1),
                     ]
-                with m.Elif(match_lui(opcode, funct3, funct7)):
+                with m.If(match_lui(opcode, funct3, funct7)):
                     sync += [
                         active_unit.lui.eq(1),
                     ]
@@ -562,36 +562,36 @@ class MtkCpu(Elaboratable):
                         reg_read_port1.addr.eq(rd),
                         # rd will be available in next cycle in rs1val
                     ]
-                with m.Elif(match_auipc(opcode, funct3, funct7)):
+                with m.If(match_auipc(opcode, funct3, funct7)):
                     sync += [
                         active_unit.auipc.eq(1),
                     ]
-                with m.Elif(match_jal(opcode, funct3, funct7)):
+                with m.If(match_jal(opcode, funct3, funct7)):
                     sync += [
                         active_unit.jal.eq(1),
                     ]
-                with m.Elif(match_jalr(opcode, funct3, funct7)):
+                with m.If(match_jalr(opcode, funct3, funct7)):
                     sync += [
                         active_unit.jalr.eq(1),
                     ]
-                with m.Elif(match_branch(opcode, funct3, funct7)):
+                with m.If(match_branch(opcode, funct3, funct7)):
                     sync += [
                         active_unit.branch.eq(1),
                         adder.sub.eq(1),
                     ]
-                with m.Elif(match_csr(opcode, funct3, funct7)):
+                with m.If(match_csr(opcode, funct3, funct7)):
                     sync += [
                         active_unit.csr.eq(1)
                     ]
-                with m.Elif(match_mret(opcode, funct3, funct7)):
+                with m.If(match_mret(opcode, funct3, funct7)):
                     sync += [
                         active_unit.mret.eq(1)
                     ]
-                with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
+                with m.If(match_sfence_vma(opcode, funct3, funct7)):
                     pass # sfence.vma
-                with m.Elif(opcode == 0b0001111):
+                with m.If(opcode == 0b0001111):
                     pass # fence - do nothing, as we are a simple implementation.
-                with m.Elif(opcode == 0b1110011):
+                with m.If(opcode == 0b1110011):
                     with m.If(imm & 0b1):
                         # ebreak
                         with m.If(halt_on_ebreak):
@@ -608,8 +608,9 @@ class MtkCpu(Elaboratable):
                             trap(TrapCause.ECALL_FROM_M)
                         with m.Else():
                             trap(TrapCause.ECALL_FROM_U)
-                with m.Else():
-                    trap(TrapCause.ILLEGAL_INSTRUCTION)
+                # FIXME
+                # with m.If(~active_unit):
+                #     trap(TrapCause.ILLEGAL_INSTRUCTION)
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
                     sync += [
