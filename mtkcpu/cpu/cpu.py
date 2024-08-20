@@ -20,7 +20,7 @@ from mtkcpu.units.logic import LogicUnit, match_logic_unit
 from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
 from mtkcpu.utils.common import matcher
-from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
+from mtkcpu.cpu.isa import Funct3, InstrType, Funct7, Funct12
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
@@ -333,9 +333,7 @@ class MtkCpu(Elaboratable):
                 
                 reg_write_port.addr.eq(rd),
                 reg_write_port.data.eq(rdval),
-            ]
 
-            sync += [
                 rs1val.eq(reg_read_port1.data),
                 rs2val.eq(reg_read_port2.data),
             ]
@@ -591,23 +589,20 @@ class MtkCpu(Elaboratable):
                     pass # sfence.vma
                 with m.If(opcode == 0b0001111):
                     pass # fence - do nothing, as we are a simple implementation.
-                with m.If(opcode == 0b1110011):
-                    with m.If(imm & 0b1):
-                        # ebreak
-                        with m.If(halt_on_ebreak):
-                            # enter Debug Mode.
-                            m.next = "HALTED"
-                            sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
-                        with m.Else():
-                            # EBREAK description from Privileged specs:
-                            # It generates a breakpoint exception and performs no other operation.
-                            trap(TrapCause.BREAKPOINT)
+                with m.If((opcode == InstrType.SYSTEM) & (imm == Funct12.EBREAK)):
+                    with m.If(halt_on_ebreak):
+                        # enter Debug Mode.
+                        m.next = "HALTED"
+                        sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
                     with m.Else():
-                        # ecall
-                        with m.If(exception_unit.current_priv_mode == PrivModeBits.MACHINE):
-                            trap(TrapCause.ECALL_FROM_M)
-                        with m.Else():
-                            trap(TrapCause.ECALL_FROM_U)
+                        # EBREAK description from Privileged specs:
+                        # It generates a breakpoint exception and performs no other operation.
+                        trap(TrapCause.BREAKPOINT)
+                with m.If((opcode == InstrType.SYSTEM) & (imm == Funct12.ECALL)):
+                    with m.If(exception_unit.current_priv_mode == PrivModeBits.MACHINE):
+                        trap(TrapCause.ECALL_FROM_M)
+                    with m.Else():
+                        trap(TrapCause.ECALL_FROM_U)
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
                     sync += [
