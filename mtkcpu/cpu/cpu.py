@@ -608,43 +608,40 @@ class MtkCpu(Elaboratable):
                             trap(TrapCause.ECALL_FROM_M)
                         with m.Else():
                             trap(TrapCause.ECALL_FROM_U)
-                # FIXME
-                # with m.If(~active_unit):
-                #     trap(TrapCause.ILLEGAL_INSTRUCTION)
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
                     sync += [
                         rdval.eq(logic.res),
                     ]
-                with m.Elif(active_unit.adder):
+                with m.If(active_unit.adder):
                     sync += [
                         rdval.eq(adder.res),
                     ]
-                with m.Elif(active_unit.shifter):
+                with m.If(active_unit.shifter):
                     sync += [
                         rdval.eq(shifter.res),
                     ]
-                with m.Elif(active_unit.mem_unit):
+                with m.If(active_unit.mem_unit):
                     sync += [
                         rdval.eq(mem_unit.res),
                     ]
-                with m.Elif(active_unit.compare):
+                with m.If(active_unit.compare):
                     sync += [
                         rdval.eq(compare.condition_met),
                     ]
-                with m.Elif(active_unit.lui):
+                with m.If(active_unit.lui):
                     sync += [
                         rdval.eq(Cat(Const(0, 12), uimm)),
                     ]
-                with m.Elif(active_unit.auipc):
+                with m.If(active_unit.auipc):
                     sync += [
                         rdval.eq(pc + Cat(Const(0, 12), uimm)),
                     ]
-                with m.Elif(active_unit.jal | active_unit.jalr):
+                with m.If(active_unit.jal | active_unit.jalr):
                     sync += [
                         rdval.eq(pc + 4),
                     ]
-                with m.Elif(active_unit.csr):
+                with m.If(active_unit.csr):
                     sync += [
                         rdval.eq(csr_unit.rd_val)
                     ]
@@ -675,6 +672,9 @@ class MtkCpu(Elaboratable):
                     # all units not specified by default take 1 cycle
                     m.next = "WRITEBACK"
                     sync += active_unit.eq(0)
+
+                with m.If(active_unit == 0):
+                    trap(TrapCause.ILLEGAL_INSTRUCTION)
 
                 jal_offset = Signal(signed(21))
                 comb += jal_offset.eq(
