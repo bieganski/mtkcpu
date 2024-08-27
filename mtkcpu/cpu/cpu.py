@@ -512,7 +512,7 @@ class MtkCpu(Elaboratable):
                     ]
                     m.next = "DECODE"
 
-                    # WTF: only to pre-calculcate
+                    # HACK, FIXME: below is only valid for load/store, to pre-calculcate the address
                     comb += reg_read_port1.addr.eq(ibus.read_data[15:20])
             
             with m.State("DECODE"):

@@ -161,7 +161,13 @@ class WishboneBusAddressDecoder(Elaboratable):
             start_addr = addr_scheme.first_valid_addr_incl
             max_legal_addr = start_addr + self.word_size * (num_words - 1)
             req_addr : Signal = self.bus.adr
-            with m.If(req_addr.word_select(7, 4) == (start_addr >> 28)):
+
+            # TODO: the longest critical path here.
+            # can't get rid of it yet, as removing comparators fails test_exception.py
+            #
+            # with m.If(req_addr.word_select(7, 4) == (start_addr >> 28)):
+            #
+            with m.If((req_addr >= start_addr) & (req_addr <= max_legal_addr)):
                 m.d.comb += [
                     slv_bus.connect(self.bus, exclude=["adr"]),
                     slv_bus.adr.eq(req_addr - start_addr),
