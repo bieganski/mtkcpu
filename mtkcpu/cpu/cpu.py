@@ -20,7 +20,7 @@ from mtkcpu.units.logic import LogicUnit, match_logic_unit
 from mtkcpu.units.shifter import ShifterUnit, match_shifter_unit
 from mtkcpu.units.upper import match_auipc, match_lui
 from mtkcpu.utils.common import matcher
-from mtkcpu.cpu.isa import Funct3, InstrType, Funct7
+from mtkcpu.cpu.isa import Funct3, InstrType, Funct7, Funct12
 from mtkcpu.units.debug.top import DebugUnit
 from mtkcpu.cpu.priv_isa import IrqCause, TrapCause, PrivModeBits
 from mtkcpu.units.debug.cpu_dm_if import CpuRunningState, CpuRunningStateExternalInterface
@@ -239,6 +239,9 @@ class MtkCpu(Elaboratable):
         # at most one active_unit at any time
         active_unit = ActiveUnit()
 
+        # In order to improve synth timing.
+        load_addr_precalculated = Signal(32)
+
         # Register file. Contains two read ports (for rs1, rs2) and one write port.
         regs = self.regs
         reg_read_port1 = self.reg_read_port1 = m.submodules.reg_read_port1 = regs.read_port()
@@ -349,12 +352,12 @@ class MtkCpu(Elaboratable):
                 logic.src1.eq(rs1val),
                 logic.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
             ]
-        with m.Elif(active_unit.adder):
+        with m.If(active_unit.adder):
             comb += [
                 adder.src1.eq(rs1val),
                 adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
             ]
-        with m.Elif(active_unit.shifter):
+        with m.If(active_unit.shifter):
             comb += [
                 shifter.funct3.eq(funct3),
                 shifter.funct7.eq(funct7),
@@ -365,18 +368,15 @@ class MtkCpu(Elaboratable):
                     )
                 ),
             ]
-        with m.Elif(active_unit.mem_unit):
+        with m.If(active_unit.mem_unit):
             comb += [
                 mem_unit.en.eq(1),
                 mem_unit.funct3.eq(funct3),
-                mem_unit.src1.eq(rs1val),
+                mem_unit.src1.eq(load_addr_precalculated),
                 mem_unit.src2.eq(rs2val),
                 mem_unit.store.eq(opcode == InstrType.STORE),
-                mem_unit.offset.eq(
-                    Mux(opcode == InstrType.LOAD, imm, Cat(rd, imm[5:12]))
-                ),
             ]
-        with m.Elif(active_unit.compare):
+        with m.If(active_unit.compare):
             comb += [
                 compare.funct3.eq(funct3),
                 # Compare Unit uses Adder for carry and overflow flags.
@@ -384,7 +384,7 @@ class MtkCpu(Elaboratable):
                 adder.src2.eq(Mux(opcode == InstrType.OP_IMM, imm, rs2val)),
                 # adder.sub set somewhere below
             ]
-        with m.Elif(active_unit.branch):
+        with m.If(active_unit.branch):
             comb += [
                 compare.funct3.eq(funct3),
                 # Compare Unit uses Adder for carry and overflow flags.
@@ -392,7 +392,7 @@ class MtkCpu(Elaboratable):
                 adder.src2.eq(rs2val),
                 # adder.sub set somewhere below
             ]
-        with m.Elif(active_unit.csr):
+        with m.If(active_unit.csr):
             comb += [
                 csr_unit.func3.eq(funct3),
                 csr_unit.csr_idx.eq(csr_idx),
@@ -511,6 +511,10 @@ class MtkCpu(Elaboratable):
                         instr.eq(ibus.read_data),
                     ]
                     m.next = "DECODE"
+
+                    # HACK, FIXME: below is only valid for load/store, to pre-calculcate the address
+                    comb += reg_read_port1.addr.eq(ibus.read_data[15:20])
+            
             with m.State("DECODE"):
                 m.next = "EXECUTE"
                 # here, we have registers already fetched into rs1val, rs2val.
@@ -520,27 +524,35 @@ class MtkCpu(Elaboratable):
                     sync += [
                         active_unit.logic.eq(1),
                     ]
-                with m.Elif(match_adder_unit(opcode, funct3, funct7)):
+                with m.If(match_adder_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.adder.eq(1),
                         adder.sub.eq(
                             (opcode == InstrType.ALU) & (funct7 == Funct7.SUB)
                         ),
                     ]
-                with m.Elif(match_shifter_unit(opcode, funct3, funct7)):
+                with m.If(match_shifter_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.shifter.eq(1),
-                    ]
-                with m.Elif(match_loadstore_unit(opcode, funct3, funct7)):
+                   ]
+                with m.If(match_loadstore_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.mem_unit.eq(1),
                     ]
-                with m.Elif(match_compare_unit(opcode, funct3, funct7)):
+
+
+                    # address precalculation, to avoid consecutive 'add' and interconnect comb. logic in same cycle.
+                    offset = Signal(signed(12), name="LD_ST_offset")
+                    comb += offset.eq(Mux(opcode == InstrType.LOAD, imm, Cat(rd, imm[5:12])))
+                    sync += load_addr_precalculated.eq(offset + reg_read_port1.data),
+                
+
+                with m.If(match_compare_unit(opcode, funct3, funct7)):
                     sync += [
                         active_unit.compare.eq(1),
                         adder.sub.eq(1),
                     ]
-                with m.Elif(match_lui(opcode, funct3, funct7)):
+                with m.If(match_lui(opcode, funct3, funct7)):
                     sync += [
                         active_unit.lui.eq(1),
                     ]
@@ -548,88 +560,83 @@ class MtkCpu(Elaboratable):
                         reg_read_port1.addr.eq(rd),
                         # rd will be available in next cycle in rs1val
                     ]
-                with m.Elif(match_auipc(opcode, funct3, funct7)):
+                with m.If(match_auipc(opcode, funct3, funct7)):
                     sync += [
                         active_unit.auipc.eq(1),
                     ]
-                with m.Elif(match_jal(opcode, funct3, funct7)):
+                with m.If(match_jal(opcode, funct3, funct7)):
                     sync += [
                         active_unit.jal.eq(1),
                     ]
-                with m.Elif(match_jalr(opcode, funct3, funct7)):
+                with m.If(match_jalr(opcode, funct3, funct7)):
                     sync += [
                         active_unit.jalr.eq(1),
                     ]
-                with m.Elif(match_branch(opcode, funct3, funct7)):
+                with m.If(match_branch(opcode, funct3, funct7)):
                     sync += [
                         active_unit.branch.eq(1),
                         adder.sub.eq(1),
                     ]
-                with m.Elif(match_csr(opcode, funct3, funct7)):
+                with m.If(match_csr(opcode, funct3, funct7)):
                     sync += [
                         active_unit.csr.eq(1)
                     ]
-                with m.Elif(match_mret(opcode, funct3, funct7)):
+                with m.If(match_mret(opcode, funct3, funct7)):
                     sync += [
                         active_unit.mret.eq(1)
                     ]
-                with m.Elif(match_sfence_vma(opcode, funct3, funct7)):
+                with m.If(match_sfence_vma(opcode, funct3, funct7)):
                     pass # sfence.vma
-                with m.Elif(opcode == 0b0001111):
+                with m.If(opcode == 0b0001111):
                     pass # fence - do nothing, as we are a simple implementation.
-                with m.Elif(opcode == 0b1110011):
-                    with m.If(imm & 0b1):
-                        # ebreak
-                        with m.If(halt_on_ebreak):
-                            # enter Debug Mode.
-                            m.next = "HALTED"
-                            sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
-                        with m.Else():
-                            # EBREAK description from Privileged specs:
-                            # It generates a breakpoint exception and performs no other operation.
-                            trap(TrapCause.BREAKPOINT)
+                with m.If((opcode == InstrType.SYSTEM) & (imm == Funct12.EBREAK)):
+                    with m.If(halt_on_ebreak):
+                        # enter Debug Mode.
+                        m.next = "HALTED"
+                        sync += dcsr.as_view().cause.eq(DCSR_DM_Entry_Cause.EBREAK)
                     with m.Else():
-                        # ecall
-                        with m.If(exception_unit.current_priv_mode == PrivModeBits.MACHINE):
-                            trap(TrapCause.ECALL_FROM_M)
-                        with m.Else():
-                            trap(TrapCause.ECALL_FROM_U)
-                with m.Else():
-                    trap(TrapCause.ILLEGAL_INSTRUCTION)
+                        # EBREAK description from Privileged specs:
+                        # It generates a breakpoint exception and performs no other operation.
+                        trap(TrapCause.BREAKPOINT)
+                with m.If((opcode == InstrType.SYSTEM) & (imm == Funct12.ECALL)):
+                    with m.If(exception_unit.current_priv_mode == PrivModeBits.MACHINE):
+                        trap(TrapCause.ECALL_FROM_M)
+                    with m.Else():
+                        trap(TrapCause.ECALL_FROM_U)
             with m.State("EXECUTE"):
                 with m.If(active_unit.logic):
                     sync += [
                         rdval.eq(logic.res),
                     ]
-                with m.Elif(active_unit.adder):
+                with m.If(active_unit.adder):
                     sync += [
                         rdval.eq(adder.res),
                     ]
-                with m.Elif(active_unit.shifter):
+                with m.If(active_unit.shifter):
                     sync += [
                         rdval.eq(shifter.res),
                     ]
-                with m.Elif(active_unit.mem_unit):
+                with m.If(active_unit.mem_unit):
                     sync += [
                         rdval.eq(mem_unit.res),
                     ]
-                with m.Elif(active_unit.compare):
+                with m.If(active_unit.compare):
                     sync += [
                         rdval.eq(compare.condition_met),
                     ]
-                with m.Elif(active_unit.lui):
+                with m.If(active_unit.lui):
                     sync += [
                         rdval.eq(Cat(Const(0, 12), uimm)),
                     ]
-                with m.Elif(active_unit.auipc):
+                with m.If(active_unit.auipc):
                     sync += [
                         rdval.eq(pc + Cat(Const(0, 12), uimm)),
                     ]
-                with m.Elif(active_unit.jal | active_unit.jalr):
+                with m.If(active_unit.jal | active_unit.jalr):
                     sync += [
                         rdval.eq(pc + 4),
                     ]
-                with m.Elif(active_unit.csr):
+                with m.If(active_unit.csr):
                     sync += [
                         rdval.eq(csr_unit.rd_val)
                     ]
@@ -660,6 +667,9 @@ class MtkCpu(Elaboratable):
                     # all units not specified by default take 1 cycle
                     m.next = "WRITEBACK"
                     sync += active_unit.eq(0)
+
+                with m.If(active_unit == 0):
+                    trap(TrapCause.ILLEGAL_INSTRUCTION)
 
                 jal_offset = Signal(signed(21))
                 comb += jal_offset.eq(

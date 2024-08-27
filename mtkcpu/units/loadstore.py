@@ -160,7 +160,13 @@ class WishboneBusAddressDecoder(Elaboratable):
             num_words = addr_scheme.num_words
             start_addr = addr_scheme.first_valid_addr_incl
             max_legal_addr = start_addr + self.word_size * (num_words - 1)
-            req_addr = self.bus.adr
+            req_addr : Signal = self.bus.adr
+
+            # TODO: the longest critical path here.
+            # can't get rid of it yet, as removing comparators fails test_exception.py
+            #
+            # with m.If(req_addr.word_select(7, 4) == (start_addr >> 28)):
+            #
             with m.If((req_addr >= start_addr) & (req_addr <= max_legal_addr)):
                 m.d.comb += [
                     slv_bus.connect(self.bus, exclude=["adr"]),
@@ -534,7 +540,6 @@ class MemoryUnit(Elaboratable):
 
         # 'src2' is used only for 'store' instructions.
         self.src2 = Signal(32, name="LD_ST_src2")
-        self.offset = Signal(signed(12), name="LD_ST_offset")
 
         self.res = Signal(32, name="LD_ST_res")
         self.en = Signal(name="LD_ST_en")  # TODO implement 'ready/valid' interface
@@ -560,7 +565,7 @@ class MemoryUnit(Elaboratable):
         addr_lsb = Signal(2)
         
         comb += [
-            addr.eq(self.offset + self.src1),
+            addr.eq(self.src1),
             addr_lsb.eq(addr[:2]),
         ]
 
